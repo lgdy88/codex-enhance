@@ -108,9 +108,17 @@ def test_pick_page_target_rejects_missing_websocket():
 def test_build_bridge_script_installs_binding_callbacks():
     script = build_bridge_script("codexSessionDelete")
 
-    assert "window.codexSessionDelete" in script
     assert "window.__codexSessionDeleteResolve" in script
     assert "window.__codexSessionDeleteReject" in script
+
+
+def test_private_bridge_script_keeps_token_out_of_window_api():
+    script = cdp.build_private_bridge_script("codexSessionDelete", "secret-token")
+
+    assert "const __codexSessionDeleteNativeBridge" in script
+    assert "const __codexSessionDeleteBridge" in script
+    assert "secret-token" in script
+    assert "window.__codexSessionDeleteBridge" not in script
 
 
 def test_bridge_binding_name_is_versioned_for_reinjection():
@@ -134,7 +142,7 @@ def test_install_bridge_enables_runtime_before_adding_binding(monkeypatch):
     monkeypatch.setattr(websocket, "create_connection", lambda url, timeout: ws)
     monkeypatch.setattr(cdp.threading, "Thread", lambda **kwargs: type("FakeThread", (), {"start": lambda self: None})())
 
-    install_bridge("ws://page", BRIDGE_BINDING_NAME, lambda path, payload: {}, ["window.__codexPlusTest = true;"])
+    install_bridge("ws://page", BRIDGE_BINDING_NAME, lambda path, payload: {}, ["window.__codexPlusTest = true;"], bridge_token="secret-token")
 
     assert ws.sent[0] == {"id": 1, "method": "Runtime.enable", "params": {}}
     assert ws.sent[1]["method"] == "Runtime.removeBinding"
@@ -150,7 +158,7 @@ def test_inject_file_exposes_packaged_sponsor_images_as_data_uris(monkeypatch, t
     captured = {}
 
     monkeypatch.setattr(cdp, "list_targets", lambda port: [{"type": "page", "title": "Codex", "url": "app://codex", "webSocketDebuggerUrl": "ws://page"}])
-    monkeypatch.setattr(cdp, "install_bridge", lambda websocket_url, binding_name, handler, scripts: captured.setdefault("new_document", scripts[0]) or object())
+    monkeypatch.setattr(cdp, "install_bridge", lambda websocket_url, binding_name, handler, scripts, bridge_token=None: captured.setdefault("new_document", scripts[0]) or object())
     monkeypatch.setattr(cdp, "evaluate_script", lambda websocket_url, script: captured.setdefault("evaluated", script) or {"result": {}})
 
     cdp.inject_file(9229, script_path, 57321, lambda path, payload: {})
@@ -180,3 +188,12 @@ def test_bridge_loop_continues_after_idle_timeout():
 
     assert ws.recv_count == 3
     assert "__codexSessionDeleteResolve" in ws.sent[0]
+
+
+def test_bridge_loop_rejects_invalid_token():
+    ws = TimeoutThenMessageSocket()
+
+    _bridge_loop(ws, lambda path, payload: {"status": "ok"}, bridge_token="secret-token")
+
+    assert ws.recv_count == 3
+    assert "Unauthorized bridge request" in ws.sent[0]

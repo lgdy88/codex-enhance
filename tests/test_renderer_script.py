@@ -365,7 +365,8 @@ def test_renderer_script_sidebar_delete_opens_on_pointerup_when_click_is_unrelia
 
 def test_renderer_script_uses_bridge_only_helper_calls():
     text = Path("codex_session_delete/inject/renderer-inject.js").read_text(encoding="utf-8")
-    assert "window.__codexSessionDeleteBridge" in text
+    assert "__codexSessionDeleteBridge" in text
+    assert "window.__codexSessionDeleteBridge" not in text
     assert "fetch(" not in text
     assert "XMLHttpRequest" not in text
     assert "postJson(\"/delete\"" in text
@@ -447,7 +448,7 @@ def test_renderer_script_includes_user_script_manager_ui_contract():
     assert "codexPlusVersion = \"1.0.6\"" in text
     assert "Codex++ ${codexPlusVersion}" in text
     assert "提出问题" in text
-    assert "https://github.com/BigPizzaV3/CodexPlusPlus/issues" in text
+    assert "https://github.com/lgdy88/codex-enhance/issues" in text
     assert "window.open(issueUrl, \"_blank\")" in text
     assert "插件选项解锁" in text
     assert "特殊插件强制安装" in text
@@ -456,7 +457,7 @@ def test_renderer_script_includes_user_script_manager_ui_contract():
     assert "原生菜单栏位置" in text
     assert "nativeMenuPlacement: true" in text
     assert "关于 Codex++" in text
-    assert "https://github.com/BigPizzaV3/CodexPlusPlus" in text
+    assert "https://github.com/lgdy88/codex-enhance" in text
     assert "codexPlusSettings" in text
     assert "pluginEntryUnlock" in text
     assert "forcePluginInstall" in text

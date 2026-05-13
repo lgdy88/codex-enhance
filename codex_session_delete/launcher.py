@@ -25,6 +25,8 @@ from codex_session_delete.settings_store import BackendSettings, SettingsStore
 from codex_session_delete.storage_adapter import SQLiteStorageAdapter
 from codex_session_delete.user_scripts import UserScriptManager
 
+ALLOW_FORCE_TAKEOVER_ENV = "CODEX_PLUS_ALLOW_FORCE_TAKEOVER"
+
 
 class ApiFirstDeleteService:
     def __init__(self, api_adapter: ApiAdapter, db_path: Path | None, backup_dir: Path):
@@ -162,6 +164,10 @@ def codex_process_environment() -> dict[str, str]:
         env.setdefault("HTTPS_PROXY", proxy)
         env.setdefault("ALL_PROXY", proxy)
     return env
+
+
+def force_process_restart_enabled() -> bool:
+    return os.environ.get(ALLOW_FORCE_TAKEOVER_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def build_codex_executable(app_dir: Path) -> Path:
@@ -355,7 +361,7 @@ def launch_and_inject(app_dir: Path | None, db_path: Path | None, backup_dir: Pa
         shutdown_helper(server)
         # Kill any Codex process we just activated so the next attempt starts from a clean state
         # instead of staring at a half-rendered white window.
-        if sys.platform == "win32":
+        if sys.platform == "win32" and force_process_restart_enabled():
             try:
                 subprocess.run(
                     [

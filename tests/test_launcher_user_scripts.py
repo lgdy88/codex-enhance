@@ -54,7 +54,7 @@ def test_handle_bridge_request_lists_user_scripts(tmp_path):
 
     result = handle_bridge_request(FakeDeleteService(), FakeExportService(), "/user-scripts/list", {}, runtime)
 
-    assert result["enabled"] is True
+    assert result["enabled"] is False
     assert result["scripts"][0]["key"] == "builtin:demo.js"
 
 

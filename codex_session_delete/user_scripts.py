@@ -30,14 +30,14 @@ class UserScriptManager:
 
     def load_config(self) -> UserScriptConfig:
         if not self.config_path.exists():
-            return UserScriptConfig(enabled=True, scripts={})
+            return UserScriptConfig(enabled=False, scripts={})
         try:
             data = json.loads(self.config_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
-            return UserScriptConfig(enabled=True, scripts={})
+            return UserScriptConfig(enabled=False, scripts={})
         scripts = data.get("scripts", {})
         return UserScriptConfig(
-            enabled=bool(data.get("enabled", True)),
+            enabled=bool(data.get("enabled", False)),
             scripts={str(key): bool(value) for key, value in scripts.items()} if isinstance(scripts, dict) else {},
         )
 

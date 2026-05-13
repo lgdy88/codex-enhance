@@ -25,7 +25,7 @@ def test_user_script_manager_scans_builtin_then_user_scripts(tmp_path):
 def test_user_script_manager_missing_directories_and_default_config(tmp_path):
     manager = UserScriptManager(tmp_path / "missing-builtin", tmp_path / "created-user", tmp_path / "config.json")
 
-    assert manager.load_config() == UserScriptConfig(enabled=True, scripts={})
+    assert manager.load_config() == UserScriptConfig(enabled=False, scripts={})
     assert manager.scan() == []
 
 
@@ -52,6 +52,7 @@ def test_user_script_manager_inventory_contains_directories_and_disabled_status(
     user.mkdir()
     (builtin / "demo.js").write_text("window.demo = true;", encoding="utf-8")
     manager = UserScriptManager(builtin, user, tmp_path / "config.json")
+    manager.set_global_enabled(True)
     manager.set_script_enabled("builtin:demo.js", False)
 
     inventory = manager.inventory()
@@ -70,6 +71,7 @@ def test_user_script_manager_builds_enabled_script_bundle(tmp_path):
     (builtin / "alpha.js").write_text("window.alpha = true;", encoding="utf-8")
     (user / "beta.js").write_text("throw new Error('boom');", encoding="utf-8")
     manager = UserScriptManager(builtin, user, tmp_path / "config.json")
+    manager.set_global_enabled(True)
     manager.set_script_enabled("user:beta.js", False)
 
     bundle = manager.build_enabled_bundle()

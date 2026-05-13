@@ -354,7 +354,7 @@ def test_cli_setup_alias_installs_with_default_launcher(monkeypatch):
 def test_cli_check_update_prints_latest_release(monkeypatch, capsys):
     class Release:
         version = "v1.0.5"
-        url = "https://github.com/BigPizzaV3/CodexPlusPlus/releases/tag/v1.0.5"
+        url = "https://github.com/lgdy88/codex-enhance/releases/tag/v1.0.5"
         body = "fixes"
 
     monkeypatch.setattr(cli.updater, "is_source_tree_mode", lambda: False)
@@ -393,7 +393,7 @@ def test_cli_check_update_reports_source_tree_migration_mode(monkeypatch, capsys
 def test_cli_update_migrates_source_tree_to_release_install(monkeypatch, capsys):
     class Release:
         version = "v1.0.5"
-        url = "https://github.com/BigPizzaV3/CodexPlusPlus/releases/tag/v1.0.5"
+        url = "https://github.com/lgdy88/codex-enhance/releases/tag/v1.0.5"
         body = "fixes"
         asset_name = "CodexPlusPlus.zip"
 
@@ -415,7 +415,7 @@ def test_cli_update_migrates_source_tree_to_release_install(monkeypatch, capsys)
 def test_cli_update_installs_latest_release(monkeypatch, tmp_path, capsys):
     class Release:
         version = "v1.0.5"
-        url = "https://github.com/BigPizzaV3/CodexPlusPlus/releases/tag/v1.0.5"
+        url = "https://github.com/lgdy88/codex-enhance/releases/tag/v1.0.5"
         body = "fixes"
 
     calls = []

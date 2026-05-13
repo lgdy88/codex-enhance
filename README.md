@@ -9,9 +9,9 @@
 </p>
 
 <p align="center">
-  <img alt="Release" src="https://img.shields.io/github/v/release/BigPizzaV3/CodexPlusPlus">
-  <img alt="Stars" src="https://img.shields.io/github/stars/BigPizzaV3/CodexPlusPlus">
-  <img alt="License" src="https://img.shields.io/github/license/BigPizzaV3/CodexPlusPlus">
+  <img alt="Release" src="https://img.shields.io/github/v/release/lgdy88/codex-enhance">
+  <img alt="Stars" src="https://img.shields.io/github/stars/lgdy88/codex-enhance">
+  <img alt="License" src="https://img.shields.io/github/license/lgdy88/codex-enhance">
   <img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-blue">
 </p>
 
@@ -98,7 +98,7 @@ python -m codex_session_delete setup
 - 会话项目移动：把会话移动到普通对话或其他本地项目。
 - 对话 Timeline：在对话右侧显示用户提问时间线，悬停查看摘要并快速跳转。
 - Provider 同步：切换 model_provider 或供应商时不丢历史会话。
-- Windows 快捷方式安装/卸载、常驻 watcher 自动接管、GitHub Release 自动更新。
+- Windows 快捷方式安装/卸载、可选 watcher 接管、带校验的 GitHub Release 自动更新。
 - macOS 生成 `/Applications/Codex++.app`。
 
 ## 界面预览
@@ -147,7 +147,7 @@ Codex++ 使用外部启动方式运行 Codex：
 2. 如果启用了 Provider 同步，启动 Codex 前先同步历史会话 metadata。
 3. 启动本地 helper 服务，保留健康检查和运行生命周期。
 4. 通过 CDP 注入 `renderer-inject.js`。
-5. 渲染端通过 CDP bridge 调用本地服务；默认不开放 HTTP 删除/撤销入口，避免本机其他页面误触发删除类操作。
+5. 渲染端通过私有 CDP bridge 调用本地服务；HTTP 状态修改接口默认拒绝无 token 请求，避免本机其他页面误触发删除、导出或移动类操作。
 6. 启动 Codex 时继承现有 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`；如果这些环境变量未设置，会自动探测常见本地代理端口（如 `127.0.0.1:7897`），帮助 Codex 加载需要访问 GitHub 的技能资源。
 
 这种方式不会修改 Codex 的 `app.asar`，也不需要往 Codex 安装目录写 DLL。
@@ -226,7 +226,7 @@ python -m codex_session_delete remove --remove-data
 
 默认情况下 Codex++ 只在你从 `Codex++` 快捷方式启动时生效。如果你从开始菜单、任务栏或系统原生入口直接启动 Codex，那一次不会有注入，`Codex++` 菜单和插件解锁都不会出现。
 
-Windows 可以注册一个常驻 watcher 解决这个问题。它会每 3 秒探测一次本机 CDP 端口，发现 Codex 在跑但 CDP 没起来，会先短暂等待并二次确认，确认仍没有 CDP 后再把 Codex Desktop App 进程重拉为带注入的版本。
+Windows 可以注册一个常驻 watcher 辅助发现这个问题。它会每 3 秒探测一次本机 CDP 端口，发现 Codex 在跑但 CDP 没起来时会记录日志；默认不会强制杀掉 Codex。若你明确接受重启风险，可设置 `CODEX_PLUS_ALLOW_FORCE_TAKEOVER=1` 后再启动 watcher，让它把 Codex Desktop App 重拉为带注入的版本。
 
 安装：
 
@@ -271,11 +271,12 @@ python -m codex_session_delete update
 
 更新流程：
 
-1. 请求 `https://api.github.com/repos/BigPizzaV3/CodexPlusPlus/releases/latest`。
+1. 请求 `https://api.github.com/repos/lgdy88/codex-enhance/releases/latest`。
 2. 比较最新 Release tag 与本地版本。
 3. 优先下载 Release 中的 `.whl` asset。
-4. 执行 `python -m pip install --upgrade <wheel>`。
-5. 自动重新执行 `python -m codex_session_delete setup`，刷新快捷方式、Windows 卸载项或 macOS app bundle。
+4. 下载配套 `.sha256` / `SHA256SUMS` 校验文件并校验 asset。
+5. 校验通过后执行 `python -m pip install --upgrade <wheel>`。
+6. 自动重新执行 `python -m codex_session_delete setup`，刷新快捷方式、Windows 卸载项或 macOS app bundle。
 
 发布新版本时，请在 GitHub Release 里附加 wheel 文件，例如：
 
@@ -283,7 +284,7 @@ python -m codex_session_delete update
 python -m build
 ```
 
-然后把 `dist/codex_session_delete-<version>-py3-none-any.whl` 上传到对应 Release。
+然后把 `dist/codex_session_delete-<version>-py3-none-any.whl` 和对应的 `.sha256` 文件上传到对应 Release。
 
 ## macOS 使用
 
@@ -409,14 +410,14 @@ python -m codex_session_delete setup
 
 ## 贡献者与 Star
 
-<a href="https://github.com/BigPizzaV3/CodexPlusPlus/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=BigPizzaV3/CodexPlusPlus" alt="Codex++ contributors">
+<a href="https://github.com/lgdy88/codex-enhance/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=lgdy88/codex-enhance" alt="Codex++ contributors">
 </a>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=BigPizzaV3/CodexPlusPlus&type=Date&theme=dark">
-  <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=BigPizzaV3/CodexPlusPlus&type=Date">
-  <img alt="Codex++ Star History" src="https://api.star-history.com/svg?repos=BigPizzaV3/CodexPlusPlus&type=Date">
+  <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=lgdy88/codex-enhance&type=Date&theme=dark">
+  <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=lgdy88/codex-enhance&type=Date">
+  <img alt="Codex++ Star History" src="https://api.star-history.com/svg?repos=lgdy88/codex-enhance&type=Date">
 </picture>
 
 ## 开发

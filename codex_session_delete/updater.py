@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import hashlib
 import subprocess
 import sys
 import tempfile
@@ -12,7 +13,7 @@ import requests
 
 from codex_session_delete import __version__
 
-DEFAULT_REPOSITORY = "BigPizzaV3/CodexPlusPlus"
+DEFAULT_REPOSITORY = "lgdy88/codex-enhance"
 DEFAULT_RELEASE_API_URL = f"https://api.github.com/repos/{DEFAULT_REPOSITORY}/releases/latest"
 USER_AGENT = f"Codex++/{__version__}"
 PACKAGE_MODULE_FILE = Path(__file__).resolve()
@@ -29,16 +30,20 @@ class Release:
     body: str
     asset_name: str | None = None
     asset_url: str | None = None
+    asset_sha256: str | None = None
 
     @classmethod
     def from_github_payload(cls, payload: dict[str, Any]) -> "Release":
         asset = select_update_asset(payload.get("assets", []))
+        asset_name = asset.get("name") if asset else ""
+        digest_asset = select_digest_asset(payload.get("assets", []), asset_name)
         return cls(
             version=str(payload["tag_name"]),
             url=str(payload.get("html_url") or ""),
             body=str(payload.get("body") or ""),
             asset_name=asset.get("name") if asset else None,
             asset_url=asset.get("browser_download_url") if asset else None,
+            asset_sha256=download_digest(digest_asset["browser_download_url"], asset_name) if digest_asset else None,
         )
 
 
@@ -75,6 +80,37 @@ def select_update_asset(assets: list[dict[str, Any]]) -> dict[str, str] | None:
         if name.endswith((".zip", ".tar.gz", ".tgz")):
             return {"name": str(asset["name"]), "browser_download_url": str(asset["browser_download_url"])}
     return None
+
+
+def select_digest_asset(assets: list[dict[str, Any]], asset_name: str) -> dict[str, str] | None:
+    if not asset_name:
+        return None
+    expected_names = {f"{asset_name}.sha256", "SHA256SUMS", "sha256sums.txt"}
+    for asset in assets:
+        name = str(asset.get("name") or "")
+        url = asset.get("browser_download_url")
+        if name in expected_names and url:
+            return {"name": name, "browser_download_url": str(url)}
+    return None
+
+
+def download_digest(url: str, asset_name: str = "") -> str:
+    response = requests.get(url, timeout=30, headers={"User-Agent": USER_AGENT})
+    response.raise_for_status()
+    return parse_sha256_digest(response.text, asset_name)
+
+
+def parse_sha256_digest(text: str, asset_name: str = "") -> str:
+    if asset_name:
+        for line in text.splitlines():
+            if asset_name in line:
+                match = re.search(r"\b[0-9a-fA-F]{64}\b", line)
+                if match:
+                    return match.group(0).lower()
+    match = re.search(r"\b[0-9a-fA-F]{64}\b", text)
+    if not match:
+        raise UpdateError("Release 校验文件中没有合法 SHA-256 摘要。")
+    return match.group(0).lower()
 
 
 def fetch_latest_release(api_url: str = DEFAULT_RELEASE_API_URL, timeout: int = 10) -> Release:
@@ -132,6 +168,14 @@ def download_asset(url: str, name: str, download_dir: Path) -> Path:
     return path
 
 
+def verify_asset_digest(path: Path, expected_sha256: str | None) -> None:
+    if not expected_sha256:
+        raise UpdateError("Release asset 缺少 SHA-256 校验文件，已拒绝自动安装。")
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    if digest.lower() != expected_sha256.lower():
+        raise UpdateError("Release asset SHA-256 校验失败，已拒绝自动安装。")
+
+
 def perform_update(
     release: Release,
     *,
@@ -148,6 +192,7 @@ def perform_update(
 
 def _perform_update_in_dir(release: Release, python_executable: str, download_dir: Path) -> UpdateResult:
     package_path = download_asset(release.asset_url or "", release.asset_name or "", download_dir)
+    verify_asset_digest(package_path, release.asset_sha256)
     subprocess.run([python_executable, "-m", "pip", "install", "--upgrade", str(package_path)], check=True)
     subprocess.run([python_executable, "-m", "codex_session_delete", "setup"], check=True, cwd=safe_setup_cwd())
     return UpdateResult(release=release, installed_path=package_path)

@@ -18,6 +18,7 @@ TAKEOVER_GRACE_SECONDS = 2.0
 TAKEOVER_FAILURE_BACKOFF_SECONDS = 30.0
 TAKEOVER_SUCCESS_COOLDOWN_SECONDS = 15.0
 CODEX_PROCESS_NAMES = {"codex.exe"}
+ALLOW_FORCE_TAKEOVER_ENV = "CODEX_PLUS_ALLOW_FORCE_TAKEOVER"
 
 
 def data_root() -> Path:
@@ -92,6 +93,10 @@ def kill_processes(pids: list[int]) -> None:
     _run_powershell(script, timeout=6.0)
 
 
+def force_takeover_enabled() -> bool:
+    return os.environ.get(ALLOW_FORCE_TAKEOVER_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def wait_until_no_codex(timeout: float = KILL_WAIT_TIMEOUT_SECONDS) -> bool:
     """Poll until no Codex process is left, or until timeout. Returns True if clean, False if still alive."""
     deadline = time.time() + timeout
@@ -157,6 +162,10 @@ def takeover(debug_port: int) -> bool:
     if cdp_listening(debug_port):
         log("takeover: CDP became available before kill; skipping takeover")
         return True
+
+    if not force_takeover_enabled():
+        log(f"takeover skipped: set {ALLOW_FORCE_TAKEOVER_ENV}=1 to allow Codex process restart")
+        return False
 
     # Step 1: Kill existing launcher processes (stale / failed) so we start from a known state.
     stop_launcher_processes()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import secrets
 import threading
 import webbrowser
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ import websocket
 
 BridgeHandler = Callable[[str, dict[str, object]], dict[str, object]]
 BRIDGE_BINDING_NAME = "codexSessionDeleteV2"
+BRIDGE_TOKEN_BYTES = 32
 
 
 @dataclass(frozen=True)
@@ -113,16 +115,29 @@ def build_bridge_script(binding_name: str) -> str:
     window.__codexSessionDeleteCallbacks.delete(id);
     callback.resolve({{ status: "failed", message }});
   }};
-  window.__codexSessionDeleteBridge = (path, payload) => new Promise((resolve) => {{
-    const id = String(++window.__codexSessionDeleteSeq);
-    window.__codexSessionDeleteCallbacks.set(id, {{ resolve }});
-    window.{binding_name}(JSON.stringify({{ id, path, payload }}));
-  }});
 }})();
 """
 
 
-def install_bridge(websocket_url: str, binding_name: str, handler: BridgeHandler, new_document_scripts: list[str] | None = None) -> websocket.WebSocket:
+def build_private_bridge_script(binding_name: str, bridge_token: str) -> str:
+    return f"""
+  const __codexSessionDeleteNativeBridge = window[{json.dumps(binding_name)}].bind(window);
+  const __codexSessionDeleteBridge = (path, payload) => new Promise((resolve) => {{
+    const id = String(++window.__codexSessionDeleteSeq);
+    window.__codexSessionDeleteCallbacks.set(id, {{ resolve }});
+    __codexSessionDeleteNativeBridge(JSON.stringify({{ id, token: {json.dumps(bridge_token)}, path, payload }}));
+  }});
+"""
+
+
+def install_bridge(
+    websocket_url: str,
+    binding_name: str,
+    handler: BridgeHandler,
+    new_document_scripts: list[str] | None = None,
+    bridge_token: str | None = None,
+) -> websocket.WebSocket:
+    token = bridge_token or secrets.token_urlsafe(BRIDGE_TOKEN_BYTES)
     ws = websocket.create_connection(websocket_url, timeout=5)
     ws.send(json.dumps({"id": 1, "method": "Runtime.enable", "params": {}}))
     _wait_for_id(ws, 1)
@@ -137,7 +152,7 @@ def install_bridge(websocket_url: str, binding_name: str, handler: BridgeHandler
     _wait_for_id(ws, 5)
     for script in new_document_scripts or []:
         _add_script_to_new_documents_on_socket(ws, script, _next_id())
-    thread = threading.Thread(target=_bridge_loop, args=(ws, handler), daemon=True)
+    thread = threading.Thread(target=_bridge_loop, args=(ws, handler, token), daemon=True)
     thread.start()
     return ws
 
@@ -155,19 +170,23 @@ def inject_file(port: int, script_path: Path, helper_port: int, handler: BridgeH
     target = pick_page_target(targets)
     websocket_url = str(target["webSocketDebuggerUrl"])
     script = script_path.read_text(encoding="utf-8")
+    bridge_token = secrets.token_urlsafe(BRIDGE_TOKEN_BYTES) if handler else ""
+    private_bridge_script = build_private_bridge_script(BRIDGE_BINDING_NAME, bridge_token) if handler else "  const __codexSessionDeleteBridge = null;\n"
     prefix = (
-        f"window.__CODEX_SESSION_DELETE_HELPER__ = 'http://127.0.0.1:{helper_port}';\n"
-        f"window.__CODEX_PLUS_SPONSOR_IMAGES__ = {json.dumps(sponsor_image_data_uris())};\n"
+        "(() => {\n"
+        f"{private_bridge_script}"
+        f"  window.__CODEX_SESSION_DELETE_HELPER__ = 'http://127.0.0.1:{helper_port}';\n"
+        f"  window.__CODEX_PLUS_SPONSOR_IMAGES__ = {json.dumps(sponsor_image_data_uris())};\n"
     )
-    full_script = prefix + script
-    bridge_socket = install_bridge(websocket_url, BRIDGE_BINDING_NAME, handler, [full_script]) if handler else None
+    full_script = prefix + script + "\n})();"
+    bridge_socket = install_bridge(websocket_url, BRIDGE_BINDING_NAME, handler, [full_script], bridge_token=bridge_token) if handler else None
     if not bridge_socket:
         add_script_to_new_documents(websocket_url, full_script)
     result = evaluate_script(websocket_url, full_script)
     return InjectionResult(websocket_url=websocket_url, bridge_socket=bridge_socket, result=result)
 
 
-def _bridge_loop(ws: websocket.WebSocket, handler: BridgeHandler) -> None:
+def _bridge_loop(ws: websocket.WebSocket, handler: BridgeHandler, bridge_token: str | None = None) -> None:
     while True:
         try:
             message = json.loads(ws.recv())
@@ -181,6 +200,9 @@ def _bridge_loop(ws: websocket.WebSocket, handler: BridgeHandler) -> None:
         try:
             payload = json.loads(str(params.get("payload", "{}")))
             request_id = str(payload["id"])
+            if bridge_token is not None and payload.get("token") != bridge_token:
+                _reject_bridge(ws, request_id, "Unauthorized bridge request")
+                continue
             result = handler(str(payload["path"]), dict(payload.get("payload", {})))
             _resolve_bridge(ws, request_id, result)
         except Exception as exc:

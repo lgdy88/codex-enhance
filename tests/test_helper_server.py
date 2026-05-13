@@ -152,14 +152,39 @@ def test_helper_server_accepts_http_mutation_token():
     assert service.deleted[0].session_id == "s1"
 
 
-def test_helper_server_moves_thread_workspace_without_http_mutation_token():
+def test_helper_server_rejects_state_endpoints_without_http_mutation_token():
     service = FakeDeleteService()
     server = HelperServer("127.0.0.1", 0, service)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
         base = f"http://127.0.0.1:{server.port}"
-        moved = post_json(base + "/move-thread-workspace", {"session_id": "s1", "title": "First", "target_cwd": "/project/a"})
+        for path, payload in [
+            ("/move-thread-workspace", {"session_id": "s1", "title": "First", "target_cwd": "/project/a"}),
+            ("/thread-sort-key", {"session_id": "s1", "title": "First"}),
+            ("/thread-sort-keys", {"sessions": [{"session_id": "s1", "title": "First"}]}),
+        ]:
+            try:
+                post_json(base + path, payload)
+                assert False, f"expected forbidden response for {path}"
+            except urllib.error.HTTPError as exc:
+                assert exc.code == 403
+    finally:
+        server.shutdown()
+        thread.join(timeout=3)
+
+def test_helper_server_moves_thread_workspace_with_http_mutation_token():
+    service = FakeDeleteService()
+    server = HelperServer("127.0.0.1", 0, service, http_mutation_token="test-token")
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.port}"
+        moved = post_json(
+            base + "/move-thread-workspace",
+            {"session_id": "s1", "title": "First", "target_cwd": "/project/a"},
+            {"X-Codex-Session-Delete-Token": "test-token"},
+        )
     finally:
         server.shutdown()
         thread.join(timeout=3)
@@ -169,7 +194,7 @@ def test_helper_server_moves_thread_workspace_without_http_mutation_token():
 
 def test_helper_server_returns_thread_sort_key():
     service = FakeDeleteService()
-    server = HelperServer("127.0.0.1", 0, service)
+    server = HelperServer("127.0.0.1", 0, service, allow_http_mutation=True)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -184,7 +209,7 @@ def test_helper_server_returns_thread_sort_key():
 
 def test_helper_server_returns_thread_sort_keys():
     service = FakeDeleteService()
-    server = HelperServer("127.0.0.1", 0, service)
+    server = HelperServer("127.0.0.1", 0, service, allow_http_mutation=True)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -217,7 +242,7 @@ def test_helper_server_serves_packaged_sponsor_assets():
     assert content_type == "image/jpeg"
 
 
-def test_helper_server_allows_private_network_preflight():
+def test_helper_server_preflight_omits_private_network_access():
     service = FakeDeleteService()
     server = HelperServer("127.0.0.1", 0, service)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -240,5 +265,5 @@ def test_helper_server_allows_private_network_preflight():
         server.shutdown()
         thread.join(timeout=3)
 
-    assert private_network == "true"
+    assert private_network is None
     assert "X-Codex-Session-Delete-Token" in allow_headers

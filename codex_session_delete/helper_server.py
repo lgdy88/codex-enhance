@@ -8,6 +8,8 @@ from typing import Protocol
 
 from codex_session_delete.models import DeleteResult, DeleteStatus, ExportResult, ExportStatus, SessionRef
 
+TRUSTED_BROWSER_ORIGIN = "http://127.0.0.1"
+
 
 class DeleteService(Protocol):
     def delete(self, session: SessionRef) -> DeleteResult: ...
@@ -62,7 +64,7 @@ class _Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         try:
             payload = self._read_json()
-            if self.path in {"/delete", "/undo", "/archived-thread", "/export-markdown"} and not self._is_mutation_authorized():
+            if not self._is_mutation_authorized():
                 self._send_json({"error": "forbidden"}, status=403)
                 return
             if self.path == "/delete":
@@ -132,10 +134,9 @@ class _Handler(BaseHTTPRequestHandler):
         data = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", TRUSTED_BROWSER_ORIGIN)
         self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Codex-Session-Delete-Token")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Private-Network", "true")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
@@ -148,7 +149,7 @@ class _Handler(BaseHTTPRequestHandler):
         data = resources.files("codex_session_delete").joinpath("assets", asset_name).read_bytes()
         self.send_response(200)
         self.send_header("Content-Type", "image/jpeg")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", TRUSTED_BROWSER_ORIGIN)
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)

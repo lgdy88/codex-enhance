@@ -116,6 +116,23 @@ def test_takeover_skips_kill_when_cdp_appears(monkeypatch):
     assert killed == []
 
 
+def test_takeover_skips_force_restart_by_default(monkeypatch):
+    killed = []
+    monkeypatch.delenv(watcher.ALLOW_FORCE_TAKEOVER_ENV, raising=False)
+    monkeypatch.setattr(watcher, "cdp_listening", lambda port: False)
+    monkeypatch.setattr(watcher, "stop_launcher_processes", lambda: None)
+    monkeypatch.setattr(watcher, "kill_processes", lambda pids: killed.append(pids))
+
+    assert watcher.takeover(debug_port=9229) is False
+    assert killed == []
+
+
+def test_force_takeover_enabled_reads_opt_in_env(monkeypatch):
+    monkeypatch.setenv(watcher.ALLOW_FORCE_TAKEOVER_ENV, "1")
+
+    assert watcher.force_takeover_enabled() is True
+
+
 def test_find_codex_processes_excludes_cli_commands(monkeypatch):
     output = "\n".join(
         [

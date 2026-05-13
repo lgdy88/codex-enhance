@@ -22,7 +22,7 @@ def test_release_from_github_payload_selects_wheel_asset():
     release = updater.Release.from_github_payload(
         {
             "tag_name": "v1.0.5",
-            "html_url": "https://github.com/BigPizzaV3/CodexPlusPlus/releases/tag/v1.0.5",
+            "html_url": "https://github.com/lgdy88/codex-enhance/releases/tag/v1.0.5",
             "body": "fixes",
             "prerelease": False,
             "draft": False,
@@ -38,6 +38,37 @@ def test_release_from_github_payload_selects_wheel_asset():
     assert release.asset_url == "https://example.test/pkg.whl"
 
 
+def test_release_from_github_payload_selects_matching_sha256(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(updater, "download_digest", lambda url, asset_name="": seen.setdefault("asset_name", asset_name) or "a" * 64)
+
+    release = updater.Release.from_github_payload(
+        {
+            "tag_name": "v1.0.5",
+            "assets": [
+                {"name": "pkg.whl", "browser_download_url": "https://example.test/pkg.whl"},
+                {"name": "pkg.whl.sha256", "browser_download_url": "https://example.test/pkg.whl.sha256"},
+            ],
+        }
+    )
+
+    assert release.asset_name == "pkg.whl"
+    assert release.asset_sha256 == "a" * 64
+    assert seen["asset_name"] == "pkg.whl"
+
+
+def test_parse_sha256_digest_prefers_matching_asset_line():
+    digest = updater.parse_sha256_digest(
+        "\n".join([
+            "b" * 64 + "  other.whl",
+            "a" * 64 + "  pkg.whl",
+        ]),
+        "pkg.whl",
+    )
+
+    assert digest == "a" * 64
+
+
 def test_fetch_latest_release_uses_github_api(monkeypatch):
     requested = []
 
@@ -48,7 +79,7 @@ def test_fetch_latest_release_uses_github_api(monkeypatch):
         def json(self):
             return {
                 "tag_name": "v1.0.5",
-                "html_url": "https://github.com/BigPizzaV3/CodexPlusPlus/releases/tag/v1.0.5",
+                "html_url": "https://github.com/lgdy88/codex-enhance/releases/tag/v1.0.5",
                 "assets": [],
             }
 
@@ -81,14 +112,23 @@ def test_download_asset_writes_release_file(monkeypatch, tmp_path):
     assert path.read_bytes() == b"abcdefg"
 
 
+def test_verify_asset_digest_rejects_missing_digest(tmp_path):
+    wheel = tmp_path / "pkg.whl"
+    wheel.write_bytes(b"wheel")
+
+    with pytest.raises(updater.UpdateError, match="缺少 SHA-256"):
+        updater.verify_asset_digest(wheel, None)
+
+
 def test_perform_update_installs_downloaded_wheel_and_reruns_setup(monkeypatch, tmp_path):
     commands = []
     release = updater.Release(
         version="v1.0.5",
-        url="https://github.com/BigPizzaV3/CodexPlusPlus/releases/tag/v1.0.5",
+        url="https://github.com/lgdy88/codex-enhance/releases/tag/v1.0.5",
         body="fixes",
         asset_name="pkg.whl",
         asset_url="https://example.test/pkg.whl",
+        asset_sha256="b0fd95a3b061aea3764b2b06c9521f24d78e1a4bb0cc4c196a8514cdb1f7a2fb",
     )
     wheel = tmp_path / "pkg.whl"
     wheel.write_bytes(b"wheel")

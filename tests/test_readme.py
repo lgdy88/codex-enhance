@@ -25,10 +25,10 @@ def test_readme_has_badges_language_switch_and_project_charts():
     text = Path("README.md").read_text(encoding="utf-8")
 
     assert "[English](README_EN.md)" in text
-    assert "img.shields.io/github/v/release/BigPizzaV3/CodexPlusPlus" in text
-    assert "img.shields.io/github/stars/BigPizzaV3/CodexPlusPlus" in text
-    assert "contrib.rocks/image?repo=BigPizzaV3/CodexPlusPlus" in text
-    assert "api.star-history.com/svg?repos=BigPizzaV3/CodexPlusPlus" in text
+    assert "img.shields.io/github/v/release/lgdy88/codex-enhance" in text
+    assert "img.shields.io/github/stars/lgdy88/codex-enhance" in text
+    assert "contrib.rocks/image?repo=lgdy88/codex-enhance" in text
+    assert "api.star-history.com/svg?repos=lgdy88/codex-enhance" in text
 
 
 def test_readme_documents_provider_sync_as_no_session_loss():
@@ -59,9 +59,9 @@ def test_english_readme_exists_and_matches_core_sections():
     assert "[中文](README.md)" in text
     assert "Provider Sync" in text
     assert "switch model_provider without losing historical conversations" in text
-    assert "img.shields.io/github/v/release/BigPizzaV3/CodexPlusPlus" in text
-    assert "contrib.rocks/image?repo=BigPizzaV3/CodexPlusPlus" in text
-    assert "api.star-history.com/svg?repos=BigPizzaV3/CodexPlusPlus" in text
+    assert "img.shields.io/github/v/release/lgdy88/codex-enhance" in text
+    assert "contrib.rocks/image?repo=lgdy88/codex-enhance" in text
+    assert "api.star-history.com/svg?repos=lgdy88/codex-enhance" in text
 
 
 def test_readme_links_lINUX_do_without_image():

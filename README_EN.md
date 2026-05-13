@@ -9,9 +9,9 @@
 </p>
 
 <p align="center">
-  <img alt="Release" src="https://img.shields.io/github/v/release/BigPizzaV3/CodexPlusPlus">
-  <img alt="Stars" src="https://img.shields.io/github/stars/BigPizzaV3/CodexPlusPlus">
-  <img alt="License" src="https://img.shields.io/github/license/BigPizzaV3/CodexPlusPlus">
+  <img alt="Release" src="https://img.shields.io/github/v/release/lgdy88/codex-enhance">
+  <img alt="Stars" src="https://img.shields.io/github/stars/lgdy88/codex-enhance">
+  <img alt="License" src="https://img.shields.io/github/license/lgdy88/codex-enhance">
   <img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-blue">
 </p>
 
@@ -94,7 +94,7 @@ This creates `/Applications/Codex++.app`.
 - Project move: moves sessions into normal conversations or other local projects.
 - Conversation Timeline: shows user-question markers on the right side of a conversation, with hover summaries and quick jump.
 - Provider Sync: switch model_provider without losing historical conversations.
-- Windows shortcut setup/removal, optional watcher takeover, and GitHub Release updates.
+- Windows shortcut setup/removal, optional watcher takeover, and checksum-verified GitHub Release updates.
 - macOS `/Applications/Codex++.app` bundle generation.
 
 ## Screenshots
@@ -143,7 +143,7 @@ Codex++ launches Codex externally:
 2. If Provider Sync is enabled, synchronizes historical session metadata before launching Codex.
 3. Starts a local helper service for health checks and runtime operations.
 4. Injects `renderer-inject.js` through CDP.
-5. The renderer talks to local services through the CDP bridge. Delete/undo HTTP routes are not exposed by default, which prevents accidental deletion from unrelated local pages.
+5. The renderer talks to local services through a private CDP bridge. HTTP state-changing routes reject requests without a token by default, preventing unrelated local pages from triggering delete, export, or move actions.
 6. Codex inherits existing `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`; if none are set, Codex++ auto-detects common local proxy ports such as `127.0.0.1:7897` to help Codex load GitHub-hosted skill resources.
 
 This approach does not modify Codex `app.asar` and does not write DLL files into the Codex installation directory.
@@ -222,7 +222,7 @@ python -m codex_session_delete remove --remove-data
 
 By default, Codex++ only takes effect when you launch Codex from the `Codex++` shortcut. If you start the original Codex entry from the Start menu or taskbar, that run will not include injection.
 
-The optional Windows watcher solves this by checking the local CDP port every 3 seconds. If it finds the Codex Desktop App running without CDP, it waits briefly, confirms again, then relaunches the Desktop App through the Codex++ launcher.
+The optional Windows watcher helps detect this by checking the local CDP port every 3 seconds. If it finds the Codex Desktop App running without CDP, it logs the state and does not force-kill Codex by default. Set `CODEX_PLUS_ALLOW_FORCE_TAKEOVER=1` before starting the watcher only if you explicitly accept the restart risk and want it to relaunch the Desktop App through the Codex++ launcher.
 
 Install:
 
@@ -267,11 +267,12 @@ python -m codex_session_delete update
 
 Update flow:
 
-1. Requests `https://api.github.com/repos/BigPizzaV3/CodexPlusPlus/releases/latest`.
+1. Requests `https://api.github.com/repos/lgdy88/codex-enhance/releases/latest`.
 2. Compares the latest Release tag with the local version.
 3. Prefers a `.whl` asset from the Release.
-4. Runs `python -m pip install --upgrade <wheel>`.
-5. Runs `python -m codex_session_delete setup` again to refresh shortcuts, Windows uninstall entries, or the macOS app bundle.
+4. Downloads a matching `.sha256` / `SHA256SUMS` file and verifies the asset.
+5. Runs `python -m pip install --upgrade <wheel>` after verification succeeds.
+6. Runs `python -m codex_session_delete setup` again to refresh shortcuts, Windows uninstall entries, or the macOS app bundle.
 
 When publishing a new version, attach a wheel to the GitHub Release:
 
@@ -279,7 +280,7 @@ When publishing a new version, attach a wheel to the GitHub Release:
 python -m build
 ```
 
-Then upload `dist/codex_session_delete-<version>-py3-none-any.whl` to the Release.
+Then upload `dist/codex_session_delete-<version>-py3-none-any.whl` and its matching `.sha256` file to the Release.
 
 ## macOS Usage
 
@@ -405,14 +406,14 @@ Newer versions write a stable uninstall entry and use an absolute Python path fo
 
 ## Contributors and Stars
 
-<a href="https://github.com/BigPizzaV3/CodexPlusPlus/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=BigPizzaV3/CodexPlusPlus" alt="Codex++ contributors">
+<a href="https://github.com/lgdy88/codex-enhance/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=lgdy88/codex-enhance" alt="Codex++ contributors">
 </a>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=BigPizzaV3/CodexPlusPlus&type=Date&theme=dark">
-  <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=BigPizzaV3/CodexPlusPlus&type=Date">
-  <img alt="Codex++ Star History" src="https://api.star-history.com/svg?repos=BigPizzaV3/CodexPlusPlus&type=Date">
+  <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=lgdy88/codex-enhance&type=Date&theme=dark">
+  <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=lgdy88/codex-enhance&type=Date">
+  <img alt="Codex++ Star History" src="https://api.star-history.com/svg?repos=lgdy88/codex-enhance&type=Date">
 </picture>
 
 ## Development
