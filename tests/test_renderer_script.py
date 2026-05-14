@@ -62,6 +62,16 @@ def test_renderer_script_contains_conversation_timeline_contract():
     assert "timelineMaxTopPercent" in text
 
 
+def test_renderer_script_contains_provider_doctor_and_quarantine_contract():
+    text = Path("codex_session_delete/inject/renderer-inject.js").read_text(encoding="utf-8")
+
+    assert "SQLite quick_check" in text
+    assert "repair_plan" in text
+    assert "data-codex-provider-quarantine-state" in text
+    assert "/provider/quarantine-state" in text
+    assert "隔离脏库" in text
+
+
 
 def test_renderer_script_detects_user_questions_for_timeline_without_sidebar_scan():
     text = Path("codex_session_delete/inject/renderer-inject.js").read_text(encoding="utf-8")

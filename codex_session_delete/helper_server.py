@@ -6,6 +6,7 @@ from importlib import resources
 from urllib.parse import unquote
 from typing import Protocol
 
+from codex_session_delete.bridge_routes import BridgeRoute, BridgeRouteContext, dispatch_route, route_for_path
 from codex_session_delete.models import DeleteResult, DeleteStatus, ExportResult, ExportStatus, SessionRef
 
 TRUSTED_BROWSER_ORIGIN = "http://127.0.0.1"
@@ -24,6 +25,7 @@ class DeleteService(Protocol):
     def provider_diagnostics(self, project_cwd: str = "") -> dict[str, object]: ...
     def provider_repair_paths(self) -> dict[str, object]: ...
     def provider_converge(self) -> dict[str, object]: ...
+    def provider_quarantine_state(self) -> dict[str, object]: ...
 
 
 class ExportService(Protocol):
@@ -70,68 +72,15 @@ class _Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         try:
             payload = self._read_json()
-            if not self._is_mutation_authorized():
+            route = route_for_path(self.path)
+            if route is None:
+                self._send_json({"error": "not found"}, status=404)
+                return
+            if not self._is_http_route_authorized(route):
                 self._send_json({"error": "forbidden"}, status=403)
                 return
-            if self.path == "/delete":
-                session = SessionRef(session_id=str(payload.get("session_id", "")), title=str(payload.get("title", "")))
-                self._send_json(self.server.service.delete(session).to_dict())
-                return
-            if self.path == "/undo":
-                token = str(payload.get("undo_token", ""))
-                self._send_json(self.server.service.undo(token).to_dict())
-                return
-            if self.path == "/export-markdown":
-                if self.server.export_service is None:
-                    self._send_json(
-                        ExportResult(ExportStatus.FAILED, str(payload.get("session_id", "")), "Markdown 导出不可用").to_dict(),
-                        status=400,
-                    )
-                    return
-                session = SessionRef(session_id=str(payload.get("session_id", "")), title=str(payload.get("title", "")))
-                self._send_json(self.server.export_service.export(session).to_dict())
-                return
-            if self.path == "/archived-thread":
-                session = self.server.service.find_archived_thread_by_title(str(payload.get("title", "")))
-                self._send_json({"session_id": session.session_id, "title": session.title} if session else {"session_id": "", "title": ""})
-                return
-            if self.path == "/move-thread-workspace":
-                session = SessionRef(session_id=str(payload.get("session_id", "")), title=str(payload.get("title", "")))
-                self._send_json(self.server.service.move_thread_workspace(session, str(payload.get("target_cwd", ""))))
-                return
-            if self.path == "/thread-sort-key":
-                session = SessionRef(session_id=str(payload.get("session_id", "")), title=str(payload.get("title", "")))
-                self._send_json(self.server.service.thread_sort_key(session))
-                return
-            if self.path == "/thread-sort-keys":
-                raw_sessions = payload.get("sessions", [])
-                sessions = [
-                    SessionRef(session_id=str(item.get("session_id", "")), title=str(item.get("title", "")))
-                    for item in raw_sessions
-                    if isinstance(item, dict)
-                ] if isinstance(raw_sessions, list) else []
-                self._send_json(self.server.service.thread_sort_keys(sessions))
-                return
-            if self.path == "/project-threads":
-                cursor = payload.get("cursor")
-                self._send_json(self.server.service.project_threads(str(payload.get("project_cwd", "")), int(payload.get("limit", 30) or 30), str(cursor) if cursor else None))
-                return
-            if self.path == "/project-file-tree":
-                self._send_json(self.server.service.project_file_tree(str(payload.get("project_cwd", "")), str(payload.get("path", "")), int(payload.get("limit", 200) or 200)))
-                return
-            if self.path == "/provider/status":
-                self._send_json(self.server.service.provider_status())
-                return
-            if self.path == "/provider/diagnostics":
-                self._send_json(self.server.service.provider_diagnostics(str(payload.get("project_cwd", ""))))
-                return
-            if self.path == "/provider/repair-paths":
-                self._send_json(self.server.service.provider_repair_paths())
-                return
-            if self.path == "/provider/converge":
-                self._send_json(self.server.service.provider_converge())
-                return
-            self._send_json({"error": "not found"}, status=404)
+            context = BridgeRouteContext(self.server.service, self.server.export_service)
+            self._send_json(dispatch_route(context, self.path, payload, transport="http"))
         except Exception as exc:
             session_id = str(payload.get("session_id", "")) if "payload" in locals() else ""
             if self.path == "/export-markdown":
@@ -154,6 +103,13 @@ class _Handler(BaseHTTPRequestHandler):
             return True
         token = self.server.http_mutation_token
         return bool(token and self.headers.get("X-Codex-Session-Delete-Token") == token)
+
+    def _is_http_route_authorized(self, route: BridgeRoute) -> bool:
+        if route.http_access == "public":
+            return True
+        if route.http_access == "disabled":
+            return False
+        return self._is_mutation_authorized()
 
     def _send_json(self, payload: dict[str, object], status: int = 200) -> None:
         data = json.dumps(payload).encode("utf-8")

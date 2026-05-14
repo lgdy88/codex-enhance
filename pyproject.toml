@@ -19,10 +19,10 @@ test = ["pytest>=8.0"]
 codex-session-delete = "codex_session_delete.cli:main"
 
 [tool.setuptools]
-packages = ["codex_session_delete"]
+packages = ["codex_session_delete", "codex_session_delete.assets", "codex_session_delete.inject", "codex_session_delete.inject_src"]
 
 [tool.setuptools.package-data]
-codex_session_delete = ["assets/*", "inject/*.js"]
+codex_session_delete = ["assets/*", "inject/*.js", "inject_src/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

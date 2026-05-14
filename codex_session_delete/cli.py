@@ -9,6 +9,7 @@ from pathlib import Path
 
 from codex_session_delete.chrome_native_host import repair_chrome_native_host
 from codex_session_delete.helper_server import HelperServer
+from codex_session_delete.history_index import quarantine_state_db
 from codex_session_delete.installers import InstallOptions, install_codex_plus_plus, uninstall_codex_plus_plus
 from codex_session_delete.launcher import launch_and_inject, shutdown_helper
 from codex_session_delete.mcp_config import (
@@ -67,6 +68,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     provider_repair_parser = subparsers.add_parser("provider-repair-paths", help="Repair Codex provider/project path visibility metadata")
     provider_repair_parser.add_argument("--codex-home", type=Path, default=None)
+
+    provider_quarantine_parser = subparsers.add_parser("provider-quarantine-state", help="Quarantine corrupt Codex state_5.sqlite files after backup")
+    provider_quarantine_parser.add_argument("--codex-home", type=Path, default=None)
 
     chrome_repair_parser = subparsers.add_parser("chrome-repair", help="Repair Codex Chrome native messaging host")
     chrome_repair_parser.add_argument("--app-dir", type=Path, default=None)
@@ -264,6 +268,16 @@ def run_provider_repair_paths(args: argparse.Namespace) -> int:
     return 0 if result.status.value != "skipped" else 1
 
 
+def run_provider_quarantine_state(args: argparse.Namespace) -> int:
+    result = quarantine_state_db(args.codex_home)
+    print(f"{result.status.value if hasattr(result.status, 'value') else result.status}: {result.message}")
+    print(f"target provider: {result.target_provider}")
+    print(f"state files quarantined: {result.sqlite_rows_updated}")
+    if result.backup_dir:
+        print(f"backup: {result.backup_dir}")
+    return 0 if result.status.value != "skipped" else 1
+
+
 def run_chrome_repair(args: argparse.Namespace) -> int:
     result = repair_chrome_native_host(args.app_dir, args.host_path)
     print(f"{result.status}: {result.message}")
@@ -443,6 +457,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_update()
     if args.command == "provider-repair-paths":
         return run_provider_repair_paths(args)
+    if args.command == "provider-quarantine-state":
+        return run_provider_quarantine_state(args)
     if args.command == "chrome-repair":
         return run_chrome_repair(args)
     if args.command == "mcp-status":

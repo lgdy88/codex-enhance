@@ -16,15 +16,15 @@ from codex_session_delete import cdp
 from codex_session_delete.app_paths import resolve_codex_app_dir
 from codex_session_delete.api_adapter import ApiAdapter, UnavailableApiAdapter
 from codex_session_delete.backup_store import BackupStore
+from codex_session_delete.bridge_routes import BridgeRouteContext, dispatch_route
 from codex_session_delete.cdp import evaluate_user_scripts, inject_file, open_devtools
 from codex_session_delete.file_tree import project_file_tree
 from codex_session_delete.helper_server import HelperServer
+from codex_session_delete.history_index import HistoryIndex, quarantine_state_db
 from codex_session_delete.markdown_exporter import MarkdownExportService
-from codex_session_delete.mcp_config import all_mcp_status, install_browser_mcp_servers, remove_browser_mcp_servers, set_mcp_server_enabled
 from codex_session_delete.models import DeleteResult, DeleteStatus, SessionRef
 from codex_session_delete.provider_history import provider_diagnostics, provider_status
 from codex_session_delete.provider_sync import ProviderSyncStatus, run_provider_path_repair, run_provider_sync
-from codex_session_delete.settings_store import SettingsStore
 from codex_session_delete.storage_adapter import SQLiteStorageAdapter
 from codex_session_delete.user_scripts import UserScriptManager
 
@@ -35,6 +35,7 @@ class ApiFirstDeleteService:
     def __init__(self, api_adapter: ApiAdapter, db_path: Path | None, backup_dir: Path):
         self.api_adapter = api_adapter
         self.local_adapter = SQLiteStorageAdapter(db_path, BackupStore(backup_dir)) if db_path else None
+        self.history_index = HistoryIndex(db_path.parent) if db_path else None
 
     def delete(self, session: SessionRef) -> DeleteResult:
         api_result = self.api_adapter.delete(session)
@@ -70,9 +71,9 @@ class ApiFirstDeleteService:
         return self.local_adapter.codex_thread_sort_keys(sessions)
 
     def project_threads(self, project_cwd: str, limit: int = 30, cursor: str | None = None) -> dict[str, object]:
-        if self.local_adapter is None:
+        if self.history_index is None:
             return {"status": DeleteStatus.FAILED.value, "message": "No local database configured", "threads": []}
-        return self.local_adapter.codex_project_threads(project_cwd, limit, cursor)
+        return self.history_index.project_threads(project_cwd, limit, cursor)
 
     def project_file_tree(self, project_cwd: str, relative_path: str = "", limit: int = 200) -> dict[str, object]:
         return project_file_tree(project_cwd, relative_path, limit)
@@ -89,6 +90,10 @@ class ApiFirstDeleteService:
 
     def provider_converge(self) -> dict[str, object]:
         result = run_provider_sync()
+        return provider_result_payload(result)
+
+    def provider_quarantine_state(self) -> dict[str, object]:
+        result = quarantine_state_db()
         return provider_result_payload(result)
 
 
@@ -519,78 +524,5 @@ def handle_bridge_request(
     payload: dict[str, object],
     runtime: CodexPlusRuntime | None = None,
 ) -> dict[str, object]:
-    if path == "/settings/get" and runtime:
-        return SettingsStore().load().to_dict()
-    if path == "/settings/set" and runtime:
-        return SettingsStore().update(payload).to_dict()
-    if path == "/user-scripts/list" and runtime:
-        return runtime.user_scripts.inventory()
-    if path == "/user-scripts/set-enabled" and runtime:
-        runtime.user_scripts.set_global_enabled(bool(payload.get("enabled", True)))
-        return runtime.user_scripts.inventory()
-    if path == "/user-scripts/set-script-enabled" and runtime:
-        runtime.user_scripts.set_script_enabled(str(payload.get("key", "")), bool(payload.get("enabled", True)))
-        return runtime.user_scripts.inventory()
-    if path == "/user-scripts/reload" and runtime:
-        return runtime.reload_user_scripts()
-    if path == "/devtools/open" and runtime:
-        return runtime.open_devtools()
-    if path == "/backend/status" and runtime:
-        return runtime.backend_status()
-    if path == "/backend/repair" and runtime:
-        return runtime.repair_backend()
-    if path == "/mcp/status" and runtime:
-        return {"status": "ok", "message": "MCP 配置已读取", "servers": [server.to_dict() for server in all_mcp_status()]}
-    if path == "/mcp/set-enabled" and runtime:
-        return set_mcp_server_enabled(str(payload.get("name", "")), bool(payload.get("enabled", True))).to_dict()
-    if path == "/mcp/install" and runtime:
-        servers = payload.get("servers", ["all"])
-        selected = [str(item) for item in servers] if isinstance(servers, list) else ["all"]
-        return install_browser_mcp_servers(
-            selected,
-            chrome_mode=str(payload.get("chromeMode", "auto-connect")),
-            browser_url=str(payload.get("browserUrl", "http://127.0.0.1:9222")),
-        ).to_dict()
-    if path == "/mcp/remove" and runtime:
-        servers = payload.get("servers", ["all"])
-        selected = [str(item) for item in servers] if isinstance(servers, list) else ["all"]
-        return remove_browser_mcp_servers(selected).to_dict()
-    if path == "/delete":
-        session = SessionRef(session_id=str(payload.get("session_id", "")), title=str(payload.get("title", "")))
-        return service.delete(session).to_dict()
-    if path == "/undo":
-        return service.undo(str(payload.get("undo_token", ""))).to_dict()
-    if path == "/export-markdown":
-        session = SessionRef(session_id=str(payload.get("session_id", "")), title=str(payload.get("title", "")))
-        return export_service.export(session).to_dict()
-    if path == "/archived-thread":
-        session = service.find_archived_thread_by_title(str(payload.get("title", "")))
-        return {"session_id": session.session_id, "title": session.title} if session else {"session_id": "", "title": ""}
-    if path == "/move-thread-workspace":
-        session = SessionRef(session_id=str(payload.get("session_id", "")), title=str(payload.get("title", "")))
-        return service.move_thread_workspace(session, str(payload.get("target_cwd", "")))
-    if path == "/thread-sort-key":
-        session = SessionRef(session_id=str(payload.get("session_id", "")), title=str(payload.get("title", "")))
-        return service.thread_sort_key(session)
-    if path == "/thread-sort-keys":
-        raw_sessions = payload.get("sessions", [])
-        sessions = [
-            SessionRef(session_id=str(item.get("session_id", "")), title=str(item.get("title", "")))
-            for item in raw_sessions
-            if isinstance(item, dict)
-        ] if isinstance(raw_sessions, list) else []
-        return service.thread_sort_keys(sessions)
-    if path == "/project-threads":
-        cursor = payload.get("cursor")
-        return service.project_threads(str(payload.get("project_cwd", "")), int(payload.get("limit", 30) or 30), str(cursor) if cursor else None)
-    if path == "/project-file-tree":
-        return service.project_file_tree(str(payload.get("project_cwd", "")), str(payload.get("path", "")), int(payload.get("limit", 200) or 200))
-    if path == "/provider/status":
-        return service.provider_status()
-    if path == "/provider/diagnostics":
-        return service.provider_diagnostics(str(payload.get("project_cwd", "")))
-    if path == "/provider/repair-paths":
-        return service.provider_repair_paths()
-    if path == "/provider/converge":
-        return service.provider_converge()
-    return {"status": DeleteStatus.FAILED.value, "session_id": str(payload.get("session_id", "")), "message": "Unknown bridge path"}
+    context = BridgeRouteContext(service, export_service, runtime)
+    return dispatch_route(context, path, payload, transport="cdp")

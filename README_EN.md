@@ -129,11 +129,13 @@ Use it when:
 - You switch back to another provider and want historical conversations to stay visible under the original project.
 - Windows paths with a `\\?\` prefix prevent Desktop project matching.
 
-Codex++ watches `~/.codex/config.toml` for `model_provider` changes while running and refreshes the history index and UI after a change. The Provider panel shows the active history query channel, rollout provider distribution, SQLite provider distribution, `\\?\` path counts, recent-50 matches, and project-visible counts.
+Codex++ watches `~/.codex/config.toml` for `model_provider` changes while running and refreshes the history index and UI after a change. The Provider panel shows the active history query channel, rollout provider distribution, SQLite provider distribution, `\\?\` path counts, recent-50 matches, project-visible counts, `PRAGMA quick_check`, schema detection, and a read-only repair plan.
 
 Low-risk path repair runs by default. It only converts equivalent Windows path formats such as `\\?\D:\...` / `D:/...` into Desktop-friendly `D:\...`; it does not switch providers or move conversations between projects.
 
 Compatibility mode provides a "Converge to current provider" button. It backs up first, then converges historical metadata to the current `model_provider`. This only guarantees list visibility; it does not guarantee that cross-account or cross-provider `encrypted_content` can resume.
+
+If `state_5.sqlite` fails `quick_check` or schema detection, use the Provider panel's "Quarantine dirty DB" action. It backs up `state_5.sqlite`, `state_5.sqlite-wal`, and `state_5.sqlite-shm`, then moves them into a quarantine directory; restart Codex so Codex can rebuild the local index. Diagnostics and history display are read-only by default. Writes only happen after clicking "Repair paths", "Converge to current provider", or "Quarantine dirty DB".
 
 If a project already shows `No conversations` while the sessions still exist, run the path-only repair command:
 
@@ -337,7 +339,7 @@ When publishing a new version, attach a wheel to the GitHub Release:
 python -m build
 ```
 
-Then upload `dist/codex_session_delete-<version>-py3-none-any.whl` and its matching `.sha256` file to the Release.
+The Release workflow builds the wheel / sdist, generates `.sha256` files and `SHA256SUMS`, uploads them to the Release, and emits artifact attestations for the build outputs.
 
 ## macOS Usage
 
@@ -481,6 +483,14 @@ Run tests:
 
 ```bash
 python -m pytest -q
+node --check codex_session_delete/inject/renderer-inject.js
+python scripts/disposable_cdp_smoke.py
+```
+
+When editing the injected renderer, change `codex_session_delete/inject_src/*.js` first, then rebuild the single-file artifact:
+
+```bash
+python scripts/build_renderer_inject.py
 ```
 
 Project structure:
@@ -490,14 +500,17 @@ codex_session_delete/
   cli.py                 CLI entry point
   launcher.py            Launches Codex and injects scripts
   cdp.py                 CDP communication and bridge
+  bridge_routes.py       HTTP/CDP bridge route registry
   helper_server.py       Local helper service
+  history_index.py       History Index/Doctor read-only index, fallback, quarantine
   storage_adapter.py     Local SQLite delete/undo
   provider_sync.py       provider metadata convergence and path repair
   settings_store.py      Codex++ backend settings
   windows_installer.py   Windows shortcuts and uninstall entries
   macos_installer.py     macOS app bundle setup
   watcher.py             Optional Windows watcher takeover
-  inject/renderer-inject.js
+  inject_src/*.js        renderer source modules
+  inject/renderer-inject.js generated single-file injection artifact
 
 tests/                   Automated tests
 ```

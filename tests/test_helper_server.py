@@ -58,6 +58,9 @@ class FakeDeleteService:
     def provider_converge(self):
         return {"status": "synced", "message": "Provider sync complete"}
 
+    def provider_quarantine_state(self):
+        return {"status": "synced", "message": "State DB quarantined"}
+
 
 class FakeExportService:
     def __init__(self):
@@ -271,6 +274,7 @@ def test_helper_server_returns_provider_history_endpoints():
         diagnostics = post_json(base + "/provider/diagnostics", {"project_cwd": "/project/a"})
         repaired = post_json(base + "/provider/repair-paths", {})
         converged = post_json(base + "/provider/converge", {})
+        quarantined = post_json(base + "/provider/quarantine-state", {})
     finally:
         server.shutdown()
         thread.join(timeout=3)
@@ -279,6 +283,7 @@ def test_helper_server_returns_provider_history_endpoints():
     assert diagnostics["project_cwd"] == "/project/a"
     assert repaired["status"] == "synced"
     assert converged["message"] == "Provider sync complete"
+    assert quarantined["message"] == "State DB quarantined"
 
 
 def test_helper_server_returns_project_file_tree():

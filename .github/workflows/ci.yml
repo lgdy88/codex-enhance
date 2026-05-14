@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install test dependencies
+        run: python -m pip install -e ".[test]"
+
+      - name: Run pytest
+        run: python -m pytest -q
+
+      - name: Run disposable smoke
+        run: python scripts/disposable_cdp_smoke.py
+
+      - name: Check renderer syntax
+        run: node --check codex_session_delete/inject/renderer-inject.js
+
+      - name: Check generated renderer is current
+        run: python scripts/build_renderer_inject.py && git diff --exit-code -- codex_session_delete/inject/renderer-inject.js
+
+      - name: Check whitespace
+        run: git diff --check

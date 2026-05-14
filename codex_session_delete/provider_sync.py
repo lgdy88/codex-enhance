@@ -469,7 +469,7 @@ def prune_backups(home: Path, keep_count: int = BACKUP_KEEP_COUNT) -> None:
             metadata = json.loads((path / "metadata.json").read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        if metadata.get("managedBy") in {"Codex++ provider sync", "Codex++ provider path repair"}:
+        if metadata.get("managedBy") in {"Codex++ provider sync", "Codex++ provider path repair", "Codex++ state DB quarantine"}:
             managed.append(path)
     managed.sort(key=lambda path: path.name, reverse=True)
     for path in managed[keep_count:]:

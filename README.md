@@ -134,11 +134,13 @@ Codex++ 启动后会解锁插件入口，并在会话列表悬停时显示删除
 - 切回其他 provider 后，希望历史对话继续出现在原项目下。
 - Windows 路径带有 `\\?\` 前缀导致 Desktop 项目列表匹配不到旧会话。
 
-Codex++ 会在运行中监听 `~/.codex/config.toml` 的 `model_provider` 变化，变化后刷新历史索引和 UI，不再只依赖启动前同步。设置面板的 Provider 页会显示历史查询通道、rollout provider 分布、SQLite provider 分布、`\\?\` 路径数量、最近 50 命中情况和项目可见数量。
+Codex++ 会在运行中监听 `~/.codex/config.toml` 的 `model_provider` 变化，变化后刷新历史索引和 UI，不再只依赖启动前同步。设置面板的 Provider 页会显示历史查询通道、rollout provider 分布、SQLite provider 分布、`\\?\` 路径数量、最近 50 命中、项目可见数量、`PRAGMA quick_check`、schema 检测和只读修复计划。
 
 低风险路径修复会默认执行：只把 `\\?\D:\...` / `D:/...` 这类等价 Windows 路径修成 Desktop 更容易匹配的 `D:\...`，不切换 provider，也不移动会话所属项目。
 
 兼容模式提供“收敛到当前 provider”按钮。点击后会先备份，再把历史 metadata 收敛到当前 `model_provider`。注意：这只保证列表可见，不保证跨账号或跨 provider 的 `encrypted_content` 能续聊。
+
+如果 `state_5.sqlite` 的 `quick_check` 或 schema 检测显示异常，可以在 Provider 面板手动点“隔离脏库”。该操作会先备份 `state_5.sqlite`、`state_5.sqlite-wal`、`state_5.sqlite-shm`，再把它们移入 quarantine 目录；重启 Codex 后由 Codex 重建本地索引。默认诊断和历史展示都是只读，只有点击“修复路径 / 收敛到当前 provider / 隔离脏库”才会写入。
 
 如果你已经遇到项目里显示 `暂无对话`，但确认会话没有删除，可以单独运行路径修复：
 
@@ -342,7 +344,7 @@ python -m codex_session_delete update
 python -m build
 ```
 
-然后把 `dist/codex_session_delete-<version>-py3-none-any.whl` 和对应的 `.sha256` 文件上传到对应 Release。
+Release workflow 会构建 wheel / sdist、生成 `.sha256` 与 `SHA256SUMS`，上传到 Release，并为构建产物生成 artifact attestation。
 
 ## macOS 使用
 
@@ -486,6 +488,14 @@ python -m codex_session_delete setup
 
 ```bash
 python -m pytest -q
+node --check codex_session_delete/inject/renderer-inject.js
+python scripts/disposable_cdp_smoke.py
+```
+
+修改注入脚本时先改 `codex_session_delete/inject_src/*.js`，再生成单文件产物：
+
+```bash
+python scripts/build_renderer_inject.py
 ```
 
 项目结构：
@@ -495,14 +505,17 @@ codex_session_delete/
   cli.py                 CLI 入口
   launcher.py            启动 Codex 并注入脚本
   cdp.py                 CDP 通信与 bridge
+  bridge_routes.py       HTTP/CDP bridge route registry
   helper_server.py       本地 helper 服务
+  history_index.py       History Index/Doctor 只读索引、fallback、quarantine
   storage_adapter.py     本地 SQLite 删除/撤销
   provider_sync.py       provider metadata 收敛与路径修复
   settings_store.py      Codex++ 后端设置
   windows_installer.py   Windows 快捷方式与卸载项
   macos_installer.py     macOS app bundle 安装
   watcher.py             Windows 常驻 watcher（可选，原生启动接管）
-  inject/renderer-inject.js
+  inject_src/*.js        renderer 源模块
+  inject/renderer-inject.js 生成后的单文件注入产物
 
 tests/                   自动化测试
 ```

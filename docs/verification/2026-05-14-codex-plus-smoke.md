@@ -31,7 +31,7 @@ Not executed destructively:
 - Codex App URL observed through CDP: `app://-/index.html?hostId=local`
 - CDP port: `9229`
 - Helper base observed in renderer: `http://127.0.0.1:57321`
-- Repository package version: `1.0.6`
+- Repository package version: `1.0.7`
 
 ## Automated Tests
 
@@ -115,7 +115,7 @@ The smoke bridge returned fake success for read/status/settings endpoints and bl
 
 Observed repository-script state:
 
-- Menu text: `Codex++ 1.0.6`
+- Menu text: `Codex++ 1.0.7`
 - Settings modal present: yes
 - Backend status: `ok`
 - Backend label: `后端已连接（smoke）`
@@ -173,13 +173,13 @@ This does not prove Timeline failure. It means the current page state was not a 
 - The smoke check did not execute destructive mutations against real user data.
 - Plugin installation was not executed; only plugin entry unlock and disabled install candidate state were observed.
 - Timeline marker rendering was not fully verified because the observed page had no visible user-message candidates.
-- The running installed injection was `1.0.5`; repository `1.0.6` was verified by guarded CDP injection rather than by restarting Codex++.
+- The running installed injection was `1.0.5`; repository `1.0.7` should be verified by guarded CDP injection or the disposable smoke harness rather than by restarting a live user session.
 
 ## Follow-Up
 
 For release confidence, run a manual end-to-end pass in a disposable Codex profile or test account:
 
-1. Start Codex++ from the repository or installed `1.0.6` shortcut.
+1. Start Codex++ from the repository or installed `1.0.7` shortcut.
 2. Open a conversation with at least two visible user turns and verify Timeline markers and jump behavior.
 3. Create a disposable conversation and verify delete, undo, export, and project move against that disposable data.
 4. Visit a plugin detail page with an unavailable install button and verify the forced-install button state before installing any plugin.

@@ -32,6 +32,9 @@ class FakeDeleteService:
     def provider_converge(self):
         return {"status": "synced", "message": "Provider sync complete"}
 
+    def provider_quarantine_state(self):
+        return {"status": "synced", "message": "State DB quarantined"}
+
 
 class FakeExportService:
     def export(self, session):
@@ -103,7 +106,7 @@ def test_handle_bridge_request_reports_and_repairs_backend_status(tmp_path):
 def test_handle_bridge_request_gets_backend_settings(monkeypatch, tmp_path):
     store = SettingsStore(tmp_path / "settings.json")
     store.update({"providerSyncEnabled": True})
-    monkeypatch.setattr("codex_session_delete.launcher.SettingsStore", lambda: store)
+    monkeypatch.setattr("codex_session_delete.bridge_routes.SettingsStore", lambda: store)
     manager = UserScriptManager(tmp_path / "builtin", tmp_path / "user", tmp_path / "config.json")
     runtime = FakeRuntime(manager)
 
@@ -114,7 +117,7 @@ def test_handle_bridge_request_gets_backend_settings(monkeypatch, tmp_path):
 
 def test_handle_bridge_request_sets_backend_settings(monkeypatch, tmp_path):
     store = SettingsStore(tmp_path / "settings.json")
-    monkeypatch.setattr("codex_session_delete.launcher.SettingsStore", lambda: store)
+    monkeypatch.setattr("codex_session_delete.bridge_routes.SettingsStore", lambda: store)
     manager = UserScriptManager(tmp_path / "builtin", tmp_path / "user", tmp_path / "config.json")
     runtime = FakeRuntime(manager)
 
@@ -134,7 +137,7 @@ def test_handle_bridge_request_installs_browser_mcp(monkeypatch, tmp_path):
             return {"status": "ok", "message": "written", "servers": []}
 
     monkeypatch.setattr(
-        "codex_session_delete.launcher.install_browser_mcp_servers",
+        "codex_session_delete.bridge_routes.install_browser_mcp_servers",
         lambda servers, chrome_mode, browser_url: calls.append((servers, chrome_mode, browser_url)) or Result(),
     )
 
@@ -159,7 +162,7 @@ def test_handle_bridge_request_sets_mcp_enabled(monkeypatch, tmp_path):
         def to_dict(self):
             return {"status": "ok", "message": "updated", "servers": [{"name": "github", "enabled": False}]}
 
-    monkeypatch.setattr("codex_session_delete.launcher.set_mcp_server_enabled", lambda name, enabled: calls.append((name, enabled)) or Result())
+    monkeypatch.setattr("codex_session_delete.bridge_routes.set_mcp_server_enabled", lambda name, enabled: calls.append((name, enabled)) or Result())
 
     result = handle_bridge_request(FakeDeleteService(), FakeExportService(), "/mcp/set-enabled", {"name": "github", "enabled": False}, runtime)
 
@@ -176,7 +179,7 @@ def test_handle_bridge_request_removes_browser_mcp(monkeypatch, tmp_path):
         def to_dict(self):
             return {"status": "ok", "message": "removed", "servers": []}
 
-    monkeypatch.setattr("codex_session_delete.launcher.remove_browser_mcp_servers", lambda servers: calls.append(servers) or Result())
+    monkeypatch.setattr("codex_session_delete.bridge_routes.remove_browser_mcp_servers", lambda servers: calls.append(servers) or Result())
 
     result = handle_bridge_request(FakeDeleteService(), FakeExportService(), "/mcp/remove", {"servers": ["all"]}, runtime)
 
@@ -211,9 +214,11 @@ def test_handle_bridge_request_returns_provider_history_endpoints(tmp_path):
     diagnostics = handle_bridge_request(FakeDeleteService(), FakeExportService(), "/provider/diagnostics", {"project_cwd": str(tmp_path)}, runtime)
     repaired = handle_bridge_request(FakeDeleteService(), FakeExportService(), "/provider/repair-paths", {}, runtime)
     converged = handle_bridge_request(FakeDeleteService(), FakeExportService(), "/provider/converge", {}, runtime)
+    quarantined = handle_bridge_request(FakeDeleteService(), FakeExportService(), "/provider/quarantine-state", {}, runtime)
 
     assert status["current_provider"] == "custom"
     assert diagnostics["project_cwd"] == str(tmp_path)
     assert repaired["status"] == "synced"
     assert converged["message"] == "Provider sync complete"
+    assert quarantined["message"] == "State DB quarantined"
 

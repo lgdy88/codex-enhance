@@ -1,32 +1,70 @@
-  name: Release assets
+name: Release assets
 
-  on:
-    release:
-      types: [published]
+on:
+  release:
+    types: [published]
 
-  permissions:
-    contents: write
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
 
-  jobs:
-    upload-source-asset:
-      runs-on: ubuntu-latest
+jobs:
+  upload-release-assets:
+    runs-on: ubuntu-latest
 
-      steps:
-        - name: Checkout release tag
-          uses: actions/checkout@v4
-          with:
-            ref: ${{ github.event.release.tag_name }}
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
 
-        - name: Create source package
-          run: |
-            git archive \
-              --format=zip \
-              --output=CodexPlusPlus.zip \
-              --prefix=CodexPlusPlus/ \
-              HEAD
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-        - name: Upload CodexPlusPlus.zip to release
-          uses: softprops/action-gh-release@v2
-          with:
-            tag_name: ${{ github.event.release.tag_name }}
-            files: CodexPlusPlus.zip
+      - name: Install build backend
+        run: python -m pip install build
+
+      - name: Verify generated renderer
+        run: python scripts/build_renderer_inject.py && git diff --exit-code -- codex_session_delete/inject/renderer-inject.js
+
+      - name: Build Python distributions
+        run: python -m build
+
+      - name: Create SHA-256 checksums
+        shell: bash
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS
+          for file in *; do
+            if [[ "$file" != "SHA256SUMS" && "$file" != *.sha256 ]]; then
+              sha256sum "$file" > "$file.sha256"
+            fi
+          done
+
+      - name: Create source package
+        run: |
+          git archive \
+            --format=zip \
+            --output=CodexPlusPlus.zip \
+            --prefix=CodexPlusPlus/ \
+            HEAD
+          sha256sum CodexPlusPlus.zip > CodexPlusPlus.zip.sha256
+
+      - name: Attest release artifacts
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/*
+            CodexPlusPlus.zip
+
+      - name: Upload assets to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.release.tag_name }}
+          files: |
+            dist/*
+            CodexPlusPlus.zip
+            CodexPlusPlus.zip.sha256
