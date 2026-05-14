@@ -490,6 +490,13 @@ def test_renderer_script_includes_user_script_manager_ui_contract():
     assert "codexPlusMenuVersion !== \"6\"" in text
     assert "codexPlusTriggerInstalled = \"5\"" in text
     assert ".codex-plus-trigger:hover" not in text
+    assert "function headerTitleRegion" in text
+    assert "function isHeaderToolbarButton" in text
+    assert 'button.closest(".ms-auto.flex.shrink-0.items-center")' in text
+    assert "const titleRegion = headerTitleRegion(header);" in text
+    assert "if (titleRegion?.contains?.(button)) return false;" in text
+    assert ".map((button) => ({ button, rect: button.getBoundingClientRect() }))" in text
+    assert ".filter(({ button, rect }) => isHeaderToolbarButton(button, header, rect))" in text
 
 
 def test_renderer_script_has_sponsor_tab():

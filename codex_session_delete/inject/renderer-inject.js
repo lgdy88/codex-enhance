@@ -815,14 +815,32 @@
     }
   }
 
+  function headerTitleRegion(header) {
+    const candidates = Array.from(header?.querySelectorAll?.('[data-state], [class*="truncate"], [class*="text-base"]') || []);
+    return candidates.find((node) => {
+      if (!node?.querySelector?.('[data-state], button')) return false;
+      if (!node.textContent?.trim()) return false;
+      return node.closest?.(".draggable") || node.closest?.('[class*="grid-cols-[minmax(0,1fr)]"]');
+    }) || null;
+  }
+
+  function isHeaderToolbarButton(button, header, rect) {
+    if (!button || button.closest?.(`#${codexPlusMenuId}`)) return false;
+    if (!(rect.width > 0 && rect.height > 0 && rect.left > window.innerWidth / 2)) return false;
+    const buttonCluster = button.closest(".ms-auto.flex.shrink-0.items-center");
+    if (buttonCluster && header?.contains(buttonCluster)) return true;
+    const titleRegion = headerTitleRegion(header);
+    if (titleRegion?.contains?.(button)) return false;
+    return !!button.closest?.('[class*="ms-auto"][class*="shrink-0"][class*="items-center"]');
+  }
+
   function updateFloatingCodexPlusMenuPosition(menu) {
     if (!menu?.classList?.contains(codexPlusMenuFloatingClass)) return;
     const header = document.querySelector(selectors.appHeader) || document.querySelector("header");
     if (!header) return;
     const toolbarButtons = Array.from(header.querySelectorAll("button"))
-      .filter((button) => !button.closest(`#${codexPlusMenuId}`))
       .map((button) => ({ button, rect: button.getBoundingClientRect() }))
-      .filter(({ rect }) => rect.width > 0 && rect.height > 0 && rect.left > window.innerWidth / 2)
+      .filter(({ button, rect }) => isHeaderToolbarButton(button, header, rect))
       .sort((left, right) => left.rect.left - right.rect.left);
     const anchor = toolbarButtons[0];
     if (anchor) {

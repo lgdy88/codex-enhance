@@ -365,7 +365,7 @@ def test_cli_check_update_prints_latest_release(monkeypatch, capsys):
     assert exit_code == 0
     output = capsys.readouterr().out
     assert "发现新版本 v1.0.5" in output
-    assert "CodexPlusPlus/releases/tag/v1.0.5" in output
+    assert "codex-enhance/releases/tag/v1.0.5" in output
 
 
 def test_cli_check_update_reports_current_version(monkeypatch, capsys):

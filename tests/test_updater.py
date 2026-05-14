@@ -40,7 +40,13 @@ def test_release_from_github_payload_selects_wheel_asset():
 
 def test_release_from_github_payload_selects_matching_sha256(monkeypatch):
     seen = {}
-    monkeypatch.setattr(updater, "download_digest", lambda url, asset_name="": seen.setdefault("asset_name", asset_name) or "a" * 64)
+
+    def fake_download_digest(url, asset_name=""):
+        seen["url"] = url
+        seen["asset_name"] = asset_name
+        return "a" * 64
+
+    monkeypatch.setattr(updater, "download_digest", fake_download_digest)
 
     release = updater.Release.from_github_payload(
         {
@@ -54,6 +60,7 @@ def test_release_from_github_payload_selects_matching_sha256(monkeypatch):
 
     assert release.asset_name == "pkg.whl"
     assert release.asset_sha256 == "a" * 64
+    assert seen["url"] == "https://example.test/pkg.whl.sha256"
     assert seen["asset_name"] == "pkg.whl"
 
 
@@ -128,7 +135,7 @@ def test_perform_update_installs_downloaded_wheel_and_reruns_setup(monkeypatch, 
         body="fixes",
         asset_name="pkg.whl",
         asset_url="https://example.test/pkg.whl",
-        asset_sha256="b0fd95a3b061aea3764b2b06c9521f24d78e1a4bb0cc4c196a8514cdb1f7a2fb",
+        asset_sha256="ba59926159d2aa256eb8739b8da7e2b574b960e1202c6d624cbe981cef996c91",
     )
     wheel = tmp_path / "pkg.whl"
     wheel.write_bytes(b"wheel")
