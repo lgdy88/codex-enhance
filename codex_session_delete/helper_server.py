@@ -18,6 +18,7 @@ class DeleteService(Protocol):
     def move_thread_workspace(self, session: SessionRef, target_cwd: str) -> dict[str, object]: ...
     def thread_sort_key(self, session: SessionRef) -> dict[str, object]: ...
     def thread_sort_keys(self, sessions: list[SessionRef]) -> dict[str, object]: ...
+    def project_threads(self, project_cwd: str, limit: int = 30) -> dict[str, object]: ...
 
 
 class ExportService(Protocol):
@@ -105,6 +106,9 @@ class _Handler(BaseHTTPRequestHandler):
                     if isinstance(item, dict)
                 ] if isinstance(raw_sessions, list) else []
                 self._send_json(self.server.service.thread_sort_keys(sessions))
+                return
+            if self.path == "/project-threads":
+                self._send_json(self.server.service.project_threads(str(payload.get("project_cwd", "")), int(payload.get("limit", 30) or 30)))
                 return
             self._send_json({"error": "not found"}, status=404)
         except Exception as exc:

@@ -19,6 +19,7 @@ from codex_session_delete.backup_store import BackupStore
 from codex_session_delete.cdp import evaluate_user_scripts, inject_file, open_devtools
 from codex_session_delete.helper_server import HelperServer
 from codex_session_delete.markdown_exporter import MarkdownExportService
+from codex_session_delete.mcp_config import all_mcp_status, install_browser_mcp_servers, remove_browser_mcp_servers, set_mcp_server_enabled
 from codex_session_delete.models import DeleteResult, DeleteStatus, SessionRef
 from codex_session_delete.provider_sync import ProviderSyncStatus, run_provider_sync
 from codex_session_delete.settings_store import BackendSettings, SettingsStore
@@ -66,6 +67,11 @@ class ApiFirstDeleteService:
             return {"status": DeleteStatus.FAILED.value, "message": "No local database configured", "sort_keys": []}
         return self.local_adapter.codex_thread_sort_keys(sessions)
 
+    def project_threads(self, project_cwd: str, limit: int = 30) -> dict[str, object]:
+        if self.local_adapter is None:
+            return {"status": DeleteStatus.FAILED.value, "message": "No local database configured", "threads": []}
+        return self.local_adapter.codex_project_threads(project_cwd, limit)
+
 
 class InjectedHelperServer(HelperServer):
     bridge_socket: Any = None
@@ -92,6 +98,16 @@ class CodexPlusRuntime:
 
     def repair_backend(self) -> dict[str, object]:
         return self.backend_status()
+
+
+@dataclass
+class ExistingCodexCdpProcess:
+    debug_port: int
+    poll_interval: float = 2.0
+
+    def wait(self) -> None:
+        while _port_has_codex_cdp(self.debug_port):
+            time.sleep(self.poll_interval)
 
 
 def user_scripts_config_dir() -> Path:
@@ -126,8 +142,16 @@ def _find_available_loopback_port() -> int:
         return int(probe.getsockname()[1])
 
 
+def _port_has_codex_cdp(port: int) -> bool:
+    try:
+        cdp.pick_page_target(cdp.list_targets(port))
+        return True
+    except Exception:
+        return False
+
+
 def select_windows_loopback_port(requested_port: int) -> int:
-    if sys.platform != "win32" or _can_bind_loopback_port(requested_port):
+    if sys.platform != "win32" or _can_bind_loopback_port(requested_port) or _port_has_codex_cdp(requested_port):
         return requested_port
     return _find_available_loopback_port()
 
@@ -340,6 +364,7 @@ def launch_and_inject(app_dir: Path | None, db_path: Path | None, backup_dir: Pa
         raise RuntimeError("Codex App directory not found")
     debug_port = select_windows_loopback_port(debug_port)
     helper_port = select_windows_loopback_port(helper_port)
+    reuse_existing_codex = _port_has_codex_cdp(debug_port)
     service = ApiFirstDeleteService(UnavailableApiAdapter(), db_path, backup_dir)
     export_service = MarkdownExportService(db_path)
     script_path = Path(__file__).parent / "inject" / "renderer-inject.js"
@@ -354,7 +379,7 @@ def launch_and_inject(app_dir: Path | None, db_path: Path | None, backup_dir: Pa
     server = start_helper(service, export_service, port=helper_port)
     codex_proc = None
     try:
-        codex_proc = launch_codex_app(resolved_app_dir, debug_port)
+        codex_proc = ExistingCodexCdpProcess(debug_port) if reuse_existing_codex else launch_codex_app(resolved_app_dir, debug_port)
         server.bridge_socket = inject_with_retry(debug_port, script_path, server.port, service, export_service, runtime)
         return server, codex_proc
     except Exception:
@@ -410,6 +435,22 @@ def handle_bridge_request(
         return runtime.backend_status()
     if path == "/backend/repair" and runtime:
         return runtime.repair_backend()
+    if path == "/mcp/status" and runtime:
+        return {"status": "ok", "message": "MCP 配置已读取", "servers": [server.to_dict() for server in all_mcp_status()]}
+    if path == "/mcp/set-enabled" and runtime:
+        return set_mcp_server_enabled(str(payload.get("name", "")), bool(payload.get("enabled", True))).to_dict()
+    if path == "/mcp/install" and runtime:
+        servers = payload.get("servers", ["all"])
+        selected = [str(item) for item in servers] if isinstance(servers, list) else ["all"]
+        return install_browser_mcp_servers(
+            selected,
+            chrome_mode=str(payload.get("chromeMode", "auto-connect")),
+            browser_url=str(payload.get("browserUrl", "http://127.0.0.1:9222")),
+        ).to_dict()
+    if path == "/mcp/remove" and runtime:
+        servers = payload.get("servers", ["all"])
+        selected = [str(item) for item in servers] if isinstance(servers, list) else ["all"]
+        return remove_browser_mcp_servers(selected).to_dict()
     if path == "/delete":
         session = SessionRef(session_id=str(payload.get("session_id", "")), title=str(payload.get("title", "")))
         return service.delete(session).to_dict()
@@ -435,4 +476,6 @@ def handle_bridge_request(
             if isinstance(item, dict)
         ] if isinstance(raw_sessions, list) else []
         return service.thread_sort_keys(sessions)
+    if path == "/project-threads":
+        return service.project_threads(str(payload.get("project_cwd", "")), int(payload.get("limit", 30) or 30))
     return {"status": DeleteStatus.FAILED.value, "session_id": str(payload.get("session_id", "")), "message": "Unknown bridge path"}

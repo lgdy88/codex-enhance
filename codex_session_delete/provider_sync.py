@@ -40,6 +40,7 @@ class SessionChange:
     cwd: str | None
     has_user_event: bool
     rewrite_needed: bool
+    provider_rewrite_needed: bool
 
 
 def default_codex_home() -> Path:
@@ -60,16 +61,15 @@ def run_provider_sync(codex_home: Path | None = None) -> ProviderSyncResult:
         changes = collect_session_changes(home, target_provider)
         rewrite_changes = [change for change in changes if change.rewrite_needed]
         thread_ids_with_user_events = {change.thread_id for change in changes if change.thread_id and change.has_user_event}
-        cwd_by_thread_id = {change.thread_id: change.cwd for change in changes if change.thread_id and change.cwd}
-        sqlite_update_count = count_sqlite_updates(home / "state_5.sqlite", target_provider, thread_ids_with_user_events, cwd_by_thread_id)
-        global_state_update_count = count_global_state_updates(home / ".codex-global-state.json", cwd_by_thread_id)
+        sqlite_update_count = count_sqlite_updates(home / "state_5.sqlite", target_provider, thread_ids_with_user_events)
+        global_state_update_count = count_global_state_updates(home / ".codex-global-state.json")
         if not rewrite_changes and sqlite_update_count == 0 and global_state_update_count == 0:
             return ProviderSyncResult(ProviderSyncStatus.SYNCED, "Provider sync already up to date", target_provider)
         backup_dir = create_backup(home, target_provider, rewrite_changes)
         try:
             apply_session_changes(rewrite_changes)
-            sqlite_rows_updated = apply_sqlite_update(home / "state_5.sqlite", target_provider, thread_ids_with_user_events, cwd_by_thread_id)
-            apply_global_state_update(home / ".codex-global-state.json", cwd_by_thread_id)
+            sqlite_rows_updated = apply_sqlite_update(home / "state_5.sqlite", target_provider, thread_ids_with_user_events)
+            apply_global_state_update(home / ".codex-global-state.json")
             prune_backups(home)
         except Exception:
             restore_session_changes(rewrite_changes)
@@ -84,6 +84,46 @@ def run_provider_sync(codex_home: Path | None = None) -> ProviderSyncResult:
         )
     except (sqlite3.OperationalError, OSError) as exc:
         return ProviderSyncResult(ProviderSyncStatus.SKIPPED, f"Provider sync skipped: {exc}", target_provider)
+    finally:
+        release_lock(lock_dir)
+
+
+def run_provider_path_repair(codex_home: Path | None = None) -> ProviderSyncResult:
+    home = codex_home or default_codex_home()
+    if not home.exists():
+        return ProviderSyncResult(ProviderSyncStatus.SKIPPED, f"Codex home not found: {home}")
+    target_provider = read_current_provider(home / "config.toml")
+    lock_dir = home / "tmp" / "provider-sync.lock"
+    try:
+        acquire_lock(lock_dir)
+    except FileExistsError:
+        return ProviderSyncResult(ProviderSyncStatus.SKIPPED, f"Provider sync lock exists: {lock_dir}", target_provider)
+    try:
+        changes = collect_session_changes(home, None)
+        rewrite_changes = [change for change in changes if change.rewrite_needed]
+        sqlite_update_count = count_sqlite_path_updates(home / "state_5.sqlite")
+        global_state_update_count = count_global_state_updates(home / ".codex-global-state.json")
+        if not rewrite_changes and sqlite_update_count == 0 and global_state_update_count == 0:
+            return ProviderSyncResult(ProviderSyncStatus.SYNCED, "Provider path repair already up to date", target_provider)
+        backup_dir = create_backup(home, target_provider, rewrite_changes, operation="Codex++ provider path repair")
+        try:
+            apply_session_changes(rewrite_changes)
+            sqlite_rows_updated = apply_sqlite_path_update(home / "state_5.sqlite")
+            apply_global_state_update(home / ".codex-global-state.json")
+            prune_backups(home)
+        except Exception:
+            restore_session_changes(rewrite_changes)
+            raise
+        return ProviderSyncResult(
+            ProviderSyncStatus.SYNCED,
+            "Provider path repair complete",
+            target_provider,
+            backup_dir,
+            len(rewrite_changes),
+            sqlite_rows_updated,
+        )
+    except (sqlite3.OperationalError, OSError) as exc:
+        return ProviderSyncResult(ProviderSyncStatus.SKIPPED, f"Provider path repair skipped: {exc}", target_provider)
     finally:
         release_lock(lock_dir)
 
@@ -137,11 +177,19 @@ def to_desktop_workspace_path(value: str | None) -> str | None:
     if stripped.lower().startswith("\\\\?\\unc\\"):
         return "\\\\" + stripped[8:].replace("/", "\\")
     if stripped.startswith("\\\\?\\"):
-        return stripped[4:].replace("\\", "/")
+        return stripped[4:].replace("/", "\\")
+    if is_windows_drive_path(stripped):
+        return stripped.replace("/", "\\")
+    if stripped.startswith("\\\\"):
+        return stripped.replace("/", "\\")
     return stripped
 
 
-def collect_session_changes(home: Path, target_provider: str) -> list[SessionChange]:
+def is_windows_drive_path(value: str) -> bool:
+    return len(value) >= 3 and value[1] == ":" and value[0].isalpha() and value[2] in {"\\", "/"}
+
+
+def collect_session_changes(home: Path, target_provider: str | None) -> list[SessionChange]:
     changes: list[SessionChange] = []
     for path in rollout_files(home):
         text = path.read_text(encoding="utf-8")
@@ -156,17 +204,22 @@ def collect_session_changes(home: Path, target_provider: str) -> list[SessionCha
         if not isinstance(payload, dict):
             continue
         thread_id = payload.get("id") if isinstance(payload.get("id"), str) else None
-        cwd = to_desktop_workspace_path(payload.get("cwd") if isinstance(payload.get("cwd"), str) else None)
+        raw_cwd = payload.get("cwd") if isinstance(payload.get("cwd"), str) else None
+        cwd = to_desktop_workspace_path(raw_cwd)
         has_user_event = '"user_message"' in separator or '"user_input"' in separator
-        rewrite_needed = payload.get("model_provider") != target_provider
-        if rewrite_needed:
+        provider_rewrite_needed = target_provider is not None and payload.get("model_provider") != target_provider
+        cwd_rewrite_needed = bool(raw_cwd and cwd and raw_cwd != cwd)
+        rewrite_needed = provider_rewrite_needed or cwd_rewrite_needed
+        if provider_rewrite_needed:
             payload["model_provider"] = target_provider
+        if cwd_rewrite_needed:
+            payload["cwd"] = cwd
         next_first_line = json.dumps(record, ensure_ascii=False, separators=(",", ":")) if rewrite_needed else first_line
-        changes.append(SessionChange(path, first_line, next_first_line, separator, thread_id, cwd, has_user_event, rewrite_needed))
+        changes.append(SessionChange(path, first_line, next_first_line, separator, thread_id, cwd, has_user_event, rewrite_needed, provider_rewrite_needed))
     return changes
 
 
-def create_backup(home: Path, target_provider: str, changes: list[SessionChange]) -> Path:
+def create_backup(home: Path, target_provider: str, changes: list[SessionChange], operation: str = "Codex++ provider sync") -> Path:
     backup_root = home / "backups_state" / "provider-sync"
     backup_dir = backup_root / time.strftime("%Y%m%d%H%M%S")
     suffix = 0
@@ -190,7 +243,7 @@ def create_backup(home: Path, target_provider: str, changes: list[SessionChange]
     ]
     (backup_dir / "session-meta-backup.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     (backup_dir / "metadata.json").write_text(
-        json.dumps({"managedBy": "Codex++ provider sync", "targetProvider": target_provider}, ensure_ascii=False, indent=2),
+        json.dumps({"managedBy": operation, "targetProvider": target_provider}, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     return backup_dir
@@ -210,7 +263,49 @@ def table_columns(con: sqlite3.Connection, table: str) -> set[str]:
     return {row[1] for row in con.execute(f'PRAGMA table_info("{table}")')}
 
 
-def count_sqlite_updates(db_path: Path, target_provider: str, user_event_thread_ids: set[str | None], cwd_by_thread_id: dict[str | None, str]) -> int:
+def sqlite_cwd_normalization_rows(con: sqlite3.Connection) -> list[tuple[str, str, str]]:
+    rows: list[tuple[str, str, str]] = []
+    for thread_id, cwd in con.execute("SELECT id, cwd FROM threads WHERE cwd IS NOT NULL AND cwd <> ''"):
+        normalized = to_desktop_workspace_path(cwd)
+        if thread_id and normalized and normalized != cwd:
+            rows.append((str(thread_id), str(cwd), normalized))
+    return rows
+
+
+def count_sqlite_path_updates(db_path: Path) -> int:
+    if not db_path.exists():
+        return 0
+    con = sqlite3.connect(db_path)
+    try:
+        columns = table_columns(con, "threads")
+        if "cwd" not in columns:
+            return 0
+        return len(sqlite_cwd_normalization_rows(con))
+    finally:
+        con.close()
+
+
+def apply_sqlite_path_update(db_path: Path) -> int:
+    if not db_path.exists():
+        return 0
+    con = sqlite3.connect(db_path)
+    try:
+        columns = table_columns(con, "threads")
+        if "cwd" not in columns:
+            return 0
+        updated_rows = 0
+        for thread_id, original_cwd, normalized_cwd in sqlite_cwd_normalization_rows(con):
+            updated_rows += con.execute("UPDATE threads SET cwd = ? WHERE id = ? AND cwd = ?", (normalized_cwd, thread_id, original_cwd)).rowcount
+        con.commit()
+        return updated_rows
+    except Exception:
+        con.rollback()
+        raise
+    finally:
+        con.close()
+
+
+def count_sqlite_updates(db_path: Path, target_provider: str, user_event_thread_ids: set[str | None]) -> int:
     if not db_path.exists():
         return 0
     con = sqlite3.connect(db_path)
@@ -224,15 +319,13 @@ def count_sqlite_updates(db_path: Path, target_provider: str, user_event_thread_
                 if thread_id:
                     total += con.execute("SELECT COUNT(*) FROM threads WHERE id = ? AND COALESCE(has_user_event, 0) <> 1", (thread_id,)).fetchone()[0]
         if "cwd" in columns:
-            for thread_id, cwd in cwd_by_thread_id.items():
-                if thread_id and cwd:
-                    total += con.execute("SELECT COUNT(*) FROM threads WHERE id = ? AND COALESCE(cwd, '') <> ?", (thread_id, cwd)).fetchone()[0]
+            total += len(sqlite_cwd_normalization_rows(con))
         return int(total)
     finally:
         con.close()
 
 
-def apply_sqlite_update(db_path: Path, target_provider: str, user_event_thread_ids: set[str | None], cwd_by_thread_id: dict[str | None, str]) -> int:
+def apply_sqlite_update(db_path: Path, target_provider: str, user_event_thread_ids: set[str | None]) -> int:
     if not db_path.exists():
         return 0
     con = sqlite3.connect(db_path)
@@ -240,17 +333,16 @@ def apply_sqlite_update(db_path: Path, target_provider: str, user_event_thread_i
         columns = table_columns(con, "threads")
         if "model_provider" not in columns:
             return 0
-        provider_rows = con.execute("UPDATE threads SET model_provider = ? WHERE COALESCE(model_provider, '') <> ?", (target_provider, target_provider)).rowcount
+        updated_rows = con.execute("UPDATE threads SET model_provider = ? WHERE COALESCE(model_provider, '') <> ?", (target_provider, target_provider)).rowcount
         if "has_user_event" in columns:
             for thread_id in user_event_thread_ids:
                 if thread_id:
-                    con.execute("UPDATE threads SET has_user_event = 1 WHERE id = ? AND COALESCE(has_user_event, 0) <> 1", (thread_id,))
+                    updated_rows += con.execute("UPDATE threads SET has_user_event = 1 WHERE id = ? AND COALESCE(has_user_event, 0) <> 1", (thread_id,)).rowcount
         if "cwd" in columns:
-            for thread_id, cwd in cwd_by_thread_id.items():
-                if thread_id and cwd:
-                    con.execute("UPDATE threads SET cwd = ? WHERE id = ? AND COALESCE(cwd, '') <> ?", (cwd, thread_id, cwd))
+            for thread_id, original_cwd, normalized_cwd in sqlite_cwd_normalization_rows(con):
+                updated_rows += con.execute("UPDATE threads SET cwd = ? WHERE id = ? AND cwd = ?", (normalized_cwd, thread_id, original_cwd)).rowcount
         con.commit()
-        return provider_rows
+        return updated_rows
     except Exception:
         con.rollback()
         raise
@@ -287,10 +379,6 @@ def dedupe_paths(paths: list[str]) -> list[str]:
     return result
 
 
-def normalized_workspace_roots(cwd_by_thread_id: dict[str | None, str]) -> list[str]:
-    return dedupe_paths([cwd for cwd in cwd_by_thread_id.values() if cwd])
-
-
 def path_array(value: object) -> list[str]:
     if isinstance(value, list):
         return [item for item in value if isinstance(item, str) and item.strip()]
@@ -309,9 +397,9 @@ def resolve_global_state_keyed_paths(value: object) -> object:
     return result
 
 
-def append_missing_values(values: object, additions: list[str]) -> tuple[list[str], int]:
+def normalize_existing_values(values: object) -> tuple[list[str], int]:
     current = path_array(values)
-    next_values = dedupe_paths([*current, *additions])
+    next_values = dedupe_paths(current)
     return next_values, count_array_changes(current, next_values)
 
 
@@ -320,14 +408,11 @@ def count_array_changes(previous: list[str], next_values: list[str]) -> int:
     return sum(1 for index in range(compared) if (previous[index] if index < len(previous) else None) != (next_values[index] if index < len(next_values) else None))
 
 
-def count_global_state_updates(global_state_path: Path, cwd_by_thread_id: dict[str | None, str]) -> int:
-    roots = normalized_workspace_roots(cwd_by_thread_id)
-    if not roots:
-        return 0
+def count_global_state_updates(global_state_path: Path) -> int:
     state = load_global_state(global_state_path)
     total = 0
     for key in ("electron-saved-workspace-roots", "project-order", "active-workspace-roots"):
-        _, changed = append_missing_values(state.get(key), roots)
+        _, changed = normalize_existing_values(state.get(key))
         total += changed
     if "electron-workspace-root-labels" in state:
         next_labels = resolve_global_state_keyed_paths(state.get("electron-workspace-root-labels"))
@@ -335,14 +420,11 @@ def count_global_state_updates(global_state_path: Path, cwd_by_thread_id: dict[s
     return total
 
 
-def apply_global_state_update(global_state_path: Path, cwd_by_thread_id: dict[str | None, str]) -> int:
-    roots = normalized_workspace_roots(cwd_by_thread_id)
-    if not roots:
-        return 0
+def apply_global_state_update(global_state_path: Path) -> int:
     state = load_global_state(global_state_path)
     total = 0
     for key in ("electron-saved-workspace-roots", "project-order", "active-workspace-roots"):
-        state[key], changed = append_missing_values(state.get(key), roots)
+        state[key], changed = normalize_existing_values(state.get(key))
         total += changed
     if "electron-workspace-root-labels" in state:
         next_labels = resolve_global_state_keyed_paths(state.get("electron-workspace-root-labels"))
@@ -366,7 +448,7 @@ def prune_backups(home: Path, keep_count: int = BACKUP_KEEP_COUNT) -> None:
             metadata = json.loads((path / "metadata.json").read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        if metadata.get("managedBy") == "Codex++ provider sync":
+        if metadata.get("managedBy") in {"Codex++ provider sync", "Codex++ provider path repair"}:
             managed.append(path)
     managed.sort(key=lambda path: path.name, reverse=True)
     for path in managed[keep_count:]:

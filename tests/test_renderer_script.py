@@ -291,7 +291,7 @@ def test_renderer_script_sidebar_delete_opens_on_pointerup_when_click_is_unrelia
 
     text = Path("codex_session_delete/inject/renderer-inject.js").read_text(encoding="utf-8")
     assert "updateDeleteButtonOffsets" in text
-    assert "codexDeleteStyleVersion = \"7\"" in text
+    assert "codexDeleteStyleVersion = \"8\"" in text
     assert "right: 66px" in text
     assert "确认" in text
     assert "归档对话" in text
@@ -525,6 +525,29 @@ def test_renderer_script_has_backend_provider_sync_toggle():
     assert "setBackendSetting" in text
 
 
+def test_renderer_script_has_browser_mcp_manager_ui_contract():
+    text = Path("codex_session_delete/inject/renderer-inject.js").read_text(encoding="utf-8")
+
+    assert "MCP 服务器" in text
+    assert "检测 Codex 配置里的全部 MCP server" in text
+    assert "当前 Codex 会话通常需要重启或新会话" in text
+    assert "不展示 env、token、DSN 或完整命令参数" in text
+    assert "data-codex-plus-tab=\"mcp\"" in text
+    assert "data-codex-plus-panel=\"mcp\"" in text
+    assert "data-codex-mcp-list" in text
+    assert "data-codex-mcp-server" in text
+    assert "data-codex-mcp-install" in text
+    assert "data-codex-mcp-remove" in text
+    assert "data-codex-mcp-status" in text
+    assert "/mcp/status" in text
+    assert "/mcp/install" in text
+    assert "/mcp/remove" in text
+    assert "/mcp/set-enabled" in text
+    assert "loadMcpStatus" in text
+    assert "renderMcpStatus" in text
+    assert "server.command" not in text[text.index("function renderMcpStatus"):text.index("\n\n  async function loadMcpStatus")]
+
+
 def test_renderer_script_can_move_sidebar_threads_between_projects():
     text = Path("codex_session_delete/inject/renderer-inject.js").read_text(encoding="utf-8")
 
@@ -586,8 +609,27 @@ def test_renderer_script_can_move_sidebar_threads_between_projects():
     assert "function scheduleChatsSortCorrection" in text
     assert "function reorderChatsRows" in text
     assert "window.__codexProjectMoveSortChats" in text
+    assert "window.__codexProjectThreadsRefresh" in text
+    assert "/project-threads" in text
+    assert "data-codex-project-thread-list" in text
+    assert "codexProjectThreadsVersion" in text
+    assert "function refreshProjectThreadFallbacks" in text
+    assert "function removeProjectThreadFallback" in text
+    assert "function projectThreadCandidates" in text
+    assert "function visibleProjectThreadRows" in text
+    assert "function projectCanRenderFallback" in text
+    native_rows_code = text[text.index("function nativeProjectRows"):text.index("\n\n  function visibleProjectThreadList")]
+    assert "projectItem.querySelectorAll(selectors.sidebarThread)" in native_rows_code
+    assert "data-app-action-sidebar-project-list-id" not in native_rows_code
+    assert 'codexProjectThreadInjected !== "true"' in native_rows_code
+    assert "function createProjectThreadRow" in text
+    assert "function attachProjectThreadOpenHandlers" in text
+    assert "function upsertProjectThreadFallbackRow" in text
+    assert "function openProjectThread" in text
+    assert "load-recent-conversation-ids-for-host" in text
     assert "window.__codexProjectMoveRuntimeId" in text
     assert "__codexProjectMoveChatsSortTimer" in text
+    assert "window.__codexProjectThreadsInFlight = false" in text
     assert "sortMsTrusted" in text
     assert "chatsSortDbRefreshIntervalMs" in text
     assert "data-app-action-sidebar-section-heading=\"Chats\"" in text

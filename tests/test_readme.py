@@ -39,6 +39,19 @@ def test_readme_documents_provider_sync_as_no_session_loss():
     assert "不丢历史会话" in text
 
 
+def test_readme_documents_browser_mcp_commands_and_boundary():
+    text = Path("README.md").read_text(encoding="utf-8")
+    english = Path("README_EN.md").read_text(encoding="utf-8")
+
+    assert "## 浏览器 MCP" in text
+    assert "mcp-install all" in text
+    assert "chrome-devtools-mcp@latest" in text
+    assert "@playwright/mcp@latest" in text
+    assert "不会绕过官方 Computer Use" in text
+    assert "## Browser MCP" in english
+    assert "does not bypass official Computer Use" in english
+
+
 def test_readme_includes_sponsor_qr_codes_near_front():
     text = Path("README.md").read_text(encoding="utf-8")
 

@@ -1,10 +1,10 @@
 import json
 import sqlite3
 
-from codex_session_delete.provider_sync import ProviderSyncStatus, run_provider_sync
+from codex_session_delete.provider_sync import ProviderSyncStatus, run_provider_path_repair, run_provider_sync
 
 
-def write_rollout(path, provider="openai", thread_id="thread-1", cwd="C:/old"):
+def write_rollout(path, provider="openai", thread_id="thread-1", cwd=r"C:\old"):
     path.parent.mkdir(parents=True, exist_ok=True)
     first = {
         "type": "session_meta",
@@ -17,10 +17,10 @@ def write_rollout(path, provider="openai", thread_id="thread-1", cwd="C:/old"):
     path.write_text(json.dumps(first) + "\n" + json.dumps({"type": "event_msg", "payload": {"type": "user_message"}}) + "\n", encoding="utf-8")
 
 
-def create_state_db(path):
+def create_state_db(path, provider="old-provider", has_user_event=0, cwd=r"C:\old"):
     con = sqlite3.connect(path)
     con.execute("CREATE TABLE threads (id TEXT PRIMARY KEY, model_provider TEXT, archived INTEGER, has_user_event INTEGER, cwd TEXT)")
-    con.execute("INSERT INTO threads VALUES ('thread-1', 'old-provider', 0, 0, 'C:/old')")
+    con.execute("INSERT INTO threads VALUES ('thread-1', ?, 0, ?, ?)", (provider, has_user_event, cwd))
     con.commit()
     con.close()
 
@@ -30,8 +30,8 @@ def test_provider_sync_updates_rollout_and_sqlite_to_current_provider(tmp_path):
     codex_home.mkdir()
     (codex_home / "config.toml").write_text('model_provider = "apigather"\n', encoding="utf-8")
     rollout = codex_home / "sessions" / "2026" / "rollout-abc.jsonl"
-    write_rollout(rollout, provider="openai", thread_id="thread-1", cwd="C:/workspace")
-    create_state_db(codex_home / "state_5.sqlite")
+    write_rollout(rollout, provider="openai", thread_id="thread-1", cwd=r"C:\workspace")
+    create_state_db(codex_home / "state_5.sqlite", cwd=r"C:\workspace")
 
     result = run_provider_sync(codex_home)
 
@@ -41,9 +41,9 @@ def test_provider_sync_updates_rollout_and_sqlite_to_current_provider(tmp_path):
     con = sqlite3.connect(codex_home / "state_5.sqlite")
     row = con.execute("SELECT model_provider, has_user_event, cwd FROM threads WHERE id = 'thread-1'").fetchone()
     con.close()
-    assert row == ("apigather", 1, "C:/workspace")
+    assert row == ("apigather", 1, r"C:\workspace")
     assert result.changed_session_files == 1
-    assert result.sqlite_rows_updated == 1
+    assert result.sqlite_rows_updated == 2
     assert result.backup_dir is not None
     assert (result.backup_dir / "session-meta-backup.json").exists()
 
@@ -52,8 +52,8 @@ def test_provider_sync_repairs_sqlite_visibility_when_rollout_provider_already_m
     codex_home = tmp_path / ".codex"
     codex_home.mkdir()
     (codex_home / "config.toml").write_text('model_provider = "apigather"\n', encoding="utf-8")
-    write_rollout(codex_home / "sessions" / "rollout-current.jsonl", provider="apigather", thread_id="thread-1", cwd="C:/workspace")
-    create_state_db(codex_home / "state_5.sqlite")
+    write_rollout(codex_home / "sessions" / "rollout-current.jsonl", provider="apigather", thread_id="thread-1", cwd=r"C:\workspace")
+    create_state_db(codex_home / "state_5.sqlite", provider="apigather", cwd=r"C:\workspace")
 
     result = run_provider_sync(codex_home)
 
@@ -61,7 +61,7 @@ def test_provider_sync_repairs_sqlite_visibility_when_rollout_provider_already_m
     con = sqlite3.connect(codex_home / "state_5.sqlite")
     row = con.execute("SELECT model_provider, has_user_event, cwd FROM threads WHERE id = 'thread-1'").fetchone()
     con.close()
-    assert row == ("apigather", 1, "C:/workspace")
+    assert row == ("apigather", 1, r"C:\workspace")
     assert result.changed_session_files == 0
     assert result.sqlite_rows_updated == 1
 
@@ -71,18 +71,22 @@ def test_provider_sync_normalizes_sqlite_cwd_to_desktop_path(tmp_path):
     codex_home.mkdir()
     (codex_home / "config.toml").write_text('model_provider = "apigather"\n', encoding="utf-8")
     write_rollout(codex_home / "sessions" / "rollout-current.jsonl", provider="apigather", thread_id="thread-1", cwd="\\\\?\\C:\\workspace")
-    create_state_db(codex_home / "state_5.sqlite")
+    create_state_db(codex_home / "state_5.sqlite", provider="apigather", has_user_event=1, cwd="\\\\?\\C:\\workspace")
 
     result = run_provider_sync(codex_home)
 
     assert result.status == ProviderSyncStatus.SYNCED
+    first = json.loads((codex_home / "sessions" / "rollout-current.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert first["payload"]["cwd"] == r"C:\workspace"
     con = sqlite3.connect(codex_home / "state_5.sqlite")
     row = con.execute("SELECT cwd FROM threads WHERE id = 'thread-1'").fetchone()
     con.close()
-    assert row == ("C:/workspace",)
+    assert row == (r"C:\workspace",)
+    assert result.changed_session_files == 1
+    assert result.sqlite_rows_updated == 1
 
 
-def test_provider_sync_resolves_global_state_roots_from_sqlite_cwd_stats(tmp_path):
+def test_provider_sync_normalizes_existing_global_state_roots_only(tmp_path):
     codex_home = tmp_path / ".codex"
     codex_home.mkdir()
     (codex_home / "config.toml").write_text('model_provider = "apigather"\n', encoding="utf-8")
@@ -97,17 +101,81 @@ def test_provider_sync_resolves_global_state_roots_from_sqlite_cwd_stats(tmp_pat
         ),
         encoding="utf-8",
     )
-    write_rollout(codex_home / "sessions" / "rollout-current.jsonl", provider="apigather", thread_id="thread-1", cwd="C:/workspace")
-    create_state_db(codex_home / "state_5.sqlite")
+    write_rollout(codex_home / "sessions" / "rollout-current.jsonl", provider="apigather", thread_id="thread-1", cwd=r"C:\workspace")
+    create_state_db(codex_home / "state_5.sqlite", provider="apigather", has_user_event=1, cwd=r"C:\workspace")
 
     result = run_provider_sync(codex_home)
 
     assert result.status == ProviderSyncStatus.SYNCED
     state = json.loads((codex_home / ".codex-global-state.json").read_text(encoding="utf-8"))
-    assert state["electron-saved-workspace-roots"] == ["C:/workspace"]
-    assert state["project-order"] == ["C:/workspace"]
-    assert state["active-workspace-roots"] == ["C:/workspace"]
-    assert state["electron-workspace-root-labels"] == {"C:/workspace": "Workspace"}
+    assert state["electron-saved-workspace-roots"] == [r"C:\workspace"]
+    assert state["project-order"] == [r"C:\workspace"]
+    assert state["active-workspace-roots"] == [r"C:\workspace"]
+    assert state["electron-workspace-root-labels"] == {r"C:\workspace": "Workspace"}
+
+
+def test_provider_sync_does_not_add_rollout_cwd_to_global_project_roots(tmp_path):
+    codex_home = tmp_path / ".codex"
+    codex_home.mkdir()
+    (codex_home / "config.toml").write_text('model_provider = "apigather"\n', encoding="utf-8")
+    (codex_home / ".codex-global-state.json").write_text(
+        json.dumps(
+            {
+                "electron-saved-workspace-roots": [r"C:\existing"],
+                "project-order": [r"C:\existing"],
+                "active-workspace-roots": [r"C:\existing"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    write_rollout(codex_home / "sessions" / "rollout-current.jsonl", provider="apigather", thread_id="thread-1", cwd=r"C:\new-project")
+    create_state_db(codex_home / "state_5.sqlite", provider="apigather", has_user_event=1, cwd=r"C:\existing")
+
+    result = run_provider_sync(codex_home)
+
+    assert result.status == ProviderSyncStatus.SYNCED
+    state = json.loads((codex_home / ".codex-global-state.json").read_text(encoding="utf-8"))
+    assert state["electron-saved-workspace-roots"] == [r"C:\existing"]
+    assert state["project-order"] == [r"C:\existing"]
+    assert state["active-workspace-roots"] == [r"C:\existing"]
+
+
+def test_provider_sync_does_not_move_sqlite_cwd_to_rollout_cwd(tmp_path):
+    codex_home = tmp_path / ".codex"
+    codex_home.mkdir()
+    (codex_home / "config.toml").write_text('model_provider = "apigather"\n', encoding="utf-8")
+    write_rollout(codex_home / "sessions" / "rollout-current.jsonl", provider="apigather", thread_id="thread-1", cwd=r"D:\Project\AILIMS\backend")
+    create_state_db(codex_home / "state_5.sqlite", provider="apigather", has_user_event=1, cwd=r"D:\Project\AILIMS")
+
+    result = run_provider_sync(codex_home)
+
+    assert result.status == ProviderSyncStatus.SYNCED
+    con = sqlite3.connect(codex_home / "state_5.sqlite")
+    row = con.execute("SELECT cwd FROM threads WHERE id = 'thread-1'").fetchone()
+    con.close()
+    assert row == (r"D:\Project\AILIMS",)
+
+
+def test_provider_path_repair_normalizes_paths_without_changing_provider(tmp_path):
+    codex_home = tmp_path / ".codex"
+    codex_home.mkdir()
+    (codex_home / "config.toml").write_text('model_provider = "apigather"\n', encoding="utf-8")
+    rollout = codex_home / "sessions" / "rollout-current.jsonl"
+    write_rollout(rollout, provider="openai", thread_id="thread-1", cwd="\\\\?\\C:\\workspace")
+    create_state_db(codex_home / "state_5.sqlite", provider="openai", has_user_event=0, cwd="\\\\?\\C:\\workspace")
+
+    result = run_provider_path_repair(codex_home)
+
+    assert result.status == ProviderSyncStatus.SYNCED
+    first = json.loads(rollout.read_text(encoding="utf-8").splitlines()[0])
+    assert first["payload"]["model_provider"] == "openai"
+    assert first["payload"]["cwd"] == r"C:\workspace"
+    con = sqlite3.connect(codex_home / "state_5.sqlite")
+    row = con.execute("SELECT model_provider, has_user_event, cwd FROM threads WHERE id = 'thread-1'").fetchone()
+    con.close()
+    assert row == ("openai", 0, r"C:\workspace")
+    assert result.changed_session_files == 1
+    assert result.sqlite_rows_updated == 1
 
 
 def test_provider_sync_skips_when_lock_exists(tmp_path):

@@ -35,6 +35,9 @@ class FakeDeleteService:
     def thread_sort_keys(self, sessions: list[SessionRef]):
         return {"status": "ok", "sort_keys": [{"session_id": session.session_id, "updated_at_ms": index + 1} for index, session in enumerate(sessions)]}
 
+    def project_threads(self, project_cwd: str, limit: int = 30):
+        return {"status": "ok", "project_cwd": project_cwd, "threads": [{"session_id": "s1", "title": "First", "cwd": project_cwd}]}
+
 
 class FakeExportService:
     def __init__(self):
@@ -220,6 +223,21 @@ def test_helper_server_returns_thread_sort_keys():
         thread.join(timeout=3)
 
     assert sort_keys == {"status": "ok", "sort_keys": [{"session_id": "s1", "updated_at_ms": 1}, {"session_id": "s2", "updated_at_ms": 2}]}
+
+
+def test_helper_server_returns_project_threads():
+    service = FakeDeleteService()
+    server = HelperServer("127.0.0.1", 0, service, allow_http_mutation=True)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.port}"
+        threads = post_json(base + "/project-threads", {"project_cwd": "/project/a", "limit": 10})
+    finally:
+        server.shutdown()
+        thread.join(timeout=3)
+
+    assert threads == {"status": "ok", "project_cwd": "/project/a", "threads": [{"session_id": "s1", "title": "First", "cwd": "/project/a"}]}
 
 
 def test_helper_server_serves_packaged_sponsor_assets():

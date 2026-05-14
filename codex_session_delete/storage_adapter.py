@@ -140,6 +140,31 @@ class SQLiteStorageAdapter:
             sort_keys = [rows_by_id[thread_id] for thread_id in thread_ids if thread_id in rows_by_id]
             return {"status": "ok", "sort_keys": sort_keys}
 
+    def codex_project_threads(self, project_cwd: str, limit: int = 30) -> dict[str, object]:
+        project = project_cwd.strip()
+        if not project:
+            return {"status": "failed", "message": "项目路径为空", "threads": []}
+        if not self.db_path.exists():
+            return {"status": "failed", "message": f"Database not found: {self.db_path}", "threads": []}
+
+        with sqlite3.connect(self.db_path) as db:
+            db.row_factory = sqlite3.Row
+            if self._schema_kind(db) != "codex_threads" or not self._has_columns(db, "threads", {"cwd"}):
+                return {"status": "failed", "message": "Unsupported local storage schema", "threads": []}
+            bounded_limit = max(1, min(int(limit or 30), 100))
+            rows = self._project_thread_rows(db, project, bounded_limit)
+            match_kind = "project"
+            if not rows:
+                parent = self._parent_workspace_path(project)
+                rows = self._project_thread_rows(db, parent, bounded_limit) if parent else []
+                match_kind = "parent" if rows else "project"
+            return {
+                "status": "ok",
+                "project_cwd": project,
+                "match_kind": match_kind,
+                "threads": [self._project_thread_payload(row) for row in rows],
+            }
+
     def _delete_generic_session(self, db: sqlite3.Connection, session: SessionRef) -> DeleteResult:
         session_rows = self._select_dicts(db, "SELECT * FROM sessions WHERE id = ?", (session.session_id,))
         if not session_rows:
@@ -206,6 +231,88 @@ class SQLiteStorageAdapter:
     def _codex_thread_timestamp_payload(self, row: sqlite3.Row) -> dict[str, object]:
         keys = set(row.keys())
         return {column: row[column] if column in keys else None for column in ("updated_at", "updated_at_ms", "created_at_ms")}
+
+    def _project_thread_rows(self, db: sqlite3.Connection, root: str | None, limit: int) -> list[sqlite3.Row]:
+        if not root:
+            return []
+        columns = set(self._thread_columns(db))
+        select_columns = self._project_thread_select_columns(columns)
+        where_sql, params = self._project_thread_where(root, columns)
+        order_sql = self._project_thread_order_sql(columns)
+        return db.execute(
+            f"SELECT {', '.join(select_columns)} FROM threads WHERE {where_sql} ORDER BY {order_sql} LIMIT ?",
+            (*params, limit),
+        ).fetchall()
+
+    def _project_thread_select_columns(self, columns: set[str]) -> list[str]:
+        wanted = ["id", "title", "cwd", "updated_at", "updated_at_ms", "created_at_ms", "source", "model_provider"]
+        return [column for column in wanted if column in columns]
+
+    def _project_thread_where(self, root: str, columns: set[str]) -> tuple[str, list[str]]:
+        clauses, params = self._workspace_scope_clause(root)
+        filters = [f"({clauses})"]
+        if "archived" in columns:
+            filters.append("COALESCE(archived, 0) = 0")
+        if "has_user_event" in columns:
+            filters.append("COALESCE(has_user_event, 0) = 1")
+        if "thread_source" in columns:
+            filters.append("COALESCE(thread_source, '') <> 'subagent'")
+        return " AND ".join(filters), params
+
+    def _project_thread_order_sql(self, columns: set[str]) -> str:
+        sort_columns = [column for column in ("updated_at_ms", "updated_at", "created_at_ms") if column in columns]
+        if not sort_columns:
+            return "id DESC"
+        return "COALESCE(" + ", ".join(sort_columns) + ", 0) DESC, id DESC"
+
+    def _project_thread_payload(self, row: sqlite3.Row) -> dict[str, object]:
+        keys = set(row.keys())
+        return {
+            "session_id": str(row["id"]),
+            "title": str(row["title"] or "Untitled"),
+            "cwd": str(row["cwd"] or ""),
+            **{column: row[column] for column in ("updated_at", "updated_at_ms", "created_at_ms", "source", "model_provider") if column in keys},
+        }
+
+    def _workspace_scope_clause(self, root: str) -> tuple[str, list[str]]:
+        clauses: list[str] = []
+        params: list[str] = []
+        for variant in self._workspace_path_variants(root):
+            clauses.append("cwd = ?")
+            params.append(variant)
+            clauses.append("cwd LIKE ?")
+            params.append(self._child_workspace_pattern(variant))
+        return " OR ".join(clauses), params
+
+    def _workspace_path_variants(self, value: str) -> list[str]:
+        raw = value.strip()
+        normalized = raw.replace("/", "\\") if self._is_windows_like_path(raw) else raw
+        variants = [normalized]
+        if normalized.startswith("\\\\?\\"):
+            variants.append(normalized[4:])
+        elif self._is_windows_drive_path(normalized):
+            variants.append("\\\\?\\" + normalized)
+        return list(dict.fromkeys(item.rstrip("\\") for item in variants if item.strip()))
+
+    def _child_workspace_pattern(self, value: str) -> str:
+        separator = "\\" if "\\" in value or self._is_windows_drive_path(value) else "/"
+        return value.rstrip("\\/") + separator + "%"
+
+    def _parent_workspace_path(self, value: str) -> str | None:
+        raw = value.strip()
+        normalized = raw.replace("/", "\\") if self._is_windows_like_path(raw) else raw
+        if normalized.startswith("\\\\?\\"):
+            normalized = normalized[4:]
+        if not self._is_windows_drive_path(normalized):
+            return None
+        parent = normalized.rstrip("\\").rsplit("\\", 1)[0]
+        return parent if len(parent) > 3 else None
+
+    def _is_windows_drive_path(self, value: str) -> bool:
+        return len(value) >= 3 and value[1] == ":" and value[0].isalpha() and value[2] in {"\\", "/"}
+
+    def _is_windows_like_path(self, value: str) -> bool:
+        return value.startswith("\\\\") or self._is_windows_drive_path(value)
 
     def _schema_kind(self, db: sqlite3.Connection) -> str | None:
         tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
@@ -283,8 +390,10 @@ class SQLiteStorageAdapter:
         return db.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)).fetchone() is not None
 
     def _has_columns(self, db: sqlite3.Connection, table: str, columns: set[str]) -> bool:
-        existing = {row[1] for row in db.execute(f'PRAGMA table_info("{table}")')}
-        return columns.issubset(existing)
+        return columns.issubset(set(self._thread_columns(db)) if table == "threads" else {row[1] for row in db.execute(f'PRAGMA table_info("{table}")')})
+
+    def _thread_columns(self, db: sqlite3.Connection) -> list[str]:
+        return [row[1] for row in db.execute('PRAGMA table_info("threads")')]
 
     def _select_dicts(self, db: sqlite3.Connection, sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
         return [dict(row) for row in db.execute(sql, params).fetchall()]

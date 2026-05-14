@@ -14,14 +14,18 @@ echo.
 echo [1] Install Codex++
 echo [2] Uninstall Codex++
 echo [3] Update Codex++
-echo [4] Exit
+echo [4] Install Browser MCP
+echo [5] Browser MCP Status
+echo [6] Exit
 echo.
-set /p choice=Please select an option [1-4]:
+set /p choice=Please select an option [1-6]:
 
 if "%choice%"=="1" goto install
 if "%choice%"=="2" goto uninstall
 if "%choice%"=="3" goto update
-if "%choice%"=="4" goto end
+if "%choice%"=="4" goto mcp_install
+if "%choice%"=="5" goto mcp_status
+if "%choice%"=="6" goto end
 
 echo.
 echo Invalid choice.
@@ -70,6 +74,30 @@ echo Updating Codex++ from GitHub Release...
 if errorlevel 1 goto error
 echo.
 echo Codex++ update finished.
+pause
+goto end
+
+:mcp_install
+echo.
+call :ensure_venv
+if errorlevel 1 goto error
+echo Installing Chrome DevTools MCP and Playwright MCP into Codex config...
+"%VENV_PY%" -m codex_session_delete mcp-install all
+if errorlevel 1 goto error
+echo.
+echo Browser MCP configuration finished. Restart Codex to load MCP servers.
+pause
+goto end
+
+:mcp_status
+echo.
+if exist "%VENV_PY%" (
+    set "RUNPY=%VENV_PY%"
+) else (
+    set "RUNPY=python"
+)
+"%RUNPY%" -m codex_session_delete mcp-status
+if errorlevel 1 goto error
 pause
 goto end
 

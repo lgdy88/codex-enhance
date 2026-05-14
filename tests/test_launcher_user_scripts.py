@@ -14,6 +14,9 @@ class FakeDeleteService:
     def find_archived_thread_by_title(self, title):
         return None
 
+    def project_threads(self, project_cwd, limit=30):
+        return {"status": "ok", "project_cwd": project_cwd, "threads": []}
+
 
 class FakeExportService:
     def export(self, session):
@@ -104,6 +107,66 @@ def test_handle_bridge_request_sets_backend_settings(monkeypatch, tmp_path):
 
     assert result == {"providerSyncEnabled": True}
     assert store.load().provider_sync_enabled is True
+
+
+def test_handle_bridge_request_installs_browser_mcp(monkeypatch, tmp_path):
+    manager = UserScriptManager(tmp_path / "builtin", tmp_path / "user", tmp_path / "config.json")
+    runtime = FakeRuntime(manager)
+    calls = []
+
+    class Result:
+        def to_dict(self):
+            return {"status": "ok", "message": "written", "servers": []}
+
+    monkeypatch.setattr(
+        "codex_session_delete.launcher.install_browser_mcp_servers",
+        lambda servers, chrome_mode, browser_url: calls.append((servers, chrome_mode, browser_url)) or Result(),
+    )
+
+    result = handle_bridge_request(
+        FakeDeleteService(),
+        FakeExportService(),
+        "/mcp/install",
+        {"servers": ["chrome-devtools"], "chromeMode": "browser-url", "browserUrl": "http://127.0.0.1:9222"},
+        runtime,
+    )
+
+    assert result["status"] == "ok"
+    assert calls == [(["chrome-devtools"], "browser-url", "http://127.0.0.1:9222")]
+
+
+def test_handle_bridge_request_sets_mcp_enabled(monkeypatch, tmp_path):
+    manager = UserScriptManager(tmp_path / "builtin", tmp_path / "user", tmp_path / "config.json")
+    runtime = FakeRuntime(manager)
+    calls = []
+
+    class Result:
+        def to_dict(self):
+            return {"status": "ok", "message": "updated", "servers": [{"name": "github", "enabled": False}]}
+
+    monkeypatch.setattr("codex_session_delete.launcher.set_mcp_server_enabled", lambda name, enabled: calls.append((name, enabled)) or Result())
+
+    result = handle_bridge_request(FakeDeleteService(), FakeExportService(), "/mcp/set-enabled", {"name": "github", "enabled": False}, runtime)
+
+    assert result["message"] == "updated"
+    assert calls == [("github", False)]
+
+
+def test_handle_bridge_request_removes_browser_mcp(monkeypatch, tmp_path):
+    manager = UserScriptManager(tmp_path / "builtin", tmp_path / "user", tmp_path / "config.json")
+    runtime = FakeRuntime(manager)
+    calls = []
+
+    class Result:
+        def to_dict(self):
+            return {"status": "ok", "message": "removed", "servers": []}
+
+    monkeypatch.setattr("codex_session_delete.launcher.remove_browser_mcp_servers", lambda servers: calls.append(servers) or Result())
+
+    result = handle_bridge_request(FakeDeleteService(), FakeExportService(), "/mcp/remove", {"servers": ["all"]}, runtime)
+
+    assert result["message"] == "removed"
+    assert calls == [["all"]]
 
 
 def test_handle_bridge_request_exports_markdown(tmp_path):

@@ -19,13 +19,15 @@
   const projectMoveRefreshDelaysMs = [50, 250, 750, 1500];
   const chatsSortRefreshIntervalMs = 1500;
   const chatsSortDbRefreshIntervalMs = 5000;
+  const projectThreadsRefreshIntervalMs = 5000;
   const styleId = "codex-delete-style";
-  const codexDeleteStyleVersion = "7";
+  const codexDeleteStyleVersion = "8";
   const codexPlusMenuId = "codex-plus-menu";
   const codexPlusMenuFloatingClass = "codex-plus-menu-floating";
   const codexDeleteVersion = "6";
   const codexExportVersion = "1";
   const codexProjectMoveVersion = "1";
+  const codexProjectThreadsVersion = "1";
   const codexActionGroupVersion = "2";
   const codexArchiveRowActionsVersion = "1";
   const codexArchiveDeleteAllVersion = "2";
@@ -36,8 +38,11 @@
   const codexProjectMoveRuntimeId = window.__codexProjectMoveRuntimeId;
   clearTimeout(window.__codexProjectMoveProjectionTimer);
   clearTimeout(window.__codexProjectMoveChatsSortTimer);
+  clearTimeout(window.__codexProjectThreadsTimer);
   window.__codexProjectMoveProjectionTimer = null;
   window.__codexProjectMoveChatsSortTimer = null;
+  window.__codexProjectThreadsTimer = null;
+  window.__codexProjectThreadsInFlight = false;
   const selectors = {
     sidebarThread: "[data-app-action-sidebar-thread-id]",
     threadTitle: "[data-thread-title]",
@@ -143,6 +148,23 @@
       .codex-project-move-empty { padding: 18px 12px; color: #6b7280; text-align: center; }
       .codex-project-move-hidden { display: none !important; }
       [data-codex-project-move-injected-list="true"] { display: flex; flex-direction: column; }
+      [data-codex-project-thread-list="true"] { display: flex; flex-direction: column; }
+      .codex-project-thread-row {
+        position: relative;
+        min-height: 32px;
+        cursor: pointer;
+        border-radius: 8px;
+        padding: 6px 8px;
+        color: inherit;
+      }
+      .codex-project-thread-row:hover { background: var(--token-list-hover-background, rgba(0,0,0,.06)); }
+      .codex-project-thread-title {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        padding-right: 86px;
+      }
       .codex-archive-delete-all {
         border: 1px solid #ef4444;
         border-radius: 7px;
@@ -352,6 +374,7 @@
       .codex-plus-toggle,
       .codex-plus-action-button,
       .codex-plus-issue-button,
+      .codex-plus-mcp-actions,
       .codex-plus-backend-status {
         flex-shrink: 0;
         align-self: center;
@@ -380,6 +403,12 @@
       .codex-plus-user-script-error { margin-top: 2px; color: #f87171; font-size: 11px; word-break: break-all; }
       .codex-plus-user-script-actions { display: grid; justify-items: end; gap: 8px; min-width: 120px; }
       .codex-plus-user-script-reload { border: 1px solid rgba(255,255,255,.18); border-radius: 7px; background: #3f3f46; color: #f3f4f6; font: 12px system-ui, sans-serif; padding: 6px 8px; }
+      .codex-plus-mcp-list { margin-top: 8px; display: grid; gap: 6px; }
+      .codex-plus-mcp-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid rgba(255,255,255,.08); border-radius: 8px; padding: 7px 8px; }
+      .codex-plus-mcp-name { font-size: 12px; color: #f3f4f6; }
+      .codex-plus-mcp-meta { margin-top: 2px; color: #a1a1aa; font-size: 11px; }
+      .codex-plus-mcp-command { margin-top: 2px; color: #d4d4d8; font-size: 11px; line-height: 1.35; word-break: break-all; }
+      .codex-plus-mcp-actions { display: grid; justify-items: end; gap: 8px; min-width: 92px; }
       .codex-plus-sponsor-text { color: #d1d5db; font-size: 13px; line-height: 1.55; margin: 4px 0 12px; }
       .codex-plus-sponsor-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
       .codex-plus-sponsor-card { border: 1px solid rgba(255,255,255,.1); border-radius: 12px; padding: 10px; background: rgba(255,255,255,.04); text-align: center; }
@@ -515,6 +544,7 @@
   }
 
   let codexPlusUserScripts = { enabled: true, builtin_dir: "", user_dir: "", scripts: [] };
+  let codexPlusMcpStatus = { status: "checking", servers: [] };
   let codexPlusBackendStatus = { status: "checking", message: "正在检查后端…" };
 
   function renderBackendStatus() {
@@ -596,6 +626,39 @@
     }
   }
 
+  function mcpServerLabel(name) {
+    return { "chrome-devtools": "chrome-devtools", playwright: "playwright" }[name] || name;
+  }
+
+  function renderMcpStatus() {
+    const list = document.querySelector("[data-codex-mcp-list]");
+    if (!list) return;
+    const servers = codexPlusMcpStatus.servers || [];
+    if (!servers.length) {
+      list.textContent = codexPlusMcpStatus.message || "正在读取 MCP 状态…";
+      return;
+    }
+    list.innerHTML = servers.map((server) => `
+      <div class="codex-plus-mcp-item">
+        <div>
+          <div class="codex-plus-mcp-name">${escapeHtml(mcpServerLabel(server.name))}</div>
+          <div class="codex-plus-mcp-meta">${server.enabled ? "启用" : "停用"} · ${escapeHtml(server.serverType || "stdio")} · ${escapeHtml(server.mode || "default")}</div>
+        </div>
+        <button type="button" class="codex-plus-toggle" data-codex-mcp-server="${escapeHtml(server.name)}" data-enabled="${String(!!server.enabled)}"><span></span></button>
+      </div>
+    `).join("");
+  }
+
+  async function loadMcpStatus(path = "/mcp/status", payload = {}) {
+    codexPlusMcpStatus = await postJson(path, payload);
+    renderMcpStatus();
+    if (path !== "/mcp/status") showToast(codexPlusMcpStatus.message || "MCP 配置已更新，请重启 Codex", null);
+  }
+
+  function setMcpEnabled(name, enabled) {
+    loadMcpStatus("/mcp/set-enabled", { name, enabled });
+  }
+
   function selectCodexPlusTab(tab) {
     document.querySelectorAll("[data-codex-plus-tab]").forEach((button) => {
       button.dataset.active = String(button.getAttribute("data-codex-plus-tab") === tab);
@@ -604,6 +667,7 @@
       panel.hidden = panel.getAttribute("data-codex-plus-panel") !== tab;
     });
     if (tab === "userScripts") loadUserScripts();
+    if (tab === "mcp") loadMcpStatus();
   }
 
   function openCodexPlusModal() {
@@ -619,6 +683,7 @@
         </div>
         <div class="codex-plus-tabs" role="tablist" aria-label="Codex++">
           <button type="button" class="codex-plus-tab-button" data-codex-plus-tab="home" data-active="true">主页</button>
+          <button type="button" class="codex-plus-tab-button" data-codex-plus-tab="mcp" data-active="false">MCP</button>
           <button type="button" class="codex-plus-tab-button" data-codex-plus-tab="userScripts" data-active="false">用户脚本</button>
           <button type="button" class="codex-plus-tab-button" data-codex-plus-tab="sponsor" data-active="false">赞赏</button>
         </div>
@@ -673,6 +738,21 @@
             <div class="codex-plus-row">
               <div><div class="codex-plus-row-title">提出问题</div><div class="codex-plus-row-description">打开 GitHub Issues 反馈问题或建议。</div></div>
               <button type="button" class="codex-plus-issue-button" data-codex-plus-issue="true">提出问题</button>
+            </div>
+          </div>
+          <div class="codex-plus-panel" data-codex-plus-panel="mcp" hidden>
+            <div class="codex-plus-row">
+              <div>
+                <div class="codex-plus-row-title">MCP 服务器</div>
+                <div class="codex-plus-row-description">检测 Codex 配置里的全部 MCP server，并写入 enabled 开关。配置会立即保存，当前 Codex 会话通常需要重启或新会话才会重新加载工具。</div>
+                <div class="codex-plus-user-script-warning">为避免泄露密钥，这里只显示 server 名称和状态，不展示 env、token、DSN 或完整命令参数。</div>
+                <div class="codex-plus-mcp-list" data-codex-mcp-list="true">正在读取 MCP 状态…</div>
+              </div>
+              <div class="codex-plus-mcp-actions">
+                <button type="button" class="codex-plus-action-button" data-codex-mcp-install="all">安装浏览器 MCP</button>
+                <button type="button" class="codex-plus-action-button" data-codex-mcp-status="true">刷新</button>
+                <button type="button" class="codex-plus-action-button" data-codex-mcp-remove="all">移除浏览器 MCP</button>
+              </div>
             </div>
           </div>
           <div class="codex-plus-panel" data-codex-plus-panel="userScripts" hidden>
@@ -749,6 +829,25 @@
       }
       if (target?.closest("[data-codex-user-scripts-reload]")) {
         loadUserScripts("/user-scripts/reload", {});
+        return;
+      }
+      if (target?.closest("[data-codex-mcp-status]")) {
+        loadMcpStatus();
+        return;
+      }
+      const mcpServerToggle = target?.closest("[data-codex-mcp-server]");
+      if (mcpServerToggle) {
+        setMcpEnabled(mcpServerToggle.getAttribute("data-codex-mcp-server"), mcpServerToggle.dataset.enabled !== "true");
+        return;
+      }
+      const mcpInstall = target?.closest("[data-codex-mcp-install]");
+      if (mcpInstall) {
+        loadMcpStatus("/mcp/install", { servers: ["all"], chromeMode: "auto-connect" });
+        return;
+      }
+      const mcpRemove = target?.closest("[data-codex-mcp-remove]");
+      if (mcpRemove) {
+        loadMcpStatus("/mcp/remove", { servers: ["all"] });
         return;
       }
       const toggle = target?.closest("[data-codex-plus-setting]");
@@ -1630,6 +1729,177 @@
         node.classList.remove("codex-project-move-hidden");
       }
     });
+  }
+
+  function nativeProjectRows(projectItem) {
+    if (!projectItem) return [];
+    return Array.from(projectItem.querySelectorAll(selectors.sidebarThread))
+      .filter((row) => row.dataset.codexProjectThreadInjected !== "true");
+  }
+
+  function visibleProjectThreadList(projectItem) {
+    return Array.from(projectItem.querySelectorAll("[data-app-action-sidebar-project-list-id]"))
+      .find((list) => list.offsetParent !== null) || null;
+  }
+
+  function projectThreadFallbackList(projectItem) {
+    let list = projectItem.querySelector('[data-codex-project-thread-list="true"]');
+    if (!list) {
+      const body = Array.from(projectItem.children).find((child) => child.classList?.contains("overflow-hidden")) || projectItem;
+      list = document.createElement("div");
+      list.setAttribute("role", "list");
+      list.setAttribute("data-codex-project-thread-list", "true");
+      list.dataset.codexProjectThreadsVersion = codexProjectThreadsVersion;
+      body.appendChild(list);
+    }
+    return list;
+  }
+
+  function projectThreadTitle(thread) {
+    return String(thread?.title || "Untitled").replace(/\s+/g, " ").trim().slice(0, 180) || "Untitled";
+  }
+
+  function projectThreadRef(thread) {
+    return { session_id: `local:${projectMoveSessionKey(thread?.session_id || "")}`, title: projectThreadTitle(thread) };
+  }
+
+  function projectThreadSortMs(thread) {
+    return timestampMsFromPayload(thread) || sortMsForSession(thread?.session_id, thread?.updated_at_ms || thread?.updated_at);
+  }
+
+  function createProjectThreadRow(thread, projectPath) {
+    const ref = projectThreadRef(thread);
+    const row = document.createElement("div");
+    row.className = "group codex-project-thread-row";
+    row.setAttribute("role", "button");
+    row.setAttribute("tabindex", "0");
+    row.setAttribute("data-app-action-sidebar-thread-id", ref.session_id);
+    row.setAttribute("data-app-action-sidebar-thread-kind", "local");
+    row.setAttribute("data-app-action-sidebar-thread-pinned", "false");
+    row.setAttribute("data-app-action-sidebar-thread-row", "");
+    row.setAttribute("data-app-action-sidebar-thread-title", ref.title);
+    row.dataset.codexProjectThreadInjected = "true";
+    row.dataset.codexProjectMoveSortMs = String(projectThreadSortMs(thread) || 0);
+    row.dataset.codexProjectThreadCwd = projectPath || String(thread?.cwd || "");
+    row.innerHTML = `<div class="flex h-full w-full items-center text-sm leading-4"><span class="codex-project-thread-title truncate select-none" data-thread-title>${escapeHtml(ref.title)}</span></div>`;
+    attachProjectThreadOpenHandlers(row, thread);
+    updateRowTimeLabel(row, row.dataset.codexProjectMoveSortMs);
+    tryAttachButton(row);
+    return row;
+  }
+
+  function attachProjectThreadOpenHandlers(row, thread) {
+    row.addEventListener("click", (event) => openProjectThreadFromEvent(event, row, thread));
+    row.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      openProjectThreadFromEvent(event, row, thread);
+    });
+  }
+
+  function openProjectThreadFromEvent(event, row, thread) {
+    if (event.defaultPrevented || event.target?.closest?.("button")) return;
+    openProjectThread(row, thread).catch((error) => showToast(`打开会话失败：${String(error?.message || error)}`, null));
+  }
+
+  async function openProjectThread(row, thread) {
+    const threadId = projectMoveSessionKey(thread?.session_id || sessionRefFromRow(row).session_id);
+    if (!threadId) throw new Error("未找到会话 ID");
+    await loadProjectThreadIntoCodex(threadId);
+    window.location.assign(`/local/${encodeURIComponent(threadId)}?hostId=local`);
+  }
+
+  async function loadProjectThreadIntoCodex(threadId) {
+    try {
+      const signals = await import("./assets/app-server-manager-signals-C1h8B-R-.js");
+      if (typeof signals.rn === "function") {
+        await signals.rn("load-recent-conversation-ids-for-host", { hostId: "local", conversationIds: [threadId] });
+        await signals.rn("prewarm-conversation-for-host", { hostId: "local", conversationId: threadId });
+      }
+    } catch (error) {
+      window.__codexProjectThreadOpenFailures = window.__codexProjectThreadOpenFailures || [];
+      window.__codexProjectThreadOpenFailures.push(String(error?.stack || error));
+    }
+  }
+
+  function visibleProjectThreadRows(projectItem) {
+    return nativeProjectRows(projectItem).filter((row) => row.offsetParent !== null);
+  }
+
+  function renderedProjectThreadIds(projectItem) {
+    return new Set(nativeProjectRows(projectItem).map((row) => projectMoveSessionKey(sessionRefFromRow(row).session_id)).filter(Boolean));
+  }
+
+  function projectThreadCandidates(projectItem, threads) {
+    const existingIds = renderedProjectThreadIds(projectItem);
+    return threads.filter((thread) => !existingIds.has(projectMoveSessionKey(thread?.session_id || ""))).slice(0, Math.max(0, 5 - visibleProjectThreadRows(projectItem).length));
+  }
+
+  function projectCanRenderFallback(projectItem) {
+    return !!projectItem && projectItem.offsetParent !== null && !!visibleProjectThreadList(projectItem);
+  }
+
+  function renderProjectThreadFallback(projectItem, projectPath, threads) {
+    if (!projectCanRenderFallback(projectItem)) return;
+    const candidates = projectThreadCandidates(projectItem, threads);
+    const list = projectThreadFallbackList(projectItem);
+    const existing = new Map(Array.from(list.querySelectorAll("[data-app-action-sidebar-thread-id]")).map((row) => [projectMoveSessionKey(row.getAttribute("data-app-action-sidebar-thread-id")), row]));
+    const nextIds = new Set();
+    candidates.forEach((thread) => upsertProjectThreadFallbackRow(list, existing, nextIds, thread, projectPath));
+    removeMissingProjectThreadRows(existing, nextIds);
+    setProjectEmptyStateHidden(projectItem, candidates.length > 0 || visibleProjectThreadRows(projectItem).length > 0);
+  }
+
+  function upsertProjectThreadFallbackRow(list, existing, nextIds, thread, projectPath) {
+    const key = projectMoveSessionKey(thread?.session_id || "");
+    if (!key) return;
+    nextIds.add(key);
+    const row = existing.get(key) || createProjectThreadRow(thread, projectPath);
+    const sortMs = projectThreadSortMs(thread);
+    row.dataset.codexProjectMoveSortMs = String(sortMs || 0);
+    row.setAttribute("data-app-action-sidebar-thread-title", projectThreadTitle(thread));
+    const titleNode = row.querySelector("[data-thread-title]");
+    if (titleNode) titleNode.textContent = projectThreadTitle(thread);
+    insertRowItemByTime(list, rowListItem(row), row, { sortMs, sortMsTrusted: true });
+  }
+
+  function removeMissingProjectThreadRows(existing, nextIds) {
+    existing.forEach((row, key) => {
+      if (!nextIds.has(key)) rowListItem(row).remove();
+    });
+  }
+
+  async function refreshProjectThreadFallbacks() {
+    if (!codexPlusSettings().projectMove || window.__codexProjectThreadsInFlight) return;
+    const targets = nativeProjectTargets().filter((target) => projectCanRenderFallback(target.listItem));
+    targets.forEach((target) => {
+      if (visibleProjectThreadRows(target.listItem).length >= 5) removeProjectThreadFallback(target.listItem);
+    });
+    const incompleteTargets = targets.filter((target) => visibleProjectThreadRows(target.listItem).length < 5);
+    if (incompleteTargets.length === 0) return;
+    window.__codexProjectThreadsInFlight = true;
+    try {
+      await Promise.all(incompleteTargets.map(async (target) => {
+        const result = await postJson("/project-threads", { project_cwd: target.path, limit: 30 }).catch(() => ({ status: "failed", threads: [] }));
+        if (result?.status === "ok" && Array.isArray(result.threads)) renderProjectThreadFallback(target.listItem, target.path, result.threads);
+      }));
+    } finally {
+      window.__codexProjectThreadsInFlight = false;
+    }
+  }
+
+  function removeProjectThreadFallback(projectItem) {
+    projectItem?.querySelector?.('[data-codex-project-thread-list="true"]')?.remove();
+    setProjectEmptyStateHidden(projectItem, false);
+  }
+
+  function scheduleProjectThreadFallbacks(delay = 120) {
+    if (!codexPlusSettings().projectMove || window.__codexProjectThreadsTimer) return;
+    window.__codexProjectThreadsTimer = setTimeout(() => {
+      if (window.__codexProjectMoveRuntimeId !== codexProjectMoveRuntimeId) return;
+      window.__codexProjectThreadsTimer = null;
+      refreshProjectThreadFallbacks().finally(() => scheduleProjectThreadFallbacks(projectThreadsRefreshIntervalMs));
+    }, delay);
   }
 
   function updateProjectMoveEmptyStates() {
@@ -2601,6 +2871,7 @@
     updateDeleteButtonOffsets();
     scheduleProjectMoveProjection();
     scheduleChatsSortCorrection();
+    scheduleProjectThreadFallbacks();
     archivedPageRows().forEach(attachArchivedPageDeleteButton);
     installArchivedDeleteAllButton();
     refreshConversationTimeline();
@@ -2629,6 +2900,7 @@
     '[data-app-action-sidebar-section-heading="Chats"]',
     '[data-app-action-sidebar-section-heading="Projects"]',
     '[data-codex-project-move-row="true"]',
+    '[data-codex-project-thread-list="true"]',
     '[data-codex-archive-page-row="true"]',
     "[data-codex-archive-delete-all]",
     '[data-message-author-role]',
@@ -2682,6 +2954,7 @@
   window.__codexProjectMoveReadProjection = readProjectMoveProjection;
   window.__codexProjectMoveTargets = projectMoveTargets;
   window.__codexProjectMoveSortChats = applyChatsSortCorrection;
+  window.__codexProjectThreadsRefresh = refreshProjectThreadFallbacks;
   window.removeEventListener("resize", window.__codexPlusResizeHandler);
   let codexPlusResizeRafId = 0;
   window.__codexPlusResizeHandler = () => {

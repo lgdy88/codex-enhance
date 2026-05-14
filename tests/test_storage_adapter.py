@@ -15,13 +15,13 @@ def create_supported_db(path):
 
 def create_codex_thread_db(path, rollout_path):
     with sqlite3.connect(path) as db:
-        db.execute("CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT, title TEXT, cwd TEXT, archived INTEGER, archived_at INTEGER, updated_at INTEGER, updated_at_ms INTEGER)")
+        db.execute("CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT, title TEXT, cwd TEXT, archived INTEGER, archived_at INTEGER, updated_at INTEGER, updated_at_ms INTEGER, has_user_event INTEGER DEFAULT 1, thread_source TEXT)")
         db.execute("CREATE TABLE thread_dynamic_tools (thread_id TEXT NOT NULL, tool_name TEXT NOT NULL)")
         db.execute("CREATE TABLE thread_goals (thread_id TEXT NOT NULL, goal TEXT NOT NULL)")
         db.execute("CREATE TABLE thread_spawn_edges (parent_thread_id TEXT NOT NULL, child_thread_id TEXT NOT NULL, status TEXT NOT NULL)")
         db.execute("CREATE TABLE stage1_outputs (thread_id TEXT NOT NULL, output TEXT NOT NULL)")
         db.execute("CREATE TABLE agent_job_items (id TEXT PRIMARY KEY, assigned_thread_id TEXT)")
-        db.execute("INSERT INTO threads (id, rollout_path, title, cwd, archived, archived_at, updated_at, updated_at_ms) VALUES ('t1', ?, 'Codex Thread', '/old/project', 0, NULL, 100, 100000)", (str(rollout_path),))
+        db.execute("INSERT INTO threads (id, rollout_path, title, cwd, archived, archived_at, updated_at, updated_at_ms, has_user_event, thread_source) VALUES ('t1', ?, 'Codex Thread', '/old/project', 0, NULL, 100, 100000, 1, NULL)", (str(rollout_path),))
         db.execute("INSERT INTO thread_dynamic_tools (thread_id, tool_name) VALUES ('t1', 'Read')")
         db.execute("INSERT INTO thread_goals (thread_id, goal) VALUES ('t1', 'delete me')")
         db.execute("INSERT INTO thread_spawn_edges (parent_thread_id, child_thread_id, status) VALUES ('t1', 'child', 'running')")
@@ -244,7 +244,7 @@ def test_codex_thread_sort_keys_returns_batch_thread_timestamps(tmp_path):
     rollout_path = tmp_path / "rollout.jsonl"
     create_codex_thread_db(db_path, rollout_path)
     with sqlite3.connect(db_path) as db:
-        db.execute("INSERT INTO threads (id, rollout_path, title, cwd, archived, archived_at, updated_at, updated_at_ms) VALUES ('t2', ?, 'Second', '/other/project', 0, NULL, 200, 200000)", (str(rollout_path),))
+        db.execute("INSERT INTO threads (id, rollout_path, title, cwd, archived, archived_at, updated_at, updated_at_ms, has_user_event, thread_source) VALUES ('t2', ?, 'Second', '/other/project', 0, NULL, 200, 200000, 1, NULL)", (str(rollout_path),))
     adapter = SQLiteStorageAdapter(db_path, BackupStore(tmp_path / "backups"))
 
     result = adapter.codex_thread_sort_keys([
@@ -257,3 +257,35 @@ def test_codex_thread_sort_keys_returns_batch_thread_timestamps(tmp_path):
         {"session_id": "t2", "updated_at": 200, "updated_at_ms": 200000, "created_at_ms": None},
         {"session_id": "t1", "updated_at": 100, "updated_at_ms": 100000, "created_at_ms": None},
     ]
+
+
+def test_codex_project_threads_returns_visible_threads_for_workspace(tmp_path):
+    db_path = tmp_path / "state_5.sqlite"
+    rollout_path = tmp_path / "rollout.jsonl"
+    create_codex_thread_db(db_path, rollout_path)
+    with sqlite3.connect(db_path) as db:
+        db.execute("INSERT INTO threads (id, rollout_path, title, cwd, archived, archived_at, updated_at, updated_at_ms, has_user_event, thread_source) VALUES ('t2', ?, 'Child', '/old/project/sub', 0, NULL, 200, 200000, 1, NULL)", (str(rollout_path),))
+        db.execute("INSERT INTO threads (id, rollout_path, title, cwd, archived, archived_at, updated_at, updated_at_ms, has_user_event, thread_source) VALUES ('t3', ?, 'Archived', '/old/project', 1, NULL, 300, 300000, 1, NULL)", (str(rollout_path),))
+        db.execute("INSERT INTO threads (id, rollout_path, title, cwd, archived, archived_at, updated_at, updated_at_ms, has_user_event, thread_source) VALUES ('t4', ?, 'Subagent', '/old/project', 0, NULL, 400, 400000, 1, 'subagent')", (str(rollout_path),))
+    adapter = SQLiteStorageAdapter(db_path, BackupStore(tmp_path / "backups"))
+
+    result = adapter.codex_project_threads("/old/project")
+
+    assert result["status"] == "ok"
+    assert result["match_kind"] == "project"
+    assert [thread["session_id"] for thread in result["threads"]] == ["t2", "t1"]
+
+
+def test_codex_project_threads_falls_back_to_parent_workspace_for_moved_folder(tmp_path):
+    db_path = tmp_path / "state_5.sqlite"
+    rollout_path = tmp_path / "rollout.jsonl"
+    create_codex_thread_db(db_path, rollout_path)
+    with sqlite3.connect(db_path) as db:
+        db.execute("UPDATE threads SET cwd = ?, title = 'Parent Thread' WHERE id = 't1'", (r"\\?\D:\Skye\codex-image",))
+    adapter = SQLiteStorageAdapter(db_path, BackupStore(tmp_path / "backups"))
+
+    result = adapter.codex_project_threads(r"D:\Skye\codex-image\codex-image-fork")
+
+    assert result["status"] == "ok"
+    assert result["match_kind"] == "parent"
+    assert result["threads"][0]["session_id"] == "t1"

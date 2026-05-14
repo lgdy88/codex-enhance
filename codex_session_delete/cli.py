@@ -11,6 +11,12 @@ from codex_session_delete.chrome_native_host import repair_chrome_native_host
 from codex_session_delete.helper_server import HelperServer
 from codex_session_delete.installers import InstallOptions, install_codex_plus_plus, uninstall_codex_plus_plus
 from codex_session_delete.launcher import launch_and_inject, shutdown_helper
+from codex_session_delete.mcp_config import (
+    all_mcp_status,
+    install_browser_mcp_servers,
+    remove_browser_mcp_servers,
+)
+from codex_session_delete.provider_sync import run_provider_path_repair
 from codex_session_delete import updater
 from codex_session_delete import watcher
 
@@ -59,9 +65,26 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("check-update", help="Check GitHub Releases for a newer Codex++ version")
     subparsers.add_parser("update", help="Update Codex++ from the latest GitHub Release")
 
+    provider_repair_parser = subparsers.add_parser("provider-repair-paths", help="Repair Codex provider/project path visibility metadata")
+    provider_repair_parser.add_argument("--codex-home", type=Path, default=None)
+
     chrome_repair_parser = subparsers.add_parser("chrome-repair", help="Repair Codex Chrome native messaging host")
     chrome_repair_parser.add_argument("--app-dir", type=Path, default=None)
     chrome_repair_parser.add_argument("--host-path", type=Path, default=None)
+
+    subparsers.add_parser("mcp-status", help="Show Codex++ browser MCP configuration status")
+
+    mcp_install_parser = subparsers.add_parser("mcp-install", help="Install browser MCP server entries into Codex config.toml")
+    mcp_install_parser.add_argument("servers", nargs="*", choices=["chrome-devtools", "playwright", "all"], default=["all"])
+    mcp_install_parser.add_argument("--config", type=Path, default=None)
+    mcp_install_parser.add_argument("--chrome-mode", choices=["auto-connect", "browser-url", "default"], default="auto-connect")
+    mcp_install_parser.add_argument("--browser-url", default="http://127.0.0.1:9222")
+    mcp_install_parser.add_argument("--no-backup", action="store_true")
+
+    mcp_remove_parser = subparsers.add_parser("mcp-remove", help="Remove Codex++ browser MCP server entries from Codex config.toml")
+    mcp_remove_parser.add_argument("servers", nargs="*", choices=["chrome-devtools", "playwright", "all"], default=["all"])
+    mcp_remove_parser.add_argument("--config", type=Path, default=None)
+    mcp_remove_parser.add_argument("--no-backup", action="store_true")
 
     add_launch_arguments(parser)
     return parser
@@ -209,6 +232,17 @@ def run_update() -> int:
     return 0
 
 
+def run_provider_repair_paths(args: argparse.Namespace) -> int:
+    result = run_provider_path_repair(args.codex_home)
+    print(f"{result.status.value if hasattr(result.status, 'value') else result.status}: {result.message}")
+    print(f"target provider: {result.target_provider}")
+    print(f"changed session files: {result.changed_session_files}")
+    print(f"sqlite rows updated: {result.sqlite_rows_updated}")
+    if result.backup_dir:
+        print(f"backup: {result.backup_dir}")
+    return 0 if result.status.value != "skipped" else 1
+
+
 def run_chrome_repair(args: argparse.Namespace) -> int:
     result = repair_chrome_native_host(args.app_dir, args.host_path)
     print(f"{result.status}: {result.message}")
@@ -225,6 +259,46 @@ def run_chrome_repair(args: argparse.Namespace) -> int:
     if result.host_sha256:
         print(f"sha256: {result.host_sha256}")
     return 0 if result.status in {"repaired", "skipped"} else 1
+
+
+def print_mcp_status(servers) -> None:
+    for server in servers:
+        state = "enabled" if server.enabled else "disabled"
+        installed = "installed" if server.installed else "missing"
+        print(f"{server.name}: {installed}, {state}, type={server.server_type or 'unknown'}, mode={server.mode}")
+        if server.command:
+            print(f"  command: {server.command}")
+
+
+def run_mcp_status(args: argparse.Namespace) -> int:
+    print_mcp_status(all_mcp_status(getattr(args, "config", None)))
+    return 0
+
+
+def run_mcp_install(args: argparse.Namespace) -> int:
+    result = install_browser_mcp_servers(
+        args.servers,
+        config_path=args.config,
+        chrome_mode=args.chrome_mode,
+        browser_url=args.browser_url,
+        backup=not args.no_backup,
+    )
+    print(result.message)
+    print(f"config: {result.config_path}")
+    if result.backup_path:
+        print(f"backup: {result.backup_path}")
+    print_mcp_status(result.servers)
+    return 0
+
+
+def run_mcp_remove(args: argparse.Namespace) -> int:
+    result = remove_browser_mcp_servers(args.servers, config_path=args.config, backup=not args.no_backup)
+    print(result.message)
+    print(f"config: {result.config_path}")
+    if result.backup_path:
+        print(f"backup: {result.backup_path}")
+    print_mcp_status(result.servers)
+    return 0
 
 
 WATCHER_RUN_NAME = "CodexPlusPlusWatcher"
@@ -346,8 +420,16 @@ def main(argv: list[str] | None = None) -> int:
         return run_check_update()
     if args.command == "update":
         return run_update()
+    if args.command == "provider-repair-paths":
+        return run_provider_repair_paths(args)
     if args.command == "chrome-repair":
         return run_chrome_repair(args)
+    if args.command == "mcp-status":
+        return run_mcp_status(args)
+    if args.command == "mcp-install":
+        return run_mcp_install(args)
+    if args.command == "mcp-remove":
+        return run_mcp_remove(args)
     return run_launch(args)
 
 

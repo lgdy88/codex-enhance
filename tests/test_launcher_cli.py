@@ -125,9 +125,19 @@ def test_launch_uses_packaged_activation_for_windowsapps(monkeypatch):
 def test_windows_port_selector_uses_ephemeral_port_when_default_is_busy(monkeypatch):
     monkeypatch.setattr(launcher.sys, "platform", "win32")
     monkeypatch.setattr(launcher, "_can_bind_loopback_port", lambda port: port != 9229)
+    monkeypatch.setattr(launcher, "_port_has_codex_cdp", lambda port: False)
     monkeypatch.setattr(launcher, "_find_available_loopback_port", lambda: 43001)
 
     assert launcher.select_windows_loopback_port(9229) == 43001
+
+
+def test_windows_port_selector_reuses_existing_codex_cdp(monkeypatch):
+    monkeypatch.setattr(launcher.sys, "platform", "win32")
+    monkeypatch.setattr(launcher, "_can_bind_loopback_port", lambda port: False)
+    monkeypatch.setattr(launcher, "_port_has_codex_cdp", lambda port: port == 9229)
+    monkeypatch.setattr(launcher, "_find_available_loopback_port", lambda: (_ for _ in ()).throw(AssertionError("should reuse Codex CDP")))
+
+    assert launcher.select_windows_loopback_port(9229) == 9229
 
 
 def test_non_windows_port_selector_keeps_requested_port(monkeypatch):
@@ -210,6 +220,7 @@ def test_launch_retries_injection_until_codex_page_is_ready(monkeypatch, tmp_pat
 def test_launch_and_inject_returns_windows_packaged_process_id(monkeypatch, tmp_path):
     monkeypatch.setattr(launcher, "resolve_codex_app_dir", lambda app_dir=None: tmp_path)
     monkeypatch.setattr(launcher, "start_helper", lambda *args, **kwargs: FakeServer())
+    monkeypatch.setattr(launcher, "_port_has_codex_cdp", lambda port: False)
     monkeypatch.setattr(launcher, "launch_codex_app", lambda *args: 1234)
     monkeypatch.setattr(launcher, "inject_with_retry", lambda *args, **kwargs: {"result": {}})
 
@@ -219,10 +230,25 @@ def test_launch_and_inject_returns_windows_packaged_process_id(monkeypatch, tmp_
     assert proc == 1234
 
 
+def test_launch_and_inject_reuses_existing_codex_cdp_without_relaunch(monkeypatch, tmp_path):
+    monkeypatch.setattr(launcher, "resolve_codex_app_dir", lambda app_dir=None: tmp_path)
+    monkeypatch.setattr(launcher, "start_helper", lambda *args, **kwargs: FakeServer())
+    monkeypatch.setattr(launcher, "_port_has_codex_cdp", lambda port: port == 9229)
+    monkeypatch.setattr(launcher, "launch_codex_app", lambda *args: (_ for _ in ()).throw(AssertionError("should reuse existing Codex")))
+    monkeypatch.setattr(launcher, "inject_with_retry", lambda *args, **kwargs: {"result": {}})
+
+    server, proc = launcher.launch_and_inject(None, None, tmp_path / "backups", 9229, 57321)
+
+    assert server.port == 57321
+    assert isinstance(proc, launcher.ExistingCodexCdpProcess)
+    assert proc.debug_port == 9229
+
+
 def test_launch_and_inject_runs_provider_sync_before_launch_when_enabled(monkeypatch, tmp_path):
     events = []
     monkeypatch.setattr(launcher, "resolve_codex_app_dir", lambda app_dir=None: tmp_path)
     monkeypatch.setattr(launcher, "start_helper", lambda *args, **kwargs: FakeServer())
+    monkeypatch.setattr(launcher, "_port_has_codex_cdp", lambda port: False)
     monkeypatch.setattr(launcher, "inject_with_retry", lambda *args, **kwargs: {"result": {}})
     monkeypatch.setattr(launcher, "backend_settings", lambda: type("Settings", (), {"provider_sync_enabled": True})())
     monkeypatch.setattr(launcher, "run_provider_sync", lambda: events.append("sync") or type("Result", (), {"status": "synced", "message": "ok"})())
@@ -237,6 +263,7 @@ def test_launch_and_inject_skips_provider_sync_when_disabled(monkeypatch, tmp_pa
     events = []
     monkeypatch.setattr(launcher, "resolve_codex_app_dir", lambda app_dir=None: tmp_path)
     monkeypatch.setattr(launcher, "start_helper", lambda *args, **kwargs: FakeServer())
+    monkeypatch.setattr(launcher, "_port_has_codex_cdp", lambda port: False)
     monkeypatch.setattr(launcher, "inject_with_retry", lambda *args, **kwargs: {"result": {}})
     monkeypatch.setattr(launcher, "backend_settings", lambda: type("Settings", (), {"provider_sync_enabled": False})())
     monkeypatch.setattr(launcher, "run_provider_sync", lambda: (_ for _ in ()).throw(AssertionError("sync should not run")))
@@ -251,6 +278,7 @@ def test_launch_and_inject_closes_helper_when_injection_fails(monkeypatch, tmp_p
     server = FakeServer()
     monkeypatch.setattr(launcher, "resolve_codex_app_dir", lambda app_dir=None: tmp_path)
     monkeypatch.setattr(launcher, "start_helper", lambda *args, **kwargs: server)
+    monkeypatch.setattr(launcher, "_port_has_codex_cdp", lambda port: False)
     monkeypatch.setattr(launcher, "launch_codex_app", lambda *args: 1234)
     monkeypatch.setattr(launcher, "inject_with_retry", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("inject failed")))
 
@@ -269,6 +297,7 @@ def test_launch_uses_resolved_app_dir(monkeypatch, tmp_path):
     executable.write_text("#!/bin/sh\n", encoding="utf-8")
     monkeypatch.setattr(launcher, "resolve_codex_app_dir", lambda app_dir=None: mac_app)
     monkeypatch.setattr(launcher, "start_helper", lambda *args, **kwargs: FakeServer())
+    monkeypatch.setattr(launcher, "_port_has_codex_cdp", lambda port: False)
     monkeypatch.setattr(launcher.subprocess, "run", lambda args, **kw: launched.append(args))
     monkeypatch.setattr(launcher, "inject_with_retry", lambda *args, **kwargs: {"result": {}})
 
@@ -452,6 +481,78 @@ def test_cli_chrome_repair_prints_paths(monkeypatch, tmp_path, capsys):
     assert "repaired: ok" in output
     assert "extension id: abc123" in output
     assert "manifest:" in output
+
+
+def test_cli_provider_repair_paths_dispatches_to_path_repair(monkeypatch, tmp_path, capsys):
+    class Result:
+        status = type("Status", (), {"value": "synced"})()
+        message = "repaired"
+        target_provider = "apigather"
+        changed_session_files = 2
+        sqlite_rows_updated = 3
+        backup_dir = tmp_path / "backup"
+
+    calls = []
+    monkeypatch.setattr(cli, "run_provider_path_repair", lambda codex_home=None: calls.append(codex_home) or Result())
+
+    exit_code = cli.main(["provider-repair-paths", "--codex-home", str(tmp_path / ".codex")])
+
+    assert exit_code == 0
+    assert calls == [tmp_path / ".codex"]
+    output = capsys.readouterr().out
+    assert "synced: repaired" in output
+    assert "changed session files: 2" in output
+    assert "sqlite rows updated: 3" in output
+    assert "backup:" in output
+
+
+def test_cli_mcp_install_dispatches_to_config_manager(monkeypatch, tmp_path, capsys):
+    class Result:
+        message = "written"
+        config_path = tmp_path / "config.toml"
+        backup_path = tmp_path / "config.toml.bak"
+        servers = []
+
+    calls = []
+    monkeypatch.setattr(cli, "install_browser_mcp_servers", lambda *args, **kwargs: calls.append((args, kwargs)) or Result())
+
+    exit_code = cli.main([
+        "mcp-install",
+        "chrome-devtools",
+        "--config",
+        str(tmp_path / "config.toml"),
+        "--chrome-mode",
+        "browser-url",
+        "--browser-url",
+        "http://127.0.0.1:9222",
+    ])
+
+    assert exit_code == 0
+    assert calls[0][0] == (["chrome-devtools"],)
+    assert calls[0][1]["chrome_mode"] == "browser-url"
+    assert calls[0][1]["browser_url"] == "http://127.0.0.1:9222"
+    assert "written" in capsys.readouterr().out
+
+
+def test_cli_mcp_status_prints_browser_servers(monkeypatch, capsys):
+    class Server:
+        name = "chrome-devtools"
+        enabled = True
+        installed = True
+        mode = "auto-connect"
+        server_type = "stdio"
+        command = "npx"
+        args = ["-y", "chrome-devtools-mcp@latest"]
+
+    monkeypatch.setattr(cli, "all_mcp_status", lambda config_path=None: [Server()])
+
+    exit_code = cli.main(["mcp-status"])
+
+    assert exit_code == 0
+    output = capsys.readouterr().out
+    assert "chrome-devtools: installed, enabled, type=stdio, mode=auto-connect" in output
+    assert "command: npx" in output
+    assert "chrome-devtools-mcp@latest" not in output
 
 
 def test_cli_remove_alias_uninstalls_with_default_options(monkeypatch):

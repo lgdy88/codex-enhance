@@ -25,6 +25,7 @@ Codex++ is an external enhancement launcher for the Codex App. It does not modif
 - [Highlights](#highlights)
 - [Screenshots](#screenshots)
 - [Provider Sync](#provider-sync)
+- [Browser MCP](#browser-mcp)
 - [Friendly Links](#friendly-links)
 - [How It Works](#how-it-works)
 - [Requirements](#requirements)
@@ -94,6 +95,7 @@ This creates `/Applications/Codex++.app`.
 - Project move: moves sessions into normal conversations or other local projects.
 - Conversation Timeline: shows user-question markers on the right side of a conversation, with hover summaries and quick jump.
 - Provider Sync: switch model_provider without losing historical conversations.
+- Browser MCP: writes Chrome DevTools MCP and Playwright MCP entries for Chrome console, network, page state, and browser automation.
 - Windows shortcut setup/removal, optional watcher takeover, and checksum-verified GitHub Release updates.
 - macOS `/Applications/Codex++.app` bundle generation.
 
@@ -119,7 +121,7 @@ The top bar shows `Codex++`, backend status, and the settings panel:
 
 ## Provider Sync
 
-When `Provider Sync` is enabled, Codex++ synchronizes local session metadata before launching Codex. It aligns rollout files, SQLite thread records, and project path caches with the current `model_provider`, so you can switch providers without losing historical conversations.
+When `Provider Sync` is enabled, Codex++ synchronizes local session metadata before launching Codex. It aligns rollout files and SQLite thread records with the current `model_provider`, and only normalizes existing project path formats, so you can switch providers without losing historical conversations.
 
 Use it when:
 
@@ -127,7 +129,44 @@ Use it when:
 - You switch back to another provider and want historical conversations to stay visible under the original project.
 - Windows paths with a `\\?\` prefix prevent Desktop project matching.
 
-Provider Sync only fixes metadata related to conversation visibility. It does not rewrite message content. If Codex is holding a file lock or SQLite is busy, Codex++ skips the busy item and keeps launching Codex instead of blocking startup.
+Provider Sync only fixes metadata related to conversation visibility. It does not rewrite message content, does not force rollout project paths back into SQLite, and does not bulk-add Desktop project roots. If Codex is holding a file lock or SQLite is busy, Codex++ skips the busy item and keeps launching Codex instead of blocking startup.
+
+If a project already shows `No conversations` while the sessions still exist, run the path-only repair command:
+
+```bash
+python -m codex_session_delete provider-repair-paths
+```
+
+This command only converts equivalent Windows path formats such as `\\?\D:\...` / `D:/...` into the Desktop-friendly `D:\...`. It does not switch providers or move conversations between projects.
+
+## Browser MCP and MCP Toggles
+
+Codex++ can detect all MCP servers in `~/.codex/config.toml` and write `enabled = true/false` from the settings panel. To avoid leaking secrets, the panel and `mcp-status` only show server names, types, and enabled state; they do not show `env`, tokens, DSNs, or full command arguments.
+
+The toggle writes the config immediately, but the already-running Codex session usually does not hot-unload or hot-load MCP servers. Restart Codex++ or start a new session to confirm tool-list changes.
+
+Codex++ can also write browser-debugging MCP entries into your Codex config:
+
+```bash
+python -m codex_session_delete mcp-install all
+python -m codex_session_delete mcp-status
+python -m codex_session_delete mcp-remove all
+```
+
+It manages two entries in `~/.codex/config.toml`:
+
+- `chrome-devtools`: uses `chrome-devtools-mcp@latest` for Chrome pages, console, network, DOM, and performance debugging.
+- `playwright`: uses `@playwright/mcp@latest --browser=chrome --caps=devtools` for browser automation, E2E flows, and page-state capture.
+
+Codex++ backs up the config before writing and preserves unrelated providers, MCP servers, plugins, and token settings. Restart Codex after writing the config so the MCP servers are loaded.
+
+By default Chrome DevTools MCP uses `--autoConnect`. It can connect to your current Chrome session when supported by your Chrome version and after Chrome asks you to approve the connection. If your Chrome does not support it, use a remote debugging endpoint instead:
+
+```bash
+python -m codex_session_delete mcp-install chrome-devtools --chrome-mode browser-url --browser-url http://127.0.0.1:9222
+```
+
+This only configures MCP debugging and automation. It does not bypass official Computer Use account, region, rollout, or backend restrictions.
 
 ## Friendly Links
 
@@ -183,7 +222,9 @@ Then choose from the menu:
 [1] Install Codex++
 [2] Uninstall Codex++
 [3] Update Codex++
-[4] Exit
+[4] Install Browser MCP
+[5] Browser MCP Status
+[6] Exit
 ```
 
 ### Command-line setup
@@ -359,6 +400,8 @@ Provider Sync backs up pre-sync state to:
 ```text
 ~/.codex/backups_state/provider-sync
 ```
+
+`provider-repair-paths` uses the same backup directory.
 
 Hidden launch failure logs are stored at:
 
