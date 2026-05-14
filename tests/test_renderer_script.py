@@ -58,6 +58,8 @@ def test_renderer_script_contains_conversation_timeline_contract():
     assert "refreshConversationTimeline" in text
     assert "truncateTimelineQuestion" in text
     assert "timelineQuestionLimit = 40" in text
+    assert "timelineMinTopPercent" in text
+    assert "timelineMaxTopPercent" in text
 
 
 
@@ -74,6 +76,8 @@ def test_renderer_script_detects_user_questions_for_timeline_without_sidebar_sca
     assert "thread-scroll-container" in text
     assert "bg-token-foreground/5" in text
     assert "items-end" in text
+    assert "visibleTimelineNode" in timeline_detection_code
+    assert "timelineNodeId" in timeline_detection_code
     assert "main" in timeline_detection_code
     assert "selectors.sidebarThread" not in timeline_detection_code
     assert "document.body.textContent" not in timeline_detection_code
@@ -100,7 +104,9 @@ def test_renderer_script_refreshes_conversation_timeline_from_scan_loop():
     assert ".codex-conversation-timeline" in extension_code
     assert "[data-message-author-role]" in relevant_code
     assert "[data-testid=\"conversation-turn\"]" in relevant_code
-    assert "main .prose" in relevant_code
+    assert "[class*=\"user-message\"]" in relevant_code
+    assert "nodeLooksLikeTimelineQuestion(node)" in text
+    assert "main .prose" in chat_code
     assert "return false" in chat_code
 
 
@@ -113,23 +119,29 @@ def test_renderer_script_timeline_uses_stable_hover_and_scroll_behavior():
     assert "pointer-events: none" in text
     assert "scrollTimelineTarget" in text
     assert "nearestTimelineScroller" in text
+    assert "timelineScrollerViewportTop(scroller)" in text
     assert "scrollTo({" in text
     assert "behavior: \"smooth\"" in text
+    assert "aria-describedby" in text
+    assert "role\", \"tooltip\"" in text
+    assert "keydown" in text[text.index("function createConversationTimelineMarker"):text.index("\n\n  function prepareTimelineQuestions")]
     assert "click" not in text[text.index("function createConversationTimelineMarker"):text.index("\n\n  function refreshConversationTimeline")]
     assert "pointerup" in text[text.index("function createConversationTimelineMarker"):text.index("\n\n  function refreshConversationTimeline")]
 
 
 
-def test_renderer_script_timeline_positions_all_questions_by_document_order():
+def test_renderer_script_timeline_positions_questions_by_scroll_location():
     text = Path("codex_session_delete/inject/renderer-inject.js").read_text(encoding="utf-8")
-    start = text.index("function timelineMarkerTop")
+    start = text.index("function timelineScrollerViewportTop")
     end = text.index("\n\n  function removeConversationTimeline", start)
     marker_top_code = text[start:end]
 
-    assert "questions.indexOf(question)" in marker_top_code
-    assert "questions.length - 1" in marker_top_code
-    assert "relativeTop" not in marker_top_code
-    assert "getBoundingClientRect" not in marker_top_code
+    assert "timelineRawMarkerTop" in marker_top_code
+    assert "timelineMarkerTops" in marker_top_code
+    assert "getBoundingClientRect" in marker_top_code
+    assert "timelineScrollableHeight(scroller)" in marker_top_code
+    assert "timelineMaxMarkerGapPercent" in marker_top_code
+    assert "questions.indexOf(question)" not in marker_top_code
 
 
 
@@ -223,8 +235,10 @@ def test_renderer_script_ignores_chat_content_mutations_before_scheduling_scan()
     should_start = text.index("function shouldScheduleScan")
     should_end = text.index("\n\n  function runScheduledScan", should_start)
     should_schedule_only = text[should_start:should_end]
-    assert "node.nodeType === 1 && !isExtensionUiNode(node)" in should_schedule_only
-    assert "Array.from(mutation.addedNodes).some(isScanRelevantNode)" not in should_schedule_only
+    assert "nodeSelfOrAncestorMatchesScanRelevance(target)" in should_schedule_only
+    assert "const changedNodes = [...Array.from(mutation.addedNodes), ...Array.from(mutation.removedNodes)]" in should_schedule_only
+    assert "changedNodes.some((node) => node.nodeType === 1 && isScanRelevantNode(node))" in should_schedule_only
+    assert "Array.from(mutation.addedNodes).some((node) => node.nodeType === 1 && isScanRelevantNode(node))" in should_schedule_code
     assert "selectors.sidebarThread" in should_schedule_code
     assert "selectors.appHeader" in should_schedule_code
 
@@ -236,6 +250,7 @@ def test_renderer_script_chat_filter_keeps_relevant_node_escape_hatch():
     relevant_code = text[start:end]
     assert "node.matches?.(scanRelevantSelector)" in relevant_code
     assert "node.querySelector?.(scanRelevantSelector)" in relevant_code
+    assert "nodeLooksLikeTimelineQuestion(node)" in relevant_code
     assert "selectors.archiveNav" in relevant_code
     assert "selectors.disabledInstallButton" in relevant_code
     assert "button[aria-label=\"已归档对话\"]" in text
@@ -445,7 +460,7 @@ def test_renderer_script_includes_user_script_manager_ui_contract():
     assert "setAuthMethod(\"chatgpt\")" in text
     assert "patchFastModeGateOnObject" not in text
     assert "Codex++" in text
-    assert "codexPlusVersion = \"1.0.6\"" in text
+    assert "codexPlusVersion = \"1.0.7\"" in text
     assert "Codex++ ${codexPlusVersion}" in text
     assert "提出问题" in text
     assert "https://github.com/lgdy88/codex-enhance/issues" in text
@@ -530,6 +545,9 @@ def test_renderer_script_has_provider_history_manager_ui():
     assert "/provider/converge" in text
     assert "encrypted_content" in text
     assert "scheduleProviderWatcher" in text
+    assert "scheduleStartupProviderPathRepair" in text
+    assert "repairProviderPathsOnStartup" in text
+    assert "providerStartupPathRepairDelayMs" in text
     assert "/settings/get" in text
     assert "/settings/set" in text
     assert "loadBackendSettings" in text
@@ -671,6 +689,7 @@ def test_renderer_script_can_move_sidebar_threads_between_projects():
     assert "function removeProjectThreadFallback" in text
     assert "function projectThreadCandidates" in text
     assert "function visibleProjectThreadRows" in text
+    assert "function visibleProjectThreadFallbackRows" in text
     assert "function projectCanRenderFallback" in text
     assert "function createProjectThreadRowItem" in text
     assert "function ensureProjectThreadRowItem" in text
@@ -683,6 +702,12 @@ def test_renderer_script_can_move_sidebar_threads_between_projects():
     assert "projectItem.querySelectorAll(selectors.sidebarThread)" in native_rows_code
     assert "data-app-action-sidebar-project-list-id" not in native_rows_code
     assert 'codexProjectThreadInjected !== "true"' in native_rows_code
+    fallback_render_code = text[text.index("function renderProjectThreadFallback"):text.index("\n\n  function renderProjectThreadMoreButton")]
+    assert "state.visibleLimit - visibleProjectThreadRows" not in fallback_render_code
+    assert "const visibleSlots = Math.max(0, state.visibleLimit)" in fallback_render_code
+    refresh_fallback_code = text[text.index("async function refreshProjectThreadFallbacks"):text.index("\n\n  function removeProjectThreadFallback")]
+    assert "visibleProjectThreadFallbackRows(target.listItem).length < projectThreadState(target.path).visibleLimit" in refresh_fallback_code
+    assert "visibleProjectThreadRows(target.listItem).length >= projectThreadVisibleLimit" not in refresh_fallback_code
     upsert_code = text[text.index("function upsertProjectThreadFallbackRow"):text.index("\n\n  function removeMissingProjectThreadRows")]
     assert "const item = ensureProjectThreadRowItem(list, row)" in upsert_code
     assert "insertRowItemByTime(list, item, row" in upsert_code

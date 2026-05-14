@@ -156,6 +156,28 @@ def test_provider_sync_does_not_move_sqlite_cwd_to_rollout_cwd(tmp_path):
     assert row == (r"D:\Project\AILIMS",)
 
 
+def test_provider_sync_normalizes_scalar_active_workspace_root(tmp_path):
+    codex_home = tmp_path / ".codex"
+    codex_home.mkdir()
+    (codex_home / "config.toml").write_text('model_provider = "apigather"\n', encoding="utf-8")
+    (codex_home / ".codex-global-state.json").write_text(
+        json.dumps(
+            {
+                "active-workspace-roots": "\\\\?\\C:\\workspace",
+            }
+        ),
+        encoding="utf-8",
+    )
+    write_rollout(codex_home / "sessions" / "rollout-current.jsonl", provider="apigather", thread_id="thread-1", cwd=r"C:\workspace")
+    create_state_db(codex_home / "state_5.sqlite", provider="apigather", has_user_event=1, cwd=r"C:\workspace")
+
+    result = run_provider_sync(codex_home)
+
+    assert result.status == ProviderSyncStatus.SYNCED
+    state = json.loads((codex_home / ".codex-global-state.json").read_text(encoding="utf-8"))
+    assert state["active-workspace-roots"] == r"C:\workspace"
+
+
 def test_provider_path_repair_normalizes_paths_without_changing_provider(tmp_path):
     codex_home = tmp_path / ".codex"
     codex_home.mkdir()
