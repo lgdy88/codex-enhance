@@ -18,7 +18,12 @@ class DeleteService(Protocol):
     def move_thread_workspace(self, session: SessionRef, target_cwd: str) -> dict[str, object]: ...
     def thread_sort_key(self, session: SessionRef) -> dict[str, object]: ...
     def thread_sort_keys(self, sessions: list[SessionRef]) -> dict[str, object]: ...
-    def project_threads(self, project_cwd: str, limit: int = 30) -> dict[str, object]: ...
+    def project_threads(self, project_cwd: str, limit: int = 30, cursor: str | None = None) -> dict[str, object]: ...
+    def project_file_tree(self, project_cwd: str, relative_path: str = "", limit: int = 200) -> dict[str, object]: ...
+    def provider_status(self) -> dict[str, object]: ...
+    def provider_diagnostics(self, project_cwd: str = "") -> dict[str, object]: ...
+    def provider_repair_paths(self) -> dict[str, object]: ...
+    def provider_converge(self) -> dict[str, object]: ...
 
 
 class ExportService(Protocol):
@@ -108,7 +113,23 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send_json(self.server.service.thread_sort_keys(sessions))
                 return
             if self.path == "/project-threads":
-                self._send_json(self.server.service.project_threads(str(payload.get("project_cwd", "")), int(payload.get("limit", 30) or 30)))
+                cursor = payload.get("cursor")
+                self._send_json(self.server.service.project_threads(str(payload.get("project_cwd", "")), int(payload.get("limit", 30) or 30), str(cursor) if cursor else None))
+                return
+            if self.path == "/project-file-tree":
+                self._send_json(self.server.service.project_file_tree(str(payload.get("project_cwd", "")), str(payload.get("path", "")), int(payload.get("limit", 200) or 200)))
+                return
+            if self.path == "/provider/status":
+                self._send_json(self.server.service.provider_status())
+                return
+            if self.path == "/provider/diagnostics":
+                self._send_json(self.server.service.provider_diagnostics(str(payload.get("project_cwd", ""))))
+                return
+            if self.path == "/provider/repair-paths":
+                self._send_json(self.server.service.provider_repair_paths())
+                return
+            if self.path == "/provider/converge":
+                self._send_json(self.server.service.provider_converge())
                 return
             self._send_json({"error": "not found"}, status=404)
         except Exception as exc:

@@ -24,7 +24,7 @@ Codex++ is an external enhancement launcher for the Codex App. It does not modif
 - [Quick Start](#quick-start)
 - [Highlights](#highlights)
 - [Screenshots](#screenshots)
-- [Provider Sync](#provider-sync)
+- [Provider History Manager](#provider-history-manager)
 - [Browser MCP](#browser-mcp)
 - [Friendly Links](#friendly-links)
 - [How It Works](#how-it-works)
@@ -94,7 +94,7 @@ This creates `/Applications/Codex++.app`.
 - Markdown export: exports local rollout conversations to timestamped Markdown files.
 - Project move: moves sessions into normal conversations or other local projects.
 - Conversation Timeline: shows user-question markers on the right side of a conversation, with hover summaries and quick jump.
-- Provider Sync: switch model_provider without losing historical conversations.
+- Provider History Manager: local SQLite bridge first for cross-provider history queries, project pagination, runtime `model_provider` watching, and explicit compatibility-mode metadata convergence.
 - Browser MCP: writes Chrome DevTools MCP and Playwright MCP entries for Chrome console, network, page state, and browser automation.
 - Windows shortcut setup/removal, optional watcher takeover, and checksum-verified GitHub Release updates.
 - macOS `/Applications/Codex++.app` bundle generation.
@@ -119,9 +119,9 @@ The top bar shows `Codex++`, backend status, and the settings panel:
 
 ![Codex++ settings panel](docs/images/settings-panel.png)
 
-## Provider Sync
+## Provider History Manager
 
-When `Provider Sync` is enabled, Codex++ synchronizes local session metadata before launching Codex. It aligns rollout files and SQLite thread records with the current `model_provider`, and only normalizes existing project path formats, so you can switch providers without losing historical conversations.
+When `Provider History Manager` is enabled, Codex++ does not rewrite provider metadata by default. Project history first uses the local SQLite bridge against `~/.codex/state_5.sqlite`: it does not filter by the current provider, uses current project path variants including `\\?\`, and supports `limit + cursor` pagination. Codex app-server `thread/list` is only an optional fallback when the local bridge is unavailable; if the current Desktop build does not expose that signal, Codex++ skips it and keeps using local storage. The project sidebar shows 5 conversations first and adds a "Show more" action for more pages.
 
 Use it when:
 
@@ -129,7 +129,11 @@ Use it when:
 - You switch back to another provider and want historical conversations to stay visible under the original project.
 - Windows paths with a `\\?\` prefix prevent Desktop project matching.
 
-Provider Sync only fixes metadata related to conversation visibility. It does not rewrite message content, does not force rollout project paths back into SQLite, and does not bulk-add Desktop project roots. If Codex is holding a file lock or SQLite is busy, Codex++ skips the busy item and keeps launching Codex instead of blocking startup.
+Codex++ watches `~/.codex/config.toml` for `model_provider` changes while running and refreshes the history index and UI after a change. The Provider panel shows the active history query channel, rollout provider distribution, SQLite provider distribution, `\\?\` path counts, recent-50 matches, and project-visible counts.
+
+Low-risk path repair runs by default. It only converts equivalent Windows path formats such as `\\?\D:\...` / `D:/...` into Desktop-friendly `D:\...`; it does not switch providers or move conversations between projects.
+
+Compatibility mode provides a "Converge to current provider" button. It backs up first, then converges historical metadata to the current `model_provider`. This only guarantees list visibility; it does not guarantee that cross-account or cross-provider `encrypted_content` can resume.
 
 If a project already shows `No conversations` while the sessions still exist, run the path-only repair command:
 
@@ -137,7 +141,7 @@ If a project already shows `No conversations` while the sessions still exist, ru
 python -m codex_session_delete provider-repair-paths
 ```
 
-This command only converts equivalent Windows path formats such as `\\?\D:\...` / `D:/...` into the Desktop-friendly `D:\...`. It does not switch providers or move conversations between projects.
+This command matches the default path repair behavior. It does not switch providers or move conversations between projects.
 
 ## Browser MCP and MCP Toggles
 
@@ -179,7 +183,7 @@ Codex++ launches Codex externally:
 1. Starts the Codex App with:
    - `--remote-debugging-port=9229`
    - `--remote-allow-origins=http://127.0.0.1:9229`
-2. If Provider Sync is enabled, synchronizes historical session metadata before launching Codex.
+2. Runs low-risk path repair before launch; Provider History Manager handles cross-provider history queries and runtime `model_provider` watching.
 3. Starts a local helper service for health checks and runtime operations.
 4. Injects `renderer-inject.js` through CDP.
 5. The renderer talks to local services through a private CDP bridge. HTTP state-changing routes reject requests without a token by default, preventing unrelated local pages from triggering delete, export, or move actions.
@@ -395,7 +399,7 @@ Before deletion, related records are backed up to:
 ~/.codex-session-delete/backups
 ```
 
-Provider Sync backs up pre-sync state to:
+Provider History Manager path repair and compatibility-mode convergence back up pre-change state to:
 
 ```text
 ~/.codex/backups_state/provider-sync
@@ -447,7 +451,7 @@ You can also check whether Codex has the CDP flag:
 
 ### Old conversations disappear after switching providers
 
-Open the `Codex++` settings panel, enable `Provider Sync`, then restart Codex++. It synchronizes metadata to the current `model_provider`, making historical conversations visible under the current provider again.
+Open the Provider tab in the `Codex++` settings panel and check the history query channel, provider distribution, recent-50 matches, and project-visible counts. The default local SQLite bridge should recover the list first. If an older Desktop UI still filters it, click "Converge to current provider" manually. That compatibility mode backs up and changes metadata, but it does not guarantee that cross-account or cross-provider `encrypted_content` can resume.
 
 ### Windows uninstall fails
 
@@ -488,7 +492,7 @@ codex_session_delete/
   cdp.py                 CDP communication and bridge
   helper_server.py       Local helper service
   storage_adapter.py     Local SQLite delete/undo
-  provider_sync.py       Provider Sync
+  provider_sync.py       provider metadata convergence and path repair
   settings_store.py      Codex++ backend settings
   windows_installer.py   Windows shortcuts and uninstall entries
   macos_installer.py     macOS app bundle setup

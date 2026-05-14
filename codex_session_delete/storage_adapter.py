@@ -140,7 +140,7 @@ class SQLiteStorageAdapter:
             sort_keys = [rows_by_id[thread_id] for thread_id in thread_ids if thread_id in rows_by_id]
             return {"status": "ok", "sort_keys": sort_keys}
 
-    def codex_project_threads(self, project_cwd: str, limit: int = 30) -> dict[str, object]:
+    def codex_project_threads(self, project_cwd: str, limit: int = 30, cursor: str | None = None) -> dict[str, object]:
         project = project_cwd.strip()
         if not project:
             return {"status": "failed", "message": "项目路径为空", "threads": []}
@@ -152,17 +152,23 @@ class SQLiteStorageAdapter:
             if self._schema_kind(db) != "codex_threads" or not self._has_columns(db, "threads", {"cwd"}):
                 return {"status": "failed", "message": "Unsupported local storage schema", "threads": []}
             bounded_limit = max(1, min(int(limit or 30), 100))
-            rows = self._project_thread_rows(db, project, bounded_limit)
+            offset = self._decode_project_thread_cursor(cursor)
+            rows = self._project_thread_rows(db, project, bounded_limit + 1, offset)
             match_kind = "project"
             if not rows:
                 parent = self._parent_workspace_path(project)
-                rows = self._project_thread_rows(db, parent, bounded_limit) if parent else []
+                rows = self._project_thread_rows(db, parent, bounded_limit + 1, offset) if parent else []
                 match_kind = "parent" if rows else "project"
+            has_more = len(rows) > bounded_limit
+            page_rows = rows[:bounded_limit]
             return {
                 "status": "ok",
                 "project_cwd": project,
                 "match_kind": match_kind,
-                "threads": [self._project_thread_payload(row) for row in rows],
+                "threads": [self._project_thread_payload(row) for row in page_rows],
+                "next_cursor": str(offset + bounded_limit) if has_more else "",
+                "has_more": has_more,
+                "sort_key": "updated_at",
             }
 
     def _delete_generic_session(self, db: sqlite3.Connection, session: SessionRef) -> DeleteResult:
@@ -232,7 +238,7 @@ class SQLiteStorageAdapter:
         keys = set(row.keys())
         return {column: row[column] if column in keys else None for column in ("updated_at", "updated_at_ms", "created_at_ms")}
 
-    def _project_thread_rows(self, db: sqlite3.Connection, root: str | None, limit: int) -> list[sqlite3.Row]:
+    def _project_thread_rows(self, db: sqlite3.Connection, root: str | None, limit: int, offset: int = 0) -> list[sqlite3.Row]:
         if not root:
             return []
         columns = set(self._thread_columns(db))
@@ -240,9 +246,17 @@ class SQLiteStorageAdapter:
         where_sql, params = self._project_thread_where(root, columns)
         order_sql = self._project_thread_order_sql(columns)
         return db.execute(
-            f"SELECT {', '.join(select_columns)} FROM threads WHERE {where_sql} ORDER BY {order_sql} LIMIT ?",
-            (*params, limit),
+            f"SELECT {', '.join(select_columns)} FROM threads WHERE {where_sql} ORDER BY {order_sql} LIMIT ? OFFSET ?",
+            (*params, limit, max(0, offset)),
         ).fetchall()
+
+    def _decode_project_thread_cursor(self, cursor: str | None) -> int:
+        if not cursor:
+            return 0
+        try:
+            return max(0, int(cursor))
+        except (TypeError, ValueError):
+            return 0
 
     def _project_thread_select_columns(self, columns: set[str]) -> list[str]:
         wanted = ["id", "title", "cwd", "updated_at", "updated_at_ms", "created_at_ms", "source", "model_provider"]

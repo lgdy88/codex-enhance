@@ -217,20 +217,25 @@ def test_launch_retries_injection_until_codex_page_is_ready(monkeypatch, tmp_pat
     assert len(attempts) == 2
 
 
-def test_launch_and_inject_returns_windows_packaged_process_id(monkeypatch, tmp_path):
+def test_launch_and_inject_wraps_windows_packaged_process_id(monkeypatch, tmp_path):
+    monkeypatch.setattr(launcher.sys, "platform", "win32")
     monkeypatch.setattr(launcher, "resolve_codex_app_dir", lambda app_dir=None: tmp_path)
     monkeypatch.setattr(launcher, "start_helper", lambda *args, **kwargs: FakeServer())
     monkeypatch.setattr(launcher, "_port_has_codex_cdp", lambda port: False)
+    monkeypatch.setattr(launcher, "select_windows_loopback_port", lambda port: port)
     monkeypatch.setattr(launcher, "launch_codex_app", lambda *args: 1234)
     monkeypatch.setattr(launcher, "inject_with_retry", lambda *args, **kwargs: {"result": {}})
 
     server, proc = launcher.launch_and_inject(None, None, tmp_path / "backups", 9229, 57321)
 
     assert server.port == 57321
-    assert proc == 1234
+    assert isinstance(proc, launcher.WindowsCodexDesktopProcess)
+    assert proc.process_id == 1234
+    assert proc.debug_port == 9229
 
 
 def test_launch_and_inject_reuses_existing_codex_cdp_without_relaunch(monkeypatch, tmp_path):
+    monkeypatch.setattr(launcher.sys, "platform", "linux")
     monkeypatch.setattr(launcher, "resolve_codex_app_dir", lambda app_dir=None: tmp_path)
     monkeypatch.setattr(launcher, "start_helper", lambda *args, **kwargs: FakeServer())
     monkeypatch.setattr(launcher, "_port_has_codex_cdp", lambda port: port == 9229)
@@ -244,34 +249,85 @@ def test_launch_and_inject_reuses_existing_codex_cdp_without_relaunch(monkeypatc
     assert proc.debug_port == 9229
 
 
-def test_launch_and_inject_runs_provider_sync_before_launch_when_enabled(monkeypatch, tmp_path):
+def test_launch_and_inject_wraps_existing_windows_codex_cdp(monkeypatch, tmp_path):
+    monkeypatch.setattr(launcher.sys, "platform", "win32")
+    monkeypatch.setattr(launcher, "resolve_codex_app_dir", lambda app_dir=None: tmp_path)
+    monkeypatch.setattr(launcher, "start_helper", lambda *args, **kwargs: FakeServer())
+    monkeypatch.setattr(launcher, "_port_has_codex_cdp", lambda port: port == 9229)
+    monkeypatch.setattr(launcher, "launch_codex_app", lambda *args: (_ for _ in ()).throw(AssertionError("should reuse existing Codex")))
+    monkeypatch.setattr(launcher, "inject_with_retry", lambda *args, **kwargs: {"result": {}})
+
+    server, proc = launcher.launch_and_inject(None, None, tmp_path / "backups", 9229, 57321)
+
+    assert server.port == 57321
+    assert isinstance(proc, launcher.WindowsCodexDesktopProcess)
+    assert proc.process_id is None
+    assert proc.debug_port == 9229
+
+
+def test_windows_codex_desktop_process_waits_until_pid_app_and_cdp_exit(monkeypatch):
+    states = [
+        (True, [22516], True),
+        (False, [22516], False),
+        (False, [], True),
+        (False, [], False),
+    ]
+    index = {"value": 0}
+    sleeps = []
+
+    def process_exists(process_id):
+        return states[index["value"]][0]
+
+    def desktop_ids():
+        return states[index["value"]][1]
+
+    def cdp_alive(debug_port):
+        return states[index["value"]][2]
+
+    def sleep(seconds):
+        sleeps.append(seconds)
+        index["value"] += 1
+
+    monkeypatch.setattr(launcher, "_windows_process_exists", process_exists)
+    monkeypatch.setattr(launcher, "_windows_codex_desktop_main_process_ids", desktop_ids)
+    monkeypatch.setattr(launcher, "_port_has_codex_cdp", cdp_alive)
+    monkeypatch.setattr(launcher.time, "sleep", sleep)
+
+    launcher.WindowsCodexDesktopProcess(1234, 9229, poll_interval=0.1).wait()
+
+    assert sleeps == [0.1, 0.1, 0.1]
+    assert index["value"] == 3
+
+
+def test_launch_and_inject_runs_provider_path_repair_before_launch(monkeypatch, tmp_path):
     events = []
     monkeypatch.setattr(launcher, "resolve_codex_app_dir", lambda app_dir=None: tmp_path)
     monkeypatch.setattr(launcher, "start_helper", lambda *args, **kwargs: FakeServer())
     monkeypatch.setattr(launcher, "_port_has_codex_cdp", lambda port: False)
     monkeypatch.setattr(launcher, "inject_with_retry", lambda *args, **kwargs: {"result": {}})
-    monkeypatch.setattr(launcher, "backend_settings", lambda: type("Settings", (), {"provider_sync_enabled": True})())
-    monkeypatch.setattr(launcher, "run_provider_sync", lambda: events.append("sync") or type("Result", (), {"status": "synced", "message": "ok"})())
+    monkeypatch.setattr(launcher, "run_provider_path_repair", lambda: events.append("path-repair") or type("Result", (), {"status": launcher.ProviderSyncStatus.SYNCED, "message": "ok"})())
+    monkeypatch.setattr(launcher, "run_provider_sync", lambda: (_ for _ in ()).throw(AssertionError("provider convergence should be explicit")))
     monkeypatch.setattr(launcher, "launch_codex_app", lambda *args: events.append("launch") or 1234)
 
     launcher.launch_and_inject(None, None, tmp_path / "backups", 9229, 57321)
 
-    assert events == ["sync", "launch"]
+    assert events == ["path-repair", "launch"]
 
 
-def test_launch_and_inject_skips_provider_sync_when_disabled(monkeypatch, tmp_path):
+def test_launch_and_inject_path_repair_is_not_controlled_by_provider_history_toggle(monkeypatch, tmp_path):
     events = []
     monkeypatch.setattr(launcher, "resolve_codex_app_dir", lambda app_dir=None: tmp_path)
     monkeypatch.setattr(launcher, "start_helper", lambda *args, **kwargs: FakeServer())
     monkeypatch.setattr(launcher, "_port_has_codex_cdp", lambda port: False)
     monkeypatch.setattr(launcher, "inject_with_retry", lambda *args, **kwargs: {"result": {}})
     monkeypatch.setattr(launcher, "backend_settings", lambda: type("Settings", (), {"provider_sync_enabled": False})())
-    monkeypatch.setattr(launcher, "run_provider_sync", lambda: (_ for _ in ()).throw(AssertionError("sync should not run")))
+    monkeypatch.setattr(launcher, "run_provider_path_repair", lambda: events.append("path-repair") or type("Result", (), {"status": launcher.ProviderSyncStatus.SYNCED, "message": "ok"})())
+    monkeypatch.setattr(launcher, "run_provider_sync", lambda: (_ for _ in ()).throw(AssertionError("provider convergence should be explicit")))
     monkeypatch.setattr(launcher, "launch_codex_app", lambda *args: events.append("launch") or 1234)
 
     launcher.launch_and_inject(None, None, tmp_path / "backups", 9229, 57321)
 
-    assert events == ["launch"]
+    assert events == ["path-repair", "launch"]
 
 
 def test_launch_and_inject_closes_helper_when_injection_fails(monkeypatch, tmp_path):
@@ -313,15 +369,18 @@ def test_cli_stops_existing_windows_launchers_before_launch(monkeypatch):
     monkeypatch.setattr(cli.os, "getpid", lambda: 9876)
     monkeypatch.setattr(cli.subprocess, "run", lambda command, **kwargs: commands.append((command, kwargs)))
 
-    cli.stop_existing_windows_launchers()
+    cli.stop_existing_windows_launchers(57321)
 
     assert len(commands) == 1
     command, kwargs = commands[0]
     assert command[:3] == ["powershell", "-NoProfile", "-Command"]
     assert "codex_session_delete" in command[3]
-    assert "pythonw?" in command[3]
+    assert "Test-CodexPlusLauncher" in command[3]
+    assert "Get-NetTCPConnection" in command[3]
+    assert "CODEX_PLUS_PLUS_HELPER_PORT" in command[3]
     assert "Stop-Process" in command[3]
     assert kwargs["env"]["CODEX_PLUS_PLUS_PID"] == "9876"
+    assert kwargs["env"]["CODEX_PLUS_PLUS_HELPER_PORT"] == "57321"
     assert kwargs["check"] is False
 
 
@@ -337,19 +396,19 @@ def test_cli_skips_launcher_cleanup_on_non_windows(monkeypatch):
 
 def test_cli_launch_runs_launcher_cleanup_before_injection(monkeypatch):
     events = []
-    monkeypatch.setattr(cli, "stop_existing_windows_launchers", lambda: events.append("cleanup"))
+    monkeypatch.setattr(cli, "stop_existing_windows_launchers", lambda helper_port: events.append(("cleanup", helper_port)))
     monkeypatch.setattr(cli, "launch_and_inject", lambda *args: events.append("launch") or (FakeServer(), None))
     monkeypatch.setattr(cli, "wait_for_shutdown", lambda server, proc: events.append("wait"))
 
     exit_code = cli.main(["launch"])
 
     assert exit_code == 0
-    assert events == ["cleanup", "launch", "wait"]
+    assert events == [("cleanup", 57321), "launch", "wait"]
 
 
 def test_cli_launch_checks_update_before_injection(monkeypatch):
     events = []
-    monkeypatch.setattr(cli, "stop_existing_windows_launchers", lambda: events.append("cleanup"))
+    monkeypatch.setattr(cli, "stop_existing_windows_launchers", lambda helper_port: events.append(("cleanup", helper_port)))
     monkeypatch.setattr(cli, "maybe_print_update_notice", lambda: events.append("check-update"))
     monkeypatch.setattr(cli, "launch_and_inject", lambda *args: events.append("launch") or (FakeServer(), None))
     monkeypatch.setattr(cli, "wait_for_shutdown", lambda server, proc: events.append("wait"))
@@ -357,7 +416,7 @@ def test_cli_launch_checks_update_before_injection(monkeypatch):
     exit_code = cli.main(["launch"])
 
     assert exit_code == 0
-    assert events == ["cleanup", "check-update", "launch", "wait"]
+    assert events == [("cleanup", 57321), "check-update", "launch", "wait"]
 
 
 def test_cli_update_notice_ignores_network_errors(monkeypatch, capsys):

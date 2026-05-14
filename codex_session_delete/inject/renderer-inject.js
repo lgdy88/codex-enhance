@@ -4,6 +4,7 @@
   const exportButtonClass = "codex-export-button";
   const projectMoveButtonClass = "codex-project-move-button";
   const projectMoveOverlayClass = "codex-project-move-overlay";
+  const projectFileTreePanelClass = "codex-project-file-tree-panel";
   const actionButtonClass = "codex-session-action-button";
   const actionGroupClass = "codex-session-actions";
   const timelineClass = "codex-conversation-timeline";
@@ -20,6 +21,8 @@
   const chatsSortRefreshIntervalMs = 1500;
   const chatsSortDbRefreshIntervalMs = 5000;
   const projectThreadsRefreshIntervalMs = 5000;
+  const projectThreadVisibleLimit = 5;
+  const projectFileTreePanelWidth = 368;
   const styleId = "codex-delete-style";
   const codexDeleteStyleVersion = "8";
   const codexPlusMenuId = "codex-plus-menu";
@@ -28,6 +31,7 @@
   const codexExportVersion = "1";
   const codexProjectMoveVersion = "1";
   const codexProjectThreadsVersion = "1";
+  const codexProjectFileTreeVersion = "1";
   const codexActionGroupVersion = "2";
   const codexArchiveRowActionsVersion = "1";
   const codexArchiveDeleteAllVersion = "2";
@@ -39,10 +43,15 @@
   clearTimeout(window.__codexProjectMoveProjectionTimer);
   clearTimeout(window.__codexProjectMoveChatsSortTimer);
   clearTimeout(window.__codexProjectThreadsTimer);
+  clearInterval(window.__codexPlusBackendHeartbeat);
+  clearInterval(window.__codexPlusProviderWatcher);
   window.__codexProjectMoveProjectionTimer = null;
   window.__codexProjectMoveChatsSortTimer = null;
   window.__codexProjectThreadsTimer = null;
   window.__codexProjectThreadsInFlight = false;
+  window.__codexPlusBackendHeartbeat = null;
+  window.__codexPlusProviderWatcher = null;
+  window.__codexProjectThreadsState = window.__codexProjectThreadsState || {};
   const selectors = {
     sidebarThread: "[data-app-action-sidebar-thread-id]",
     threadTitle: "[data-thread-title]",
@@ -149,21 +158,140 @@
       .codex-project-move-hidden { display: none !important; }
       [data-codex-project-move-injected-list="true"] { display: flex; flex-direction: column; }
       [data-codex-project-thread-list="true"] { display: flex; flex-direction: column; }
-      .codex-project-thread-row {
-        position: relative;
-        min-height: 32px;
-        cursor: pointer;
-        border-radius: 8px;
-        padding: 6px 8px;
-        color: inherit;
-      }
-      .codex-project-thread-row:hover { background: var(--token-list-hover-background, rgba(0,0,0,.06)); }
+      .codex-project-thread-row { color: inherit; }
       .codex-project-thread-title {
         display: block;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
         padding-right: 86px;
+      }
+      .codex-project-thread-more {
+        display: block;
+        width: calc(100% - 12px);
+        min-height: 28px;
+        margin: 4px 6px 6px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: #6b7280;
+        font: 12px system-ui, sans-serif;
+        text-align: left;
+        cursor: pointer;
+      }
+      .codex-project-thread-more:hover,
+      .codex-project-thread-more:focus-visible { background: #f3f4f6; color: #111827; outline: none; }
+      .${projectFileTreePanelClass} {
+        position: fixed;
+        top: var(--codex-project-file-tree-top, 48px);
+        left: var(--codex-project-file-tree-left, 420px);
+        bottom: 0;
+        width: ${projectFileTreePanelWidth}px;
+        z-index: 2147481200;
+        display: flex;
+        flex-direction: column;
+        border-right: 1px solid rgba(15, 23, 42, .08);
+        border-left: 1px solid rgba(15, 23, 42, .08);
+        background: rgba(255, 255, 255, .98);
+        color: #111827;
+        font: 13px system-ui, sans-serif;
+        box-shadow: 12px 0 24px rgba(15, 23, 42, .06);
+        pointer-events: auto;
+        -webkit-app-region: no-drag;
+      }
+      .codex-project-file-tree-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 46px;
+        padding: 8px 10px 8px 12px;
+        border-bottom: 1px solid rgba(15, 23, 42, .08);
+      }
+      .codex-project-file-tree-title {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .codex-project-file-tree-name {
+        color: #111827;
+        font-weight: 650;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .codex-project-file-tree-path {
+        margin-top: 1px;
+        color: #6b7280;
+        font-size: 11px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .codex-project-file-tree-close {
+        width: 26px;
+        height: 26px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: #6b7280;
+        font: 18px system-ui, sans-serif;
+        line-height: 24px;
+        cursor: pointer;
+      }
+      .codex-project-file-tree-close:hover,
+      .codex-project-file-tree-close:focus-visible { background: #f3f4f6; color: #111827; outline: none; }
+      .codex-project-file-tree-body {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: auto;
+        padding: 6px 6px 12px;
+      }
+      .codex-project-file-tree-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
+        min-height: 28px;
+        border: 0;
+        border-radius: 7px;
+        background: transparent;
+        color: #374151;
+        font: inherit;
+        text-align: left;
+        cursor: default;
+        padding: 0 8px 0 calc(8px + var(--codex-project-file-tree-depth, 0px));
+      }
+      .codex-project-file-tree-row[data-kind="directory"] { cursor: pointer; }
+      .codex-project-file-tree-row:hover,
+      .codex-project-file-tree-row:focus-visible { background: #f3f4f6; outline: none; }
+      .codex-project-file-tree-row[data-selected="true"] { background: #e5e7eb; color: #111827; }
+      .codex-project-file-tree-row[data-kind="directory"][data-opened="true"] .codex-project-file-tree-label { font-weight: 650; }
+      .codex-project-file-tree-toggle {
+        flex: 0 0 14px;
+        color: #6b7280;
+        font-size: 12px;
+        line-height: 1;
+        text-align: center;
+      }
+      .codex-project-file-tree-label {
+        min-width: 0;
+        flex: 1 1 auto;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .codex-project-file-tree-row[data-file-kind="ignored"] .codex-project-file-tree-label { color: #9a3412; }
+      .codex-project-file-tree-children { margin: 0; padding: 0; }
+      .codex-project-file-tree-state { padding: 16px 10px; color: #6b7280; font: 12px system-ui, sans-serif; text-align: center; }
+      html[data-codex-project-file-tree-open="true"] main {
+        transform: translateX(${projectFileTreePanelWidth}px);
+        transition: transform .16s ease;
+      }
+      @media (max-width: 900px) {
+        .${projectFileTreePanelClass} {
+          left: max(0px, var(--codex-project-file-tree-left, 0px));
+          width: min(${projectFileTreePanelWidth}px, calc(100vw - var(--codex-project-file-tree-left, 0px)));
+        }
+        html[data-codex-project-file-tree-open="true"] main { transform: none; }
       }
       .codex-archive-delete-all {
         border: 1px solid #ef4444;
@@ -388,6 +516,7 @@
       .codex-plus-panel[hidden] { display: none; }
       .codex-plus-action-button,
       .codex-plus-issue-button { border: 1px solid rgba(255,255,255,.18); border-radius: 7px; background: #3f3f46; color: #f3f4f6; font: 12px system-ui, sans-serif; padding: 6px 8px; }
+      .codex-plus-danger-button { border-color: rgba(239,68,68,.55); background: #7f1d1d; color: #fee2e2; }
       .codex-plus-backend-status { display: grid; gap: 4px; min-width: 132px; justify-items: end; }
       .codex-plus-backend-label { color: #a1a1aa; font-size: 12px; }
       .codex-plus-backend-label[data-status="ok"] { color: #34d399; }
@@ -403,6 +532,10 @@
       .codex-plus-user-script-error { margin-top: 2px; color: #f87171; font-size: 11px; word-break: break-all; }
       .codex-plus-user-script-actions { display: grid; justify-items: end; gap: 8px; min-width: 120px; }
       .codex-plus-user-script-reload { border: 1px solid rgba(255,255,255,.18); border-radius: 7px; background: #3f3f46; color: #f3f4f6; font: 12px system-ui, sans-serif; padding: 6px 8px; }
+      .codex-plus-provider-diagnostics { display: grid; gap: 6px; margin-top: 8px; color: #d1d5db; font-size: 12px; line-height: 1.45; }
+      .codex-plus-provider-diagnostics-row { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid rgba(255,255,255,.06); padding-bottom: 4px; }
+      .codex-plus-provider-diagnostics-row span:first-child { color: #a1a1aa; }
+      .codex-plus-provider-diagnostics-row span:last-child { text-align: right; word-break: break-all; }
       .codex-plus-mcp-list { margin-top: 8px; display: grid; gap: 6px; }
       .codex-plus-mcp-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid rgba(255,255,255,.08); border-radius: 8px; padding: 7px 8px; }
       .codex-plus-mcp-name { font-size: 12px; color: #f3f4f6; }
@@ -488,7 +621,7 @@
   }
 
   function defaultCodexPlusSettings() {
-    return { pluginEntryUnlock: true, forcePluginInstall: true, sessionDelete: true, markdownExport: true, projectMove: true, conversationTimeline: true, nativeMenuPlacement: true };
+    return { pluginEntryUnlock: true, forcePluginInstall: true, sessionDelete: true, markdownExport: true, projectMove: true, projectFileTree: true, conversationTimeline: true, nativeMenuPlacement: true };
   }
 
   function codexPlusSettings() {
@@ -513,7 +646,7 @@
     });
   }
 
-  let codexPlusBackendSettings = { providerSyncEnabled: false };
+  let codexPlusBackendSettings = { providerSyncEnabled: true };
 
   async function loadBackendSettings() {
     try {
@@ -546,6 +679,12 @@
   let codexPlusUserScripts = { enabled: true, builtin_dir: "", user_dir: "", scripts: [] };
   let codexPlusMcpStatus = { status: "checking", servers: [] };
   let codexPlusBackendStatus = { status: "checking", message: "正在检查后端…" };
+  let codexPlusProviderStatus = { status: "checking", current_provider: "", config_mtime_ms: 0 };
+  let codexPlusProviderDiagnostics = { status: "checking" };
+  let codexProviderHistoryTransport = { mode: "local-sqlite", appServer: "not_checked", message: "本地 SQLite bridge 优先" };
+  let codexPlusBackendStatusInFlight = false;
+  let codexPlusProviderStatusInFlight = false;
+  let codexPlusProviderDiagnosticsInFlight = false;
 
   function renderBackendStatus() {
     const status = codexPlusBackendStatus.status || "failed";
@@ -570,8 +709,14 @@
   }
 
   async function checkBackendStatus() {
-    codexPlusBackendStatus = await withBackendTimeout(postJson("/backend/status", {}));
-    renderBackendStatus();
+    if (codexPlusBackendStatusInFlight) return;
+    codexPlusBackendStatusInFlight = true;
+    try {
+      codexPlusBackendStatus = await withBackendTimeout(postJson("/backend/status", {}));
+      renderBackendStatus();
+    } finally {
+      codexPlusBackendStatusInFlight = false;
+    }
   }
 
   async function repairBackend() {
@@ -586,9 +731,15 @@
   }
 
   function scheduleBackendHeartbeat() {
-    clearInterval(window.__codexPlusBackendHeartbeat);
+    if (window.__codexPlusBackendHeartbeat) return;
     window.__codexPlusBackendHeartbeat = setInterval(checkBackendStatus, 5000);
     checkBackendStatus();
+  }
+
+  function scheduleProviderWatcher() {
+    if (window.__codexPlusProviderWatcher) return;
+    window.__codexPlusProviderWatcher = setInterval(loadProviderStatus, 2500);
+    loadProviderStatus();
   }
 
   function userScriptStatusLabel(status) {
@@ -659,6 +810,148 @@
     loadMcpStatus("/mcp/set-enabled", { name, enabled });
   }
 
+  function providerDistributionText(value) {
+    const distribution = value && typeof value === "object" ? value : {};
+    const entries = Object.entries(distribution);
+    if (!entries.length) return "无";
+    return entries.map(([provider, count]) => `${provider}: ${count}`).join(", ");
+  }
+
+  function providerHistoryTransportText() {
+    const mode = codexProviderHistoryTransport.mode === "app-server" ? "Codex app-server thread/list" : "本地 SQLite bridge";
+    const appServer = codexProviderHistoryTransport.appServer === "unavailable" ? "；app-server thread/list 不可用" : "";
+    const message = codexProviderHistoryTransport.message ? `；${codexProviderHistoryTransport.message}` : "";
+    return `${mode}${appServer}${message}`;
+  }
+
+  function updateProviderHistoryTransport(next) {
+    codexProviderHistoryTransport = { ...codexProviderHistoryTransport, ...next };
+    window.__codexProviderHistoryTransport = codexProviderHistoryTransport;
+  }
+
+  function renderProviderDiagnostics() {
+    const panel = document.querySelector("[data-codex-provider-diagnostics]");
+    if (!panel) return;
+    const data = codexPlusProviderDiagnostics || {};
+    if (data.status === "checking") {
+      panel.textContent = "正在读取诊断信息…";
+      return;
+    }
+    if (data.status && data.status !== "ok") {
+      panel.textContent = data.message || "Provider 诊断不可用";
+      return;
+    }
+    const pathPending = data.path_repair_pending || {};
+    const providerPending = data.provider_converge_pending || {};
+    const sqlite = data.sqlite || {};
+    const rollout = data.rollout || {};
+    const recent50 = sqlite.recent50 || {};
+    const projectVisible = sqlite.project_visible || {};
+    panel.innerHTML = [
+      ["当前 provider", data.current_provider || "unknown"],
+      ["历史查询通道", providerHistoryTransportText()],
+      ["rollout provider 分布", providerDistributionText(rollout.provider_distribution)],
+      ["SQLite provider 分布", providerDistributionText(sqlite.provider_distribution)],
+      ["\\\\? 路径数量", `rollout ${pathPending.rollout_cwd_count || 0} / SQLite ${pathPending.sqlite_cwd_count || 0} / global ${pathPending.global_state_count || 0}`],
+      ["最近 50 命中", `${recent50.total || 0} 条，当前 provider ${recent50.current_provider_count || 0} 条，项目匹配 ${recent50.project_match_count || 0} 条`],
+      ["项目可见数量", `${projectVisible.total || 0} 条，当前 provider ${projectVisible.current_provider_count || 0} 条`],
+      ["待收敛 metadata", `rollout ${providerPending.rollout_files || 0} 个文件 / SQLite ${providerPending.sqlite_rows || 0} 行`],
+      ["encrypted_content 风险", data.warning || "provider 收敛只保证列表可见，不保证跨账号/跨 provider 的 encrypted_content 能续聊。"],
+    ].map(([label, value]) => `<div class="codex-plus-provider-diagnostics-row"><span>${escapeHtml(label)}</span><span>${escapeHtml(String(value))}</span></div>`).join("");
+  }
+
+  async function loadProviderDiagnostics(projectCwd = activeProjectPath()) {
+    if (codexPlusProviderDiagnosticsInFlight) return;
+    codexPlusProviderDiagnosticsInFlight = true;
+    codexPlusProviderDiagnostics = { status: "checking" };
+    renderProviderDiagnostics();
+    try {
+      codexPlusProviderDiagnostics = await postJson("/provider/diagnostics", { project_cwd: projectCwd || "" });
+    } catch (error) {
+      codexPlusProviderDiagnostics = { status: "failed", message: "Provider 诊断读取失败" };
+    } finally {
+      codexPlusProviderDiagnosticsInFlight = false;
+    }
+    renderProviderDiagnostics();
+  }
+
+  async function repairProviderPaths() {
+    const result = await postJson("/provider/repair-paths", {});
+    showToast(result?.message || "路径修复已执行", null);
+    await loadProviderDiagnostics();
+    refreshProviderHistoryUi();
+  }
+
+  async function convergeProviderMetadata() {
+    const ok = await approveProviderConvergence();
+    if (!ok) return;
+    const result = await postJson("/provider/converge", {});
+    showToast(result?.message || "Provider metadata 收敛已执行", null);
+    await loadProviderDiagnostics();
+    refreshProviderHistoryUi();
+  }
+
+  function approveProviderConvergence() {
+    document.querySelectorAll(".codex-delete-confirm-overlay").forEach((node) => node.remove());
+    return new Promise((resolve) => {
+      const overlay = document.createElement("div");
+      overlay.className = "codex-delete-confirm-overlay";
+      overlay.innerHTML = `
+        <div class="codex-delete-confirm-content" role="dialog" aria-modal="true" aria-label="Provider metadata 收敛">
+          <div class="codex-delete-confirm-title">Provider metadata 收敛</div>
+          <div class="codex-delete-confirm-message">这会先备份再把历史 metadata 收敛到当前 provider。它只保证列表可见，不保证跨账号或跨 provider 的 encrypted_content 能续聊。</div>
+          <div class="codex-delete-confirm-actions">
+            <button type="button" data-codex-provider-converge-cancel="true">取消</button>
+            <button type="button" data-codex-provider-converge-accept="true">收敛</button>
+          </div>
+        </div>
+      `;
+      const finish = (value, event) => {
+        event?.preventDefault();
+        event?.stopPropagation();
+        event?.target?.blur?.();
+        overlay.remove();
+        resolve(value);
+      };
+      overlay.addEventListener("click", (event) => {
+        if (event.target === overlay || event.target.closest("[data-codex-provider-converge-cancel]")) {
+          finish(false, event);
+          return;
+        }
+        if (event.target.closest("[data-codex-provider-converge-accept]")) {
+          finish(true, event);
+        }
+      }, true);
+      overlay.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") finish(false, event);
+      }, true);
+      document.body.appendChild(overlay);
+      overlay.querySelector("[data-codex-provider-converge-cancel]")?.focus();
+    });
+  }
+
+  async function loadProviderStatus() {
+    if (codexPlusProviderStatusInFlight) return;
+    codexPlusProviderStatusInFlight = true;
+    try {
+      const status = await postJson("/provider/status", {});
+      const previousProvider = codexPlusProviderStatus.current_provider;
+      const previousMtime = codexPlusProviderStatus.config_mtime_ms;
+      codexPlusProviderStatus = status || codexPlusProviderStatus;
+      if ((previousProvider && previousProvider !== codexPlusProviderStatus.current_provider) || (previousMtime && previousMtime !== codexPlusProviderStatus.config_mtime_ms)) {
+        refreshProviderHistoryUi();
+      }
+    } catch (_) {
+      codexPlusProviderStatus = { status: "failed", current_provider: "", config_mtime_ms: 0 };
+    } finally {
+      codexPlusProviderStatusInFlight = false;
+    }
+  }
+
+  function providerHistoryEnabled() {
+    return codexPlusBackendSettings.providerSyncEnabled !== false;
+  }
+
   function selectCodexPlusTab(tab) {
     document.querySelectorAll("[data-codex-plus-tab]").forEach((button) => {
       button.dataset.active = String(button.getAttribute("data-codex-plus-tab") === tab);
@@ -668,6 +961,7 @@
     });
     if (tab === "userScripts") loadUserScripts();
     if (tab === "mcp") loadMcpStatus();
+    if (tab === "provider") loadProviderDiagnostics();
   }
 
   function openCodexPlusModal() {
@@ -683,6 +977,7 @@
         </div>
         <div class="codex-plus-tabs" role="tablist" aria-label="Codex++">
           <button type="button" class="codex-plus-tab-button" data-codex-plus-tab="home" data-active="true">主页</button>
+          <button type="button" class="codex-plus-tab-button" data-codex-plus-tab="provider" data-active="false">Provider</button>
           <button type="button" class="codex-plus-tab-button" data-codex-plus-tab="mcp" data-active="false">MCP</button>
           <button type="button" class="codex-plus-tab-button" data-codex-plus-tab="userScripts" data-active="false">用户脚本</button>
           <button type="button" class="codex-plus-tab-button" data-codex-plus-tab="sponsor" data-active="false">赞赏</button>
@@ -717,11 +1012,15 @@
               <button type="button" class="codex-plus-toggle" data-codex-plus-setting="projectMove"><span></span></button>
             </div>
             <div class="codex-plus-row">
+              <div><div class="codex-plus-row-title">项目文件树</div><div class="codex-plus-row-description">点击项目时在聊天区域左侧显示可展开/折叠的目录树。</div></div>
+              <button type="button" class="codex-plus-toggle" data-codex-plus-setting="projectFileTree"><span></span></button>
+            </div>
+            <div class="codex-plus-row">
               <div><div class="codex-plus-row-title">对话 Timeline</div><div class="codex-plus-row-description">在对话右侧显示用户提问时间线，悬停查看摘要，点击跳转。</div></div>
               <button type="button" class="codex-plus-toggle" data-codex-plus-setting="conversationTimeline"><span></span></button>
             </div>
             <div class="codex-plus-row">
-              <div><div class="codex-plus-row-title">Provider 同步</div><div class="codex-plus-row-description">切换供应商（model_provider）时不丢任何历史会话，避免历史对话因为供应商切换而消失。</div></div>
+              <div><div class="codex-plus-row-title">Provider History Manager</div><div class="codex-plus-row-description">本地 SQLite bridge 优先跨 provider 查询历史；运行中监听 model_provider 变化；路径自动修复，provider metadata 只在兼容模式手动收敛。</div></div>
               <button type="button" class="codex-plus-toggle" data-codex-backend-setting="providerSyncEnabled"><span></span></button>
             </div>
             <div class="codex-plus-row">
@@ -738,6 +1037,21 @@
             <div class="codex-plus-row">
               <div><div class="codex-plus-row-title">提出问题</div><div class="codex-plus-row-description">打开 GitHub Issues 反馈问题或建议。</div></div>
               <button type="button" class="codex-plus-issue-button" data-codex-plus-issue="true">提出问题</button>
+            </div>
+          </div>
+          <div class="codex-plus-panel" data-codex-plus-panel="provider" hidden>
+            <div class="codex-plus-row">
+              <div>
+                <div class="codex-plus-row-title">诊断 / 修复</div>
+                <div class="codex-plus-row-description">显示历史查询通道、rollout provider 分布、SQLite provider 分布、\\\\? 路径数量、最近 50 命中和项目可见数量。</div>
+                <div class="codex-plus-user-script-warning">兼容模式收敛 provider metadata 前会备份；它只保证列表可见，不保证 encrypted_content 能跨账号或跨 provider 续聊。</div>
+                <div class="codex-plus-provider-diagnostics" data-codex-provider-diagnostics="true">正在读取诊断信息…</div>
+              </div>
+              <div class="codex-plus-mcp-actions">
+                <button type="button" class="codex-plus-action-button" data-codex-provider-refresh="true">刷新诊断</button>
+                <button type="button" class="codex-plus-action-button" data-codex-provider-repair-paths="true">修复路径</button>
+                <button type="button" class="codex-plus-action-button codex-plus-danger-button" data-codex-provider-converge="true">收敛到当前 provider</button>
+              </div>
             </div>
           </div>
           <div class="codex-plus-panel" data-codex-plus-panel="mcp" hidden>
@@ -835,6 +1149,18 @@
         loadMcpStatus();
         return;
       }
+      if (target?.closest("[data-codex-provider-refresh]")) {
+        loadProviderDiagnostics();
+        return;
+      }
+      if (target?.closest("[data-codex-provider-repair-paths]")) {
+        repairProviderPaths();
+        return;
+      }
+      if (target?.closest("[data-codex-provider-converge]")) {
+        convergeProviderMetadata();
+        return;
+      }
       const mcpServerToggle = target?.closest("[data-codex-mcp-server]");
       if (mcpServerToggle) {
         setMcpEnabled(mcpServerToggle.getAttribute("data-codex-mcp-server"), mcpServerToggle.dataset.enabled !== "true");
@@ -859,7 +1185,7 @@
       const backendToggle = target?.closest("[data-codex-backend-setting]");
       if (backendToggle) {
         const key = backendToggle.getAttribute("data-codex-backend-setting");
-        setBackendSetting(key, !codexPlusBackendSettings[key]);
+        setBackendSetting(key, !codexPlusBackendSettings[key]).then(refreshProviderHistoryUi);
         return;
       }
     }, true);
@@ -1307,6 +1633,11 @@
     return document.querySelector('[data-app-action-sidebar-section-heading="Chats"]');
   }
 
+  function activeProjectPath() {
+    const activeProject = Array.from(document.querySelectorAll('[data-app-action-sidebar-project-row]')).find((row) => row.getAttribute("aria-current") === "page" || row.dataset.active === "true");
+    return activeProject?.getAttribute("data-app-action-sidebar-project-id") || nativeProjectTargets()[0]?.path || "";
+  }
+
   function projectRowListItem(projectRow) {
     return projectRow.closest?.('[role="listitem"][aria-label]') || projectRow.closest?.('[role="listitem"]') || projectRow;
   }
@@ -1471,6 +1802,194 @@
     const section = projectsSection();
     if (!section) return null;
     return Array.from(section.querySelectorAll('[role="listitem"][aria-label]')).find((item) => projectItemMatchesTarget(item, target)) || null;
+  }
+
+  function activeProjectFileTreePanel() {
+    return document.querySelector(`.${projectFileTreePanelClass}`);
+  }
+
+  function projectFileTreeBody() {
+    return activeProjectFileTreePanel()?.querySelector("[data-codex-project-file-tree-body]") || null;
+  }
+
+  function setProjectFileTreeOpenState(open) {
+    document.documentElement.dataset.codexProjectFileTreeOpen = open ? "true" : "false";
+  }
+
+  function removeProjectFileTreePanel() {
+    activeProjectFileTreePanel()?.remove();
+    document.querySelectorAll('[data-codex-project-file-tree-active="true"]').forEach((row) => {
+      row.dataset.codexProjectFileTreeActive = "false";
+    });
+    setProjectFileTreeOpenState(false);
+  }
+
+  function projectFileTreeAnchorLeft() {
+    const section = projectsSection();
+    const rect = section?.getBoundingClientRect?.();
+    return rect && rect.width > 0 ? Math.round(rect.right) : 420;
+  }
+
+  function projectFileTreeTop() {
+    const headerRect = document.querySelector(selectors.appHeader)?.getBoundingClientRect?.();
+    return headerRect && headerRect.height > 0 ? Math.round(headerRect.bottom) : 48;
+  }
+
+  function positionProjectFileTreePanel() {
+    const panel = activeProjectFileTreePanel();
+    if (!panel) return;
+    panel.style.setProperty("--codex-project-file-tree-left", `${projectFileTreeAnchorLeft()}px`);
+    panel.style.setProperty("--codex-project-file-tree-top", `${projectFileTreeTop()}px`);
+  }
+
+  function projectFileTreeState(message) {
+    const state = document.createElement("div");
+    state.className = "codex-project-file-tree-state";
+    state.textContent = message;
+    return state;
+  }
+
+  function createProjectFileTreePanel(target) {
+    removeProjectFileTreePanel();
+    const panel = document.createElement("div");
+    panel.className = projectFileTreePanelClass;
+    panel.dataset.codexProjectFileTreeVersion = codexProjectFileTreeVersion;
+    panel.dataset.projectCwd = target.path || "";
+    panel.dataset.projectLabel = target.label || displayProjectName(target.path);
+    panel.innerHTML = `
+      <div class="codex-project-file-tree-header">
+        <div class="codex-project-file-tree-title">
+          <div class="codex-project-file-tree-name">${escapeHtml(target.label || displayProjectName(target.path))}</div>
+          <div class="codex-project-file-tree-path">${escapeHtml(target.path || "")}</div>
+        </div>
+        <button type="button" class="codex-project-file-tree-close" aria-label="关闭文件树">×</button>
+      </div>
+      <div class="codex-project-file-tree-body" data-codex-project-file-tree-body="true" role="tree"></div>
+    `;
+    panel.querySelector(".codex-project-file-tree-close")?.addEventListener("click", removeProjectFileTreePanel, true);
+    document.documentElement.appendChild(panel);
+    positionProjectFileTreePanel();
+    setProjectFileTreeOpenState(true);
+    return panel;
+  }
+
+  function markActiveProjectFileTreeTarget(target) {
+    document.querySelectorAll('[data-codex-project-file-tree-active="true"]').forEach((row) => {
+      row.dataset.codexProjectFileTreeActive = "false";
+    });
+    if (target?.row?.dataset) target.row.dataset.codexProjectFileTreeActive = "true";
+  }
+
+  function fileTreeIndent(level) {
+    return `${Math.max(0, level) * 18}px`;
+  }
+
+  function fileTreeKind(name) {
+    const lower = String(name || "").toLowerCase();
+    if (["target", "dist", "build", ".idea"].includes(lower)) return "ignored";
+    return "file";
+  }
+
+  function createProjectFileTreeRow(entry, level) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "codex-project-file-tree-row";
+    row.dataset.kind = entry.type || "file";
+    row.dataset.path = entry.path || "";
+    row.dataset.hasChildren = String(!!entry.has_children);
+    row.dataset.fileKind = fileTreeKind(entry.name);
+    row.dataset.loaded = "false";
+    row.style.setProperty("--codex-project-file-tree-depth", fileTreeIndent(level));
+    row.setAttribute("role", "treeitem");
+    row.setAttribute("aria-level", String(level + 2));
+    if (entry.type === "directory") row.setAttribute("aria-expanded", "false");
+    row.innerHTML = `
+      <span class="codex-project-file-tree-toggle" aria-hidden="true">${entry.type === "directory" && entry.has_children ? "&gt;" : ""}</span>
+      <span class="codex-project-file-tree-label">${escapeHtml(entry.name || "")}</span>
+    `;
+    if (entry.type === "directory") row.addEventListener("click", () => toggleProjectFileTreeDirectory(row, level + 1), true);
+    if (entry.type !== "directory") row.addEventListener("click", () => selectProjectFileTreeRow(row), true);
+    return row;
+  }
+
+  function renderProjectFileTreeEntries(container, entries, level) {
+    container.innerHTML = "";
+    if (!entries.length) {
+      container.appendChild(projectFileTreeState("空目录"));
+      return;
+    }
+    entries.forEach((entry) => container.appendChild(createProjectFileTreeRow(entry, level)));
+  }
+
+  async function loadProjectFileTreeDirectory(target, relativePath, container, level) {
+    container.replaceChildren(projectFileTreeState("加载中..."));
+    const result = await postJson("/project-file-tree", { project_cwd: target.path, path: relativePath || "", limit: 200 });
+    if (result?.status !== "ok" || !Array.isArray(result.entries)) {
+      container.replaceChildren(projectFileTreeState(result?.message || "文件树加载失败"));
+      return;
+    }
+    renderProjectFileTreeEntries(container, result.entries, level);
+  }
+
+  async function toggleProjectFileTreeDirectory(row, level) {
+    selectProjectFileTreeRow(row);
+    if (row.dataset.hasChildren !== "true") return;
+    const next = row.nextElementSibling;
+    if (row.dataset.expanded === "true") {
+      row.dataset.expanded = "false";
+      row.dataset.opened = "false";
+      row.setAttribute("aria-expanded", "false");
+      row.querySelector(".codex-project-file-tree-toggle").textContent = row.dataset.hasChildren === "true" ? ">" : "";
+      if (next?.dataset?.codexProjectFileTreeChildren === "true") next.hidden = true;
+      return;
+    }
+    row.dataset.expanded = "true";
+    row.dataset.opened = "true";
+    row.setAttribute("aria-expanded", "true");
+    row.querySelector(".codex-project-file-tree-toggle").textContent = "v";
+    if (next?.dataset?.codexProjectFileTreeChildren === "true") {
+      next.hidden = false;
+      return;
+    }
+    const children = document.createElement("div");
+    children.className = "codex-project-file-tree-children";
+    children.dataset.codexProjectFileTreeChildren = "true";
+    row.insertAdjacentElement("afterend", children);
+    const panel = activeProjectFileTreePanel();
+    await loadProjectFileTreeDirectory({ path: panel?.dataset.projectCwd || "" }, row.dataset.path || "", children, level);
+  }
+
+  function selectProjectFileTreeRow(row) {
+    activeProjectFileTreePanel()?.querySelectorAll('[data-selected="true"]').forEach((node) => {
+      node.dataset.selected = "false";
+      node.setAttribute("aria-selected", "false");
+    });
+    row.dataset.selected = "true";
+    row.setAttribute("aria-selected", "true");
+  }
+
+  async function openProjectFileTree(target) {
+    if (!codexPlusSettings().projectFileTree || !target?.path) return;
+    const panel = createProjectFileTreePanel(target);
+    markActiveProjectFileTreeTarget(target);
+    await loadProjectFileTreeDirectory(target, "", panel.querySelector("[data-codex-project-file-tree-body]"), 0);
+  }
+
+  function installProjectFileTreeHandlers() {
+    if (!codexPlusSettings().projectFileTree) {
+      removeProjectFileTreePanel();
+      return;
+    }
+    nativeProjectTargets().forEach((target) => {
+      if (target.row.dataset.codexProjectFileTreeHandler === codexProjectFileTreeVersion) return;
+      target.row.dataset.codexProjectFileTreeHandler = codexProjectFileTreeVersion;
+      target.row.addEventListener("click", (event) => {
+        const actionButton = event.target?.closest?.("button");
+        if (event.defaultPrevented || (actionButton && actionButton !== target.row)) return;
+        openProjectFileTree(target).catch((error) => showToast(`文件树加载失败：${String(error?.message || error)}`, null));
+      }, true);
+    });
+    positionProjectFileTreePanel();
   }
 
   function closestProjectListItem(row) {
@@ -1714,7 +2233,7 @@
     const emptyLabels = new Set(["暂无对话", "No conversations"]);
     return Array.from(projectItem.querySelectorAll("div, span")).filter((node) => {
       if (node.classList?.contains("overflow-hidden")) return false;
-      if (node.closest('[data-app-action-sidebar-thread-id], [data-codex-project-move-injected-list="true"]')) return false;
+      if (node.closest('[data-app-action-sidebar-thread-id], [data-codex-project-move-injected-list="true"], [data-codex-project-thread-list="true"]')) return false;
       return emptyLabels.has(normalizeProjectLabel(node.textContent));
     });
   }
@@ -1770,7 +2289,7 @@
   function createProjectThreadRow(thread, projectPath) {
     const ref = projectThreadRef(thread);
     const row = document.createElement("div");
-    row.className = "group codex-project-thread-row";
+    row.className = "group relative h-token-nav-row cursor-interaction rounded-lg px-row-x py-row-y text-sm hover:bg-token-list-hover-background focus-visible:outline-offset-[-2px] codex-project-thread-row";
     row.setAttribute("role", "button");
     row.setAttribute("tabindex", "0");
     row.setAttribute("data-app-action-sidebar-thread-id", ref.session_id);
@@ -1786,6 +2305,27 @@
     updateRowTimeLabel(row, row.dataset.codexProjectMoveSortMs);
     tryAttachButton(row);
     return row;
+  }
+
+  function createProjectThreadRowItem(row) {
+    const item = document.createElement("div");
+    item.setAttribute("role", "listitem");
+    item.className = "after:block after:h-px after:content-[''] last:after:hidden";
+    item.dataset.codexProjectThreadItem = "true";
+    item.appendChild(row);
+    return item;
+  }
+
+  function projectThreadRowItem(row) {
+    return row.closest?.('[data-codex-project-thread-item="true"]') || null;
+  }
+
+  function ensureProjectThreadRowItem(list, row) {
+    const existingItem = projectThreadRowItem(row);
+    if (existingItem) return existingItem;
+    const item = createProjectThreadRowItem(row);
+    if (!item.parentElement) list.appendChild(item);
+    return item;
   }
 
   function attachProjectThreadOpenHandlers(row, thread) {
@@ -1822,6 +2362,83 @@
     }
   }
 
+  async function appServerThreadList(projectCwd, limit = 30, cursor = "") {
+    if (!providerHistoryEnabled()) return null;
+    if (codexProviderHistoryTransport.appServer === "unavailable") return null;
+    try {
+      const signals = await import("./assets/app-server-manager-signals-C1h8B-R-.js");
+      if (typeof signals.rn !== "function") {
+        updateProviderHistoryTransport({ appServer: "unavailable", message: "app-server bridge 不可用" });
+        return null;
+      }
+      const result = await signals.rn("thread/list", {
+        modelProviders: [],
+        cwd: workspacePathVariants(projectCwd),
+        limit,
+        cursor: cursor || undefined,
+        sortKey: "updated_at",
+      });
+      updateProviderHistoryTransport({ mode: "app-server", appServer: "available", message: "app-server 查询成功" });
+      return result;
+    } catch (error) {
+      window.__codexProviderHistoryAppServerFailures = window.__codexProviderHistoryAppServerFailures || [];
+      window.__codexProviderHistoryAppServerFailures.push(String(error?.stack || error));
+      updateProviderHistoryTransport({ appServer: "unavailable", message: providerHistoryErrorSummary(error) });
+      return null;
+    }
+  }
+
+  function providerHistoryErrorSummary(error) {
+    return String(error?.message || error?.stack || error || "unknown").split("\n", 1)[0].slice(0, 160);
+  }
+
+  function workspacePathVariants(projectCwd) {
+    const raw = String(projectCwd || "").trim();
+    if (!raw) return [];
+    const normalized = raw.replace(/\//g, "\\");
+    const variants = [raw, normalized];
+    if (normalized.startsWith("\\\\?\\")) variants.push(normalized.slice(4));
+    else if (/^[A-Za-z]:\\/.test(normalized)) variants.push(`\\\\?\\${normalized}`);
+    return uniqueValues(variants);
+  }
+
+  function normalizeThreadListResponse(result) {
+    if (!result || typeof result !== "object") return null;
+    const rawThreads = Array.isArray(result.threads) ? result.threads : Array.isArray(result.items) ? result.items : Array.isArray(result.conversations) ? result.conversations : [];
+    if (!rawThreads.length && !result.next_cursor && !result.nextCursor && !result.cursor) return null;
+    return {
+      status: "ok",
+      threads: rawThreads.map(normalizeAppServerThread).filter(Boolean),
+      next_cursor: result.next_cursor || result.nextCursor || result.cursor || "",
+      has_more: !!(result.has_more || result.hasMore || result.next_cursor || result.nextCursor),
+    };
+  }
+
+  function normalizeAppServerThread(thread) {
+    const id = thread?.id || thread?.thread_id || thread?.conversationId || thread?.conversation_id || thread?.session_id;
+    if (!id) return null;
+    return {
+      session_id: id,
+      title: thread.title || thread.name || "Untitled",
+      cwd: thread.cwd || thread.workspace || thread.project_cwd || "",
+      model_provider: thread.model_provider || thread.modelProvider || "",
+      updated_at: thread.updated_at || thread.updatedAt || "",
+      updated_at_ms: thread.updated_at_ms || thread.updatedAtMs || "",
+      created_at_ms: thread.created_at_ms || thread.createdAtMs || "",
+    };
+  }
+
+  async function fetchProjectThreads(projectPath, state) {
+    const localResult = await postJson("/project-threads", { project_cwd: projectPath, limit: 30, cursor: state.cursor }).catch((error) => ({ status: "failed", message: providerHistoryErrorSummary(error), threads: [] }));
+    if (localResult?.status === "ok") {
+      updateProviderHistoryTransport({ mode: "local-sqlite", message: "本地 SQLite 查询成功" });
+      return localResult;
+    }
+    const appServerResult = normalizeThreadListResponse(await appServerThreadList(projectPath, 30, state.cursor));
+    if (appServerResult) return appServerResult;
+    return localResult || { status: "failed", threads: [] };
+  }
+
   function visibleProjectThreadRows(projectItem) {
     return nativeProjectRows(projectItem).filter((row) => row.offsetParent !== null);
   }
@@ -1830,9 +2447,23 @@
     return new Set(nativeProjectRows(projectItem).map((row) => projectMoveSessionKey(sessionRefFromRow(row).session_id)).filter(Boolean));
   }
 
+  function projectThreadStateKey(projectPath) {
+    return normalizeWorkspacePath(projectPath || "");
+  }
+
+  function projectThreadState(projectPath) {
+    const key = projectThreadStateKey(projectPath);
+    window.__codexProjectThreadsState[key] = window.__codexProjectThreadsState[key] || { visibleLimit: projectThreadVisibleLimit, cursor: "", hasMore: false, threads: [] };
+    return window.__codexProjectThreadsState[key];
+  }
+
+  function resetProjectThreadState() {
+    window.__codexProjectThreadsState = {};
+  }
+
   function projectThreadCandidates(projectItem, threads) {
     const existingIds = renderedProjectThreadIds(projectItem);
-    return threads.filter((thread) => !existingIds.has(projectMoveSessionKey(thread?.session_id || ""))).slice(0, Math.max(0, 5 - visibleProjectThreadRows(projectItem).length));
+    return threads.filter((thread) => !existingIds.has(projectMoveSessionKey(thread?.session_id || "")));
   }
 
   function projectCanRenderFallback(projectItem) {
@@ -1841,13 +2472,55 @@
 
   function renderProjectThreadFallback(projectItem, projectPath, threads) {
     if (!projectCanRenderFallback(projectItem)) return;
-    const candidates = projectThreadCandidates(projectItem, threads);
+    const state = projectThreadState(projectPath);
+    const visibleSlots = Math.max(0, state.visibleLimit - visibleProjectThreadRows(projectItem).length);
+    const candidates = projectThreadCandidates(projectItem, threads).slice(0, visibleSlots);
     const list = projectThreadFallbackList(projectItem);
     const existing = new Map(Array.from(list.querySelectorAll("[data-app-action-sidebar-thread-id]")).map((row) => [projectMoveSessionKey(row.getAttribute("data-app-action-sidebar-thread-id")), row]));
     const nextIds = new Set();
     candidates.forEach((thread) => upsertProjectThreadFallbackRow(list, existing, nextIds, thread, projectPath));
     removeMissingProjectThreadRows(existing, nextIds);
+    renderProjectThreadMoreButton(list, projectItem, projectPath, state, threads.length);
     setProjectEmptyStateHidden(projectItem, candidates.length > 0 || visibleProjectThreadRows(projectItem).length > 0);
+  }
+
+  function renderProjectThreadMoreButton(list, projectItem, projectPath, state, knownCount) {
+    list.querySelector("[data-codex-project-thread-more]")?.remove();
+    if (!state.hasMore && knownCount <= state.visibleLimit) return;
+    const more = document.createElement("button");
+    more.type = "button";
+    more.className = "codex-project-thread-more";
+    more.setAttribute("data-codex-project-thread-more", "true");
+    more.textContent = state.hasMore ? "显示更多" : "显示更多已加载对话";
+    more.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      loadMoreProjectThreads(projectItem, projectPath).catch((error) => showToast(`加载更多失败：${String(error?.message || error)}`, null));
+    }, true);
+    list.appendChild(more);
+  }
+
+  async function loadMoreProjectThreads(projectItem, projectPath) {
+    const state = projectThreadState(projectPath);
+    state.visibleLimit += projectThreadVisibleLimit;
+    if (state.hasMore && state.cursor) {
+      const result = await fetchProjectThreads(projectPath, state);
+      if (result?.status === "ok" && Array.isArray(result.threads)) {
+        mergeProjectThreadPage(state, result);
+      }
+    }
+    renderProjectThreadFallback(projectItem, projectPath, state.threads || []);
+  }
+
+  function mergeProjectThreadPage(state, result) {
+    const byId = new Map((state.threads || []).map((thread) => [projectMoveSessionKey(thread?.session_id || ""), thread]));
+    result.threads.forEach((thread) => {
+      const key = projectMoveSessionKey(thread?.session_id || "");
+      if (key) byId.set(key, thread);
+    });
+    state.threads = Array.from(byId.values()).sort((left, right) => projectThreadSortMs(right) - projectThreadSortMs(left));
+    state.cursor = result.next_cursor || "";
+    state.hasMore = !!result.has_more || !!state.cursor;
   }
 
   function upsertProjectThreadFallbackRow(list, existing, nextIds, thread, projectPath) {
@@ -1855,33 +2528,38 @@
     if (!key) return;
     nextIds.add(key);
     const row = existing.get(key) || createProjectThreadRow(thread, projectPath);
+    const item = ensureProjectThreadRowItem(list, row);
     const sortMs = projectThreadSortMs(thread);
     row.dataset.codexProjectMoveSortMs = String(sortMs || 0);
     row.setAttribute("data-app-action-sidebar-thread-title", projectThreadTitle(thread));
     const titleNode = row.querySelector("[data-thread-title]");
     if (titleNode) titleNode.textContent = projectThreadTitle(thread);
-    insertRowItemByTime(list, rowListItem(row), row, { sortMs, sortMsTrusted: true });
+    insertRowItemByTime(list, item, row, { sortMs, sortMsTrusted: true });
   }
 
   function removeMissingProjectThreadRows(existing, nextIds) {
     existing.forEach((row, key) => {
-      if (!nextIds.has(key)) rowListItem(row).remove();
+      if (!nextIds.has(key)) (projectThreadRowItem(row) || row).remove();
     });
   }
 
   async function refreshProjectThreadFallbacks() {
-    if (!codexPlusSettings().projectMove || window.__codexProjectThreadsInFlight) return;
+    if (!codexPlusSettings().projectMove || !providerHistoryEnabled() || window.__codexProjectThreadsInFlight) return;
     const targets = nativeProjectTargets().filter((target) => projectCanRenderFallback(target.listItem));
     targets.forEach((target) => {
-      if (visibleProjectThreadRows(target.listItem).length >= 5) removeProjectThreadFallback(target.listItem);
+      if (visibleProjectThreadRows(target.listItem).length >= projectThreadVisibleLimit && !projectThreadFallbackList(target.listItem).children.length) removeProjectThreadFallback(target.listItem);
     });
-    const incompleteTargets = targets.filter((target) => visibleProjectThreadRows(target.listItem).length < 5);
+    const incompleteTargets = targets.filter((target) => visibleProjectThreadRows(target.listItem).length < projectThreadState(target.path).visibleLimit);
     if (incompleteTargets.length === 0) return;
     window.__codexProjectThreadsInFlight = true;
     try {
       await Promise.all(incompleteTargets.map(async (target) => {
-        const result = await postJson("/project-threads", { project_cwd: target.path, limit: 30 }).catch(() => ({ status: "failed", threads: [] }));
-        if (result?.status === "ok" && Array.isArray(result.threads)) renderProjectThreadFallback(target.listItem, target.path, result.threads);
+        const state = projectThreadState(target.path);
+        if (!state.threads.length || (state.hasMore && state.threads.length < state.visibleLimit)) {
+          const result = await fetchProjectThreads(target.path, state);
+          if (result?.status === "ok" && Array.isArray(result.threads)) mergeProjectThreadPage(state, result);
+        }
+        renderProjectThreadFallback(target.listItem, target.path, state.threads || []);
       }));
     } finally {
       window.__codexProjectThreadsInFlight = false;
@@ -2032,6 +2710,14 @@
     refreshRecentConversationsForHost().finally(() => {
       projectMoveRefreshDelaysMs.forEach((delay) => setTimeout(refreshVisibleSidebar, delay));
     });
+  }
+
+  function refreshProviderHistoryUi() {
+    resetProjectThreadState();
+    refreshRecentConversationsForHost();
+    scheduleChatsSortCorrection(0);
+    refreshProjectThreadFallbacks();
+    loadProviderDiagnostics();
   }
 
   function visibleChatsRows() {
@@ -2861,6 +3547,7 @@
     installStyle();
     installCodexPlusMenu();
     scheduleBackendHeartbeat();
+    scheduleProviderWatcher();
     installDeleteButtonEventDelegation();
   }
 
@@ -2869,6 +3556,7 @@
     unblockPluginInstallButtons();
     sessionRows().forEach(tryAttachButton);
     updateDeleteButtonOffsets();
+    installProjectFileTreeHandlers();
     scheduleProjectMoveProjection();
     scheduleChatsSortCorrection();
     scheduleProjectThreadFallbacks();
@@ -2892,7 +3580,7 @@
   }
 
   function isExtensionUiNode(node) {
-    return !!node?.closest?.(`.codex-delete-toast, .codex-delete-confirm-overlay, .codex-plus-modal-overlay, .${projectMoveOverlayClass}, .${timelineClass}, .codex-conversation-timeline, #codex-plus-menu`);
+    return !!node?.closest?.(`.codex-delete-toast, .codex-delete-confirm-overlay, .codex-plus-modal-overlay, .${projectMoveOverlayClass}, .${projectFileTreePanelClass}, .${timelineClass}, .codex-conversation-timeline, #codex-plus-menu`);
   }
 
   const scanRelevantSelector = [
@@ -2901,6 +3589,7 @@
     '[data-app-action-sidebar-section-heading="Projects"]',
     '[data-codex-project-move-row="true"]',
     '[data-codex-project-thread-list="true"]',
+    '[data-app-action-sidebar-project-row]',
     '[data-codex-archive-page-row="true"]',
     "[data-codex-archive-delete-all]",
     '[data-message-author-role]',
@@ -2955,12 +3644,14 @@
   window.__codexProjectMoveTargets = projectMoveTargets;
   window.__codexProjectMoveSortChats = applyChatsSortCorrection;
   window.__codexProjectThreadsRefresh = refreshProjectThreadFallbacks;
+  window.__codexProjectFileTreeOpen = openProjectFileTree;
+  window.__codexProjectFileTreeClose = removeProjectFileTreePanel;
   window.removeEventListener("resize", window.__codexPlusResizeHandler);
   let codexPlusResizeRafId = 0;
   window.__codexPlusResizeHandler = () => {
     cancelAnimationFrame(codexPlusResizeRafId);
     codexPlusResizeRafId = requestAnimationFrame(() =>
-      updateFloatingCodexPlusMenuPosition(document.getElementById(codexPlusMenuId))
+      (updateFloatingCodexPlusMenuPosition(document.getElementById(codexPlusMenuId)), positionProjectFileTreePanel())
     );
   };
   window.addEventListener("resize", window.__codexPlusResizeHandler);

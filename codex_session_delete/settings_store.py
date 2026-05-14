@@ -8,11 +8,11 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class BackendSettings:
-    provider_sync_enabled: bool = False
+    provider_sync_enabled: bool = True
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> "BackendSettings":
-        return cls(provider_sync_enabled=bool(data.get("providerSyncEnabled", False)))
+        return cls(provider_sync_enabled=bool(data.get("providerSyncEnabled", True)))
 
     def to_dict(self) -> dict[str, object]:
         return {"providerSyncEnabled": self.provider_sync_enabled}

@@ -35,8 +35,28 @@ class FakeDeleteService:
     def thread_sort_keys(self, sessions: list[SessionRef]):
         return {"status": "ok", "sort_keys": [{"session_id": session.session_id, "updated_at_ms": index + 1} for index, session in enumerate(sessions)]}
 
-    def project_threads(self, project_cwd: str, limit: int = 30):
-        return {"status": "ok", "project_cwd": project_cwd, "threads": [{"session_id": "s1", "title": "First", "cwd": project_cwd}]}
+    def project_threads(self, project_cwd: str, limit: int = 30, cursor: str | None = None):
+        return {"status": "ok", "project_cwd": project_cwd, "cursor": cursor or "", "threads": [{"session_id": "s1", "title": "First", "cwd": project_cwd}]}
+
+    def project_file_tree(self, project_cwd: str, relative_path: str = "", limit: int = 200):
+        return {
+            "status": "ok",
+            "project_cwd": project_cwd,
+            "path": relative_path,
+            "entries": [{"name": "src", "path": "src", "type": "directory", "has_children": True}],
+        }
+
+    def provider_status(self):
+        return {"status": "ok", "current_provider": "custom", "config_mtime_ms": 1}
+
+    def provider_diagnostics(self, project_cwd: str = ""):
+        return {"status": "ok", "project_cwd": project_cwd, "current_provider": "custom"}
+
+    def provider_repair_paths(self):
+        return {"status": "synced", "message": "Provider path repair complete"}
+
+    def provider_converge(self):
+        return {"status": "synced", "message": "Provider sync complete"}
 
 
 class FakeExportService:
@@ -232,12 +252,53 @@ def test_helper_server_returns_project_threads():
     thread.start()
     try:
         base = f"http://127.0.0.1:{server.port}"
-        threads = post_json(base + "/project-threads", {"project_cwd": "/project/a", "limit": 10})
+        threads = post_json(base + "/project-threads", {"project_cwd": "/project/a", "limit": 10, "cursor": "10"})
     finally:
         server.shutdown()
         thread.join(timeout=3)
 
-    assert threads == {"status": "ok", "project_cwd": "/project/a", "threads": [{"session_id": "s1", "title": "First", "cwd": "/project/a"}]}
+    assert threads == {"status": "ok", "project_cwd": "/project/a", "cursor": "10", "threads": [{"session_id": "s1", "title": "First", "cwd": "/project/a"}]}
+
+
+def test_helper_server_returns_provider_history_endpoints():
+    service = FakeDeleteService()
+    server = HelperServer("127.0.0.1", 0, service, allow_http_mutation=True)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.port}"
+        status = post_json(base + "/provider/status", {})
+        diagnostics = post_json(base + "/provider/diagnostics", {"project_cwd": "/project/a"})
+        repaired = post_json(base + "/provider/repair-paths", {})
+        converged = post_json(base + "/provider/converge", {})
+    finally:
+        server.shutdown()
+        thread.join(timeout=3)
+
+    assert status["current_provider"] == "custom"
+    assert diagnostics["project_cwd"] == "/project/a"
+    assert repaired["status"] == "synced"
+    assert converged["message"] == "Provider sync complete"
+
+
+def test_helper_server_returns_project_file_tree():
+    service = FakeDeleteService()
+    server = HelperServer("127.0.0.1", 0, service, allow_http_mutation=True)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.port}"
+        tree = post_json(base + "/project-file-tree", {"project_cwd": "/project/a", "path": "", "limit": 20})
+    finally:
+        server.shutdown()
+        thread.join(timeout=3)
+
+    assert tree == {
+        "status": "ok",
+        "project_cwd": "/project/a",
+        "path": "",
+        "entries": [{"name": "src", "path": "src", "type": "directory", "has_children": True}],
+    }
 
 
 def test_helper_server_serves_packaged_sponsor_assets():

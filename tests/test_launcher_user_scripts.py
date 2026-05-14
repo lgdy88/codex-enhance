@@ -14,8 +14,23 @@ class FakeDeleteService:
     def find_archived_thread_by_title(self, title):
         return None
 
-    def project_threads(self, project_cwd, limit=30):
-        return {"status": "ok", "project_cwd": project_cwd, "threads": []}
+    def project_threads(self, project_cwd, limit=30, cursor=None):
+        return {"status": "ok", "project_cwd": project_cwd, "cursor": cursor or "", "threads": []}
+
+    def project_file_tree(self, project_cwd, relative_path="", limit=200):
+        return {"status": "ok", "project_cwd": project_cwd, "path": relative_path, "entries": []}
+
+    def provider_status(self):
+        return {"status": "ok", "current_provider": "custom", "config_mtime_ms": 1}
+
+    def provider_diagnostics(self, project_cwd=""):
+        return {"status": "ok", "project_cwd": project_cwd, "current_provider": "custom"}
+
+    def provider_repair_paths(self):
+        return {"status": "synced", "message": "Provider path repair complete"}
+
+    def provider_converge(self):
+        return {"status": "synced", "message": "Provider sync complete"}
 
 
 class FakeExportService:
@@ -177,4 +192,28 @@ def test_handle_bridge_request_exports_markdown(tmp_path):
 
     assert exported["status"] == "exported"
     assert exported["filename"] == "thread.md"
+
+
+def test_handle_bridge_request_returns_project_file_tree(tmp_path):
+    manager = UserScriptManager(tmp_path / "builtin", tmp_path / "user", tmp_path / "config.json")
+    runtime = FakeRuntime(manager)
+
+    result = handle_bridge_request(FakeDeleteService(), FakeExportService(), "/project-file-tree", {"project_cwd": str(tmp_path), "path": ""}, runtime)
+
+    assert result == {"status": "ok", "project_cwd": str(tmp_path), "path": "", "entries": []}
+
+
+def test_handle_bridge_request_returns_provider_history_endpoints(tmp_path):
+    manager = UserScriptManager(tmp_path / "builtin", tmp_path / "user", tmp_path / "config.json")
+    runtime = FakeRuntime(manager)
+
+    status = handle_bridge_request(FakeDeleteService(), FakeExportService(), "/provider/status", {}, runtime)
+    diagnostics = handle_bridge_request(FakeDeleteService(), FakeExportService(), "/provider/diagnostics", {"project_cwd": str(tmp_path)}, runtime)
+    repaired = handle_bridge_request(FakeDeleteService(), FakeExportService(), "/provider/repair-paths", {}, runtime)
+    converged = handle_bridge_request(FakeDeleteService(), FakeExportService(), "/provider/converge", {}, runtime)
+
+    assert status["current_provider"] == "custom"
+    assert diagnostics["project_cwd"] == str(tmp_path)
+    assert repaired["status"] == "synced"
+    assert converged["message"] == "Provider sync complete"
 

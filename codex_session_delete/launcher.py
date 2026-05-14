@@ -17,12 +17,14 @@ from codex_session_delete.app_paths import resolve_codex_app_dir
 from codex_session_delete.api_adapter import ApiAdapter, UnavailableApiAdapter
 from codex_session_delete.backup_store import BackupStore
 from codex_session_delete.cdp import evaluate_user_scripts, inject_file, open_devtools
+from codex_session_delete.file_tree import project_file_tree
 from codex_session_delete.helper_server import HelperServer
 from codex_session_delete.markdown_exporter import MarkdownExportService
 from codex_session_delete.mcp_config import all_mcp_status, install_browser_mcp_servers, remove_browser_mcp_servers, set_mcp_server_enabled
 from codex_session_delete.models import DeleteResult, DeleteStatus, SessionRef
-from codex_session_delete.provider_sync import ProviderSyncStatus, run_provider_sync
-from codex_session_delete.settings_store import BackendSettings, SettingsStore
+from codex_session_delete.provider_history import provider_diagnostics, provider_status
+from codex_session_delete.provider_sync import ProviderSyncStatus, run_provider_path_repair, run_provider_sync
+from codex_session_delete.settings_store import SettingsStore
 from codex_session_delete.storage_adapter import SQLiteStorageAdapter
 from codex_session_delete.user_scripts import UserScriptManager
 
@@ -67,10 +69,27 @@ class ApiFirstDeleteService:
             return {"status": DeleteStatus.FAILED.value, "message": "No local database configured", "sort_keys": []}
         return self.local_adapter.codex_thread_sort_keys(sessions)
 
-    def project_threads(self, project_cwd: str, limit: int = 30) -> dict[str, object]:
+    def project_threads(self, project_cwd: str, limit: int = 30, cursor: str | None = None) -> dict[str, object]:
         if self.local_adapter is None:
             return {"status": DeleteStatus.FAILED.value, "message": "No local database configured", "threads": []}
-        return self.local_adapter.codex_project_threads(project_cwd, limit)
+        return self.local_adapter.codex_project_threads(project_cwd, limit, cursor)
+
+    def project_file_tree(self, project_cwd: str, relative_path: str = "", limit: int = 200) -> dict[str, object]:
+        return project_file_tree(project_cwd, relative_path, limit)
+
+    def provider_status(self) -> dict[str, object]:
+        return provider_status()
+
+    def provider_diagnostics(self, project_cwd: str = "") -> dict[str, object]:
+        return provider_diagnostics(project_cwd=project_cwd)
+
+    def provider_repair_paths(self) -> dict[str, object]:
+        result = run_provider_path_repair()
+        return provider_result_payload(result)
+
+    def provider_converge(self) -> dict[str, object]:
+        result = run_provider_sync()
+        return provider_result_payload(result)
 
 
 class InjectedHelperServer(HelperServer):
@@ -110,6 +129,21 @@ class ExistingCodexCdpProcess:
             time.sleep(self.poll_interval)
 
 
+@dataclass
+class WindowsCodexDesktopProcess:
+    process_id: int | None
+    debug_port: int
+    poll_interval: float = 2.0
+
+    def wait(self) -> None:
+        while (
+            (self.process_id is not None and _windows_process_exists(self.process_id))
+            or bool(_windows_codex_desktop_main_process_ids())
+            or _port_has_codex_cdp(self.debug_port)
+        ):
+            time.sleep(self.poll_interval)
+
+
 def user_scripts_config_dir() -> Path:
     if sys.platform == "win32":
         base = os.environ.get("APPDATA")
@@ -117,7 +151,7 @@ def user_scripts_config_dir() -> Path:
     return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "Codex++"
 
 
-def backend_settings() -> BackendSettings:
+def backend_settings():
     return SettingsStore().load()
 
 
@@ -148,6 +182,54 @@ def _port_has_codex_cdp(port: int) -> bool:
         return True
     except Exception:
         return False
+
+
+def _run_powershell_stdout(script: str, timeout: float = 6.0) -> str:
+    try:
+        result = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return result.stdout or ""
+
+
+def _windows_process_exists(process_id: int) -> bool:
+    if sys.platform != "win32" or process_id <= 0:
+        return False
+    output = _run_powershell_stdout(
+        f"Get-CimInstance Win32_Process -Filter \"ProcessId={process_id}\" -ErrorAction SilentlyContinue | "
+        "ForEach-Object { $_.ProcessId }",
+        timeout=3.0,
+    )
+    return bool(output.strip())
+
+
+def _windows_codex_desktop_main_process_ids() -> list[int]:
+    if sys.platform != "win32":
+        return []
+    script = (
+        "Get-CimInstance Win32_Process -Filter \"Name='Codex.exe' OR Name='codex.exe'\" | "
+        "Where-Object { "
+        "$path = [string]$_.ExecutablePath; "
+        "$cmd = [string]$_.CommandLine; "
+        "$path -match '\\\\WindowsApps\\\\OpenAI\\.Codex_[^\\\\]+\\\\app\\\\Codex\\.exe$' -and "
+        "$cmd -notmatch '(^|\\s)--type=' "
+        "} | ForEach-Object { $_.ProcessId }"
+    )
+    ids: list[int] = []
+    for line in _run_powershell_stdout(script).splitlines():
+        line = line.strip()
+        if line.isdigit():
+            ids.append(int(line))
+    return ids
 
 
 def select_windows_loopback_port(requested_port: int) -> int:
@@ -324,8 +406,26 @@ def start_helper(service, export_service: MarkdownExportService | None = None, h
 
 
 def shutdown_helper(server: HelperServer) -> None:
+    bridge_socket = getattr(server, "bridge_socket", None)
+    if bridge_socket is not None:
+        try:
+            bridge_socket.close()
+        except Exception:
+            pass
     server.shutdown()
     server.server_close()
+
+
+def provider_result_payload(result) -> dict[str, object]:
+    status = result.status.value if hasattr(result.status, "value") else str(result.status)
+    return {
+        "status": status,
+        "message": result.message,
+        "target_provider": result.target_provider,
+        "backup_dir": str(result.backup_dir) if result.backup_dir else "",
+        "changed_session_files": result.changed_session_files,
+        "sqlite_rows_updated": result.sqlite_rows_updated,
+    }
 
 
 def inject_with_retry(
@@ -372,14 +472,18 @@ def launch_and_inject(app_dir: Path | None, db_path: Path | None, backup_dir: Pa
     user_config_dir = user_scripts_config_dir()
     user_script_manager = UserScriptManager(builtin_user_scripts_dir, user_config_dir / "user_scripts", user_config_dir / "user_scripts.json")
     runtime = CodexPlusRuntime(None, user_script_manager, debug_port)
-    if backend_settings().provider_sync_enabled:
-        sync_result = run_provider_sync()
-        if sync_result.status == ProviderSyncStatus.SKIPPED:
-            print(f"Provider sync skipped: {sync_result.message}")
+    sync_result = run_provider_path_repair()
+    if sync_result.status == ProviderSyncStatus.SKIPPED:
+        print(f"Provider path repair skipped: {sync_result.message}")
     server = start_helper(service, export_service, port=helper_port)
     codex_proc = None
     try:
-        codex_proc = ExistingCodexCdpProcess(debug_port) if reuse_existing_codex else launch_codex_app(resolved_app_dir, debug_port)
+        if reuse_existing_codex:
+            codex_proc = WindowsCodexDesktopProcess(None, debug_port) if sys.platform == "win32" else ExistingCodexCdpProcess(debug_port)
+        else:
+            codex_proc = launch_codex_app(resolved_app_dir, debug_port)
+            if sys.platform == "win32" and isinstance(codex_proc, int):
+                codex_proc = WindowsCodexDesktopProcess(codex_proc, debug_port)
         server.bridge_socket = inject_with_retry(debug_port, script_path, server.port, service, export_service, runtime)
         return server, codex_proc
     except Exception:
@@ -477,5 +581,16 @@ def handle_bridge_request(
         ] if isinstance(raw_sessions, list) else []
         return service.thread_sort_keys(sessions)
     if path == "/project-threads":
-        return service.project_threads(str(payload.get("project_cwd", "")), int(payload.get("limit", 30) or 30))
+        cursor = payload.get("cursor")
+        return service.project_threads(str(payload.get("project_cwd", "")), int(payload.get("limit", 30) or 30), str(cursor) if cursor else None)
+    if path == "/project-file-tree":
+        return service.project_file_tree(str(payload.get("project_cwd", "")), str(payload.get("path", "")), int(payload.get("limit", 200) or 200))
+    if path == "/provider/status":
+        return service.provider_status()
+    if path == "/provider/diagnostics":
+        return service.provider_diagnostics(str(payload.get("project_cwd", "")))
+    if path == "/provider/repair-paths":
+        return service.provider_repair_paths()
+    if path == "/provider/converge":
+        return service.provider_converge()
     return {"status": DeleteStatus.FAILED.value, "session_id": str(payload.get("session_id", "")), "message": "Unknown bridge path"}

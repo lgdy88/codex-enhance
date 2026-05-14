@@ -289,3 +289,26 @@ def test_codex_project_threads_falls_back_to_parent_workspace_for_moved_folder(t
     assert result["status"] == "ok"
     assert result["match_kind"] == "parent"
     assert result["threads"][0]["session_id"] == "t1"
+
+
+def test_codex_project_threads_supports_cursor_pagination(tmp_path):
+    db_path = tmp_path / "state_5.sqlite"
+    rollout_path = tmp_path / "rollout.jsonl"
+    create_codex_thread_db(db_path, rollout_path)
+    with sqlite3.connect(db_path) as db:
+        db.execute("UPDATE threads SET updated_at = 1, updated_at_ms = 1000 WHERE id = 't1'")
+        for index in range(2, 9):
+            db.execute(
+                "INSERT INTO threads (id, rollout_path, title, cwd, archived, archived_at, updated_at, updated_at_ms, has_user_event, thread_source) VALUES (?, ?, ?, '/old/project', 0, NULL, ?, ?, 1, NULL)",
+                (f"t{index}", str(rollout_path), f"Thread {index}", index, index * 1000),
+            )
+    adapter = SQLiteStorageAdapter(db_path, BackupStore(tmp_path / "backups"))
+
+    first = adapter.codex_project_threads("/old/project", limit=5)
+    second = adapter.codex_project_threads("/old/project", limit=5, cursor=first["next_cursor"])
+
+    assert first["has_more"] is True
+    assert first["next_cursor"] == "5"
+    assert [thread["session_id"] for thread in first["threads"]] == ["t8", "t7", "t6", "t5", "t4"]
+    assert second["has_more"] is False
+    assert [thread["session_id"] for thread in second["threads"]] == ["t3", "t2", "t1"]

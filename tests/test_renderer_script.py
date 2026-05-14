@@ -512,17 +512,61 @@ def test_renderer_script_has_sponsor_tab():
     assert "codex-plus-sponsor-qr" in text
 
 
-def test_renderer_script_has_backend_provider_sync_toggle():
+def test_renderer_script_has_provider_history_manager_ui():
     text = Path("codex_session_delete/inject/renderer-inject.js").read_text(encoding="utf-8")
 
-    assert "Provider 同步" in text
-    assert "切换供应商（model_provider）时不丢任何历史会话" in text
-    assert "避免历史对话因为供应商切换而消失" in text
+    assert "Provider History Manager" in text
+    assert "本地 SQLite bridge 优先跨 provider 查询历史" in text
+    assert "历史查询通道" in text
+    assert "运行中监听 model_provider 变化" in text
     assert "data-codex-backend-setting=\"providerSyncEnabled\"" in text
+    assert "data-codex-plus-tab=\"provider\"" in text
+    assert "data-codex-provider-diagnostics" in text
+    assert "data-codex-provider-repair-paths" in text
+    assert "data-codex-provider-converge" in text
+    assert "/provider/status" in text
+    assert "/provider/diagnostics" in text
+    assert "/provider/repair-paths" in text
+    assert "/provider/converge" in text
+    assert "encrypted_content" in text
+    assert "scheduleProviderWatcher" in text
     assert "/settings/get" in text
     assert "/settings/set" in text
     assert "loadBackendSettings" in text
     assert "setBackendSetting" in text
+
+
+def test_renderer_script_provider_watchers_are_idempotent_and_non_reentrant():
+    text = Path("codex_session_delete/inject/renderer-inject.js").read_text(encoding="utf-8")
+    backend_start = text.index("async function checkBackendStatus")
+    backend_end = text.index("\n\n  async function repairBackend", backend_start)
+    backend_code = text[backend_start:backend_end]
+    provider_start = text.index("async function loadProviderStatus")
+    provider_end = text.index("\n\n  function providerHistoryEnabled", provider_start)
+    provider_code = text[provider_start:provider_end]
+    diagnostics_start = text.index("async function loadProviderDiagnostics")
+    diagnostics_end = text.index("\n\n  async function repairProviderPaths", diagnostics_start)
+    diagnostics_code = text[diagnostics_start:diagnostics_end]
+    heartbeat_start = text.index("function scheduleBackendHeartbeat")
+    heartbeat_end = text.index("\n\n  function scheduleProviderWatcher", heartbeat_start)
+    heartbeat_code = text[heartbeat_start:heartbeat_end]
+    watcher_start = text.index("function scheduleProviderWatcher")
+    watcher_end = text.index("\n\n  function userScriptStatusLabel", watcher_start)
+    watcher_code = text[watcher_start:watcher_end]
+    project_refresh_start = text.index("async function refreshProjectThreadFallbacks")
+    project_refresh_end = text.index("\n\n  function removeProjectThreadFallback", project_refresh_start)
+    project_refresh_code = text[project_refresh_start:project_refresh_end]
+
+    assert "clearInterval(window.__codexPlusBackendHeartbeat)" in text
+    assert "clearInterval(window.__codexPlusProviderWatcher)" in text
+    assert "if (window.__codexPlusBackendHeartbeat) return" in heartbeat_code
+    assert "if (window.__codexPlusProviderWatcher) return" in watcher_code
+    assert "clearInterval(window.__codexPlusBackendHeartbeat)" not in heartbeat_code
+    assert "clearInterval(window.__codexPlusProviderWatcher)" not in watcher_code
+    assert "codexPlusBackendStatusInFlight" in backend_code
+    assert "codexPlusProviderStatusInFlight" in provider_code
+    assert "codexPlusProviderDiagnosticsInFlight" in diagnostics_code
+    assert "loadProviderDiagnostics" not in project_refresh_code
 
 
 def test_renderer_script_has_browser_mcp_manager_ui_contract():
@@ -614,14 +658,37 @@ def test_renderer_script_can_move_sidebar_threads_between_projects():
     assert "data-codex-project-thread-list" in text
     assert "codexProjectThreadsVersion" in text
     assert "function refreshProjectThreadFallbacks" in text
+    assert "function appServerThreadList" in text
+    assert "modelProviders: []" in text
+    assert "function providerHistoryTransportText" in text
+    assert "function updateProviderHistoryTransport" in text
+    assert "function providerHistoryErrorSummary" in text
+    assert "sortKey: \"updated_at\"" in text
+    assert "workspacePathVariants" in text
+    assert "projectThreadVisibleLimit = 5" in text
+    assert "显示更多" in text
+    assert "next_cursor" in text
     assert "function removeProjectThreadFallback" in text
     assert "function projectThreadCandidates" in text
     assert "function visibleProjectThreadRows" in text
     assert "function projectCanRenderFallback" in text
+    assert "function createProjectThreadRowItem" in text
+    assert "function ensureProjectThreadRowItem" in text
+    assert "data-codex-project-thread-item" in text
+    assert "item.dataset.codexProjectThreadItem = \"true\"" in text
+    assert "after:block after:h-px after:content-[''] last:after:hidden" in text
+    assert "group relative h-token-nav-row cursor-interaction rounded-lg px-row-x py-row-y text-sm hover:bg-token-list-hover-background focus-visible:outline-offset-[-2px] codex-project-thread-row" in text
+    assert '[data-app-action-sidebar-thread-id], [data-codex-project-move-injected-list="true"], [data-codex-project-thread-list="true"]' in text
     native_rows_code = text[text.index("function nativeProjectRows"):text.index("\n\n  function visibleProjectThreadList")]
     assert "projectItem.querySelectorAll(selectors.sidebarThread)" in native_rows_code
     assert "data-app-action-sidebar-project-list-id" not in native_rows_code
     assert 'codexProjectThreadInjected !== "true"' in native_rows_code
+    upsert_code = text[text.index("function upsertProjectThreadFallbackRow"):text.index("\n\n  function removeMissingProjectThreadRows")]
+    assert "const item = ensureProjectThreadRowItem(list, row)" in upsert_code
+    assert "insertRowItemByTime(list, item, row" in upsert_code
+    assert "rowListItem(row)" not in upsert_code
+    remove_missing_code = text[text.index("function removeMissingProjectThreadRows"):text.index("\n\n  async function refreshProjectThreadFallbacks")]
+    assert "projectThreadRowItem(row) || row" in remove_missing_code
     assert "function createProjectThreadRow" in text
     assert "function attachProjectThreadOpenHandlers" in text
     assert "function upsertProjectThreadFallbackRow" in text
@@ -643,3 +710,75 @@ def test_renderer_script_can_move_sidebar_threads_between_projects():
     assert "openProjectMoveMenuForRow" in text
     assert "existingMoveButton" in text
     assert "普通对话" in text
+
+
+def test_renderer_project_threads_uses_local_sqlite_before_optional_app_server():
+    text = Path("codex_session_delete/inject/renderer-inject.js").read_text(encoding="utf-8")
+    start = text.index("async function fetchProjectThreads")
+    end = text.index("\n\n  function visibleProjectThreadRows", start)
+    code = text[start:end]
+
+    assert code.index('postJson("/project-threads"') < code.index("appServerThreadList")
+    assert 'localResult?.status === "ok"' in code
+    assert 'mode: "local-sqlite"' in code
+    assert "return localResult" in code
+
+
+def test_renderer_script_has_project_file_tree_contract():
+    text = Path("codex_session_delete/inject/renderer-inject.js").read_text(encoding="utf-8")
+
+    assert "项目文件树" in text
+    assert "projectFileTree: true" in text
+    assert "/project-file-tree" in text
+    assert "codex-project-file-tree-panel" in text
+    assert "codexProjectFileTreeVersion" in text
+    assert "function installProjectFileTreeHandlers" in text
+    assert "function openProjectFileTree" in text
+    assert "function toggleProjectFileTreeDirectory" in text
+    assert "data-app-action-sidebar-project-row" in text
+    assert "html[data-codex-project-file-tree-open=\"true\"] main" in text
+    assert "window.__codexProjectFileTreeOpen" in text
+
+
+def test_renderer_project_file_tree_matches_codex_light_theme_without_extra_icons():
+    text = Path("codex_session_delete/inject/renderer-inject.js").read_text(encoding="utf-8")
+    css_start = text.index(".${projectFileTreePanelClass}")
+    css_end = text.index("html[data-codex-project-file-tree-open", css_start)
+    css = text[css_start:css_end]
+    panel_start = text.index("function createProjectFileTreePanel")
+    panel_end = text.index("\n\n  function markActiveProjectFileTreeTarget", panel_start)
+    panel_code = text[panel_start:panel_end]
+    row_start = text.index("function createProjectFileTreeRow")
+    row_end = text.index("\n\n  function renderProjectFileTreeEntries", row_start)
+    row_code = text[row_start:row_end]
+    toggle_start = text.index("async function toggleProjectFileTreeDirectory")
+    toggle_end = text.index("\n\n  async function openProjectFileTree", toggle_start)
+    toggle_code = text[toggle_start:toggle_end]
+
+    assert "background: rgba(255, 255, 255, .98)" in css
+    assert "color: #111827" in css
+    assert "background: #f3f4f6" in css
+    assert "background: #e5e7eb" in css
+    assert "codex-project-file-tree-header" in panel_code
+    assert "codex-project-file-tree-title" in panel_code
+    assert "codex-project-file-tree-close" in panel_code
+    assert "role=\"tree\"" in panel_code
+    assert "codex-project-file-tree-toolbar" not in text
+    assert "codex-project-file-tree-refresh" not in text
+    assert "codex-project-file-tree-root" not in text
+    assert "codex-project-file-tree-icon" not in text
+    assert "background: #2b2d30" not in css
+    assert "data-selected=\"true\"" in text
+    assert "aria-selected" in toggle_code
+    assert "--codex-project-file-tree-depth" in row_code
+    assert "dataset.fileKind" in row_code
+    assert "fileTreeKind(entry.name)" in row_code
+    assert "&gt;" in row_code
+    assert 'textContent = "v"' in toggle_code
+    assert 'textContent = row.dataset.hasChildren === "true" ? ">" : ""' in toggle_code
+    assert "fileTreeBranchIcon" not in text
+    assert "fileTreeKindIcon" not in text
+    row_to_open_code = text[row_start:toggle_end]
+    assert "›" not in row_to_open_code
+    assert "⌄" not in row_to_open_code
+    assert ">□<" not in text
