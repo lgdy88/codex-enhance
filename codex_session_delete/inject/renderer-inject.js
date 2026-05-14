@@ -41,6 +41,7 @@
   const codexArchiveDeleteAllVersion = "2";
   const codexConversationTimelineVersion = "2";
   const codexPlusVersion = "1.0.7";
+  const codexPlusDisplayName = "syke";
   const codexPlusSettingsKey = "codexPlusSettings";
   window.__codexProjectMoveRuntimeId = (window.__codexProjectMoveRuntimeId || 0) + 1;
   const codexProjectMoveRuntimeId = window.__codexProjectMoveRuntimeId;
@@ -1054,12 +1055,12 @@
     const overlay = document.createElement("div");
     overlay.className = "codex-plus-modal-overlay";
     overlay.innerHTML = `
-      <div class="codex-plus-modal-content" role="dialog" aria-modal="true" aria-label="Codex++">
+      <div class="codex-plus-modal-content" role="dialog" aria-modal="true" aria-label="${codexPlusDisplayName}">
         <div class="codex-plus-modal-header">
-          <div class="codex-plus-modal-title"><span class="codex-plus-backend-indicator" data-codex-backend-indicator="true" data-status="checking"></span><span>Codex++ ${codexPlusVersion}</span></div>
+          <div class="codex-plus-modal-title"><span class="codex-plus-backend-indicator" data-codex-backend-indicator="true" data-status="checking"></span><span>${codexPlusDisplayName} ${codexPlusVersion}</span></div>
           <button type="button" class="codex-plus-modal-close" aria-label="关闭">×</button>
         </div>
-        <div class="codex-plus-tabs" role="tablist" aria-label="Codex++">
+        <div class="codex-plus-tabs" role="tablist" aria-label="${codexPlusDisplayName}">
           <button type="button" class="codex-plus-tab-button" data-codex-plus-tab="home" data-active="true">主页</button>
           <button type="button" class="codex-plus-tab-button" data-codex-plus-tab="provider" data-active="false">Provider</button>
           <button type="button" class="codex-plus-tab-button" data-codex-plus-tab="mcp" data-active="false">MCP</button>
@@ -1300,7 +1301,7 @@
       if (node !== keep) node.remove();
     });
     Array.from(document.querySelectorAll("button")).forEach((button) => {
-      if ((button.textContent || "").trim() === `Codex++ ${codexPlusVersion}` && !button.closest(`#${codexPlusMenuId}`)) {
+      if ((button.textContent || "").trim() === `${codexPlusDisplayName} ${codexPlusVersion}` && !button.closest(`#${codexPlusMenuId}`)) {
         button.remove();
       }
     });
@@ -1393,7 +1394,7 @@
     menu.dataset.codexPlusMenuVersion = "6";
     const trigger = document.createElement("button");
     trigger.type = "button";
-    trigger.textContent = `Codex++ ${codexPlusVersion}`;
+    trigger.textContent = `${codexPlusDisplayName} ${codexPlusVersion}`;
     const indicator = document.createElement("span");
     indicator.className = "codex-plus-backend-indicator";
     indicator.dataset.codexBackendIndicator = "true";

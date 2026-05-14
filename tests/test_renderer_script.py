@@ -471,7 +471,10 @@ def test_renderer_script_includes_user_script_manager_ui_contract():
     assert "patchFastModeGateOnObject" not in text
     assert "Codex++" in text
     assert "codexPlusVersion = \"1.0.7\"" in text
-    assert "Codex++ ${codexPlusVersion}" in text
+    assert "codexPlusDisplayName = \"syke\"" in text
+    assert "${codexPlusDisplayName} ${codexPlusVersion}" in text
+    assert "aria-label=\"${codexPlusDisplayName}\"" in text
+    assert "Codex++ ${codexPlusVersion}" not in text
     assert "提出问题" in text
     assert "https://github.com/lgdy88/codex-enhance/issues" in text
     assert "window.open(issueUrl, \"_blank\")" in text
@@ -511,7 +514,7 @@ def test_renderer_script_includes_user_script_manager_ui_contract():
     assert "nativeButtonClass" in text
     assert "removeDuplicateCodexPlusMenus" in text
     assert "data-codex-plus-menu" in text
-    assert "textContent || \"\").trim() === `Codex++ ${codexPlusVersion}`" in text
+    assert "textContent || \"\").trim() === `${codexPlusDisplayName} ${codexPlusVersion}`" in text
     assert "codexPlusMenuVersion !== \"6\"" in text
     assert "codexPlusTriggerInstalled = \"5\"" in text
     assert ".codex-plus-trigger:hover" not in text
