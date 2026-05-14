@@ -86,3 +86,10 @@ def resolve_codex_app_dir(app_dir: Path | None = None) -> Path | None:
     if sys.platform == "darwin":
         return find_macos_codex_app()
     return find_latest_codex_app_dir()
+
+
+def codex_user_data_dir() -> Path:
+    local = os.environ.get("LOCALAPPDATA")
+    if local:
+        return Path(local) / "OpenAI" / "Codex"
+    return Path.home() / "AppData" / "Local" / "OpenAI" / "Codex"

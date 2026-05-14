@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from codex_session_delete.app_paths import find_latest_codex_app_dir, find_macos_codex_app, resolve_codex_app_dir, user_data_candidates
+from codex_session_delete.app_paths import codex_user_data_dir, find_latest_codex_app_dir, find_macos_codex_app, resolve_codex_app_dir, user_data_candidates
 
 
 def test_find_latest_codex_app_dir_uses_highest_version(tmp_path):
@@ -55,3 +55,9 @@ def test_resolve_codex_app_dir_uses_macos_discovery_on_darwin(monkeypatch, tmp_p
     monkeypatch.setattr("codex_session_delete.app_paths.find_latest_codex_app_dir", lambda: None)
 
     assert resolve_codex_app_dir() == mac_app
+
+
+def test_codex_user_data_dir_uses_local_appdata(monkeypatch, tmp_path):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "Local"))
+
+    assert codex_user_data_dir() == tmp_path / "Local" / "OpenAI" / "Codex"

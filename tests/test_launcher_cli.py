@@ -430,6 +430,30 @@ def test_cli_update_installs_latest_release(monkeypatch, tmp_path, capsys):
     assert "更新完成" in capsys.readouterr().out
 
 
+def test_cli_chrome_repair_prints_paths(monkeypatch, tmp_path, capsys):
+    class Result:
+        status = "repaired"
+        message = "ok"
+        extension_id = "abc123"
+        extension_host_name = "com.openai.codexextension"
+        source_host_path = tmp_path / "source" / "extension-host.exe"
+        host_path = tmp_path / "installed" / "extension-host.exe"
+        manifest_path = tmp_path / "manifest.json"
+        host_sha256 = "hash"
+
+    calls = []
+    monkeypatch.setattr(cli, "repair_chrome_native_host", lambda app_dir, host_path: calls.append((app_dir, host_path)) or Result())
+
+    exit_code = cli.main(["chrome-repair", "--app-dir", str(tmp_path / "Codex" / "app"), "--host-path", str(tmp_path / "host.exe")])
+
+    assert exit_code == 0
+    assert calls == [(tmp_path / "Codex" / "app", tmp_path / "host.exe")]
+    output = capsys.readouterr().out
+    assert "repaired: ok" in output
+    assert "extension id: abc123" in output
+    assert "manifest:" in output
+
+
 def test_cli_remove_alias_uninstalls_with_default_options(monkeypatch):
     calls = []
     monkeypatch.setattr(cli, "uninstall_codex_plus_plus", lambda options: calls.append(options))

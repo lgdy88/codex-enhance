@@ -202,6 +202,18 @@ Codex++.lnk
 
 Double-click it to launch Codex++.
 
+`setup` also repairs the Codex Chrome extension Native Messaging Host. It copies the bundled `extension-host.exe` into a user-executable directory and rewrites the Chrome manifest, avoiding `Access is denied` failures when Chrome tries to run the host directly from WindowsApps.
+
+### Repair Chrome Computer Use connection
+
+If Codex shows `Computer Use plugin unavailable`, run:
+
+```bash
+python -m codex_session_delete chrome-repair
+```
+
+This command only repairs the local Chrome extension and Codex Native Host connection. It does not emulate the official backend or bypass account, region, or rollout gating. Restart Chrome and Codex after running it.
+
 ### Command-line removal
 
 You can remove `Codex++` from Windows Settings → Apps → Installed apps.

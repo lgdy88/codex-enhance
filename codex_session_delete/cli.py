@@ -7,6 +7,7 @@ import sys
 import traceback
 from pathlib import Path
 
+from codex_session_delete.chrome_native_host import repair_chrome_native_host
 from codex_session_delete.helper_server import HelperServer
 from codex_session_delete.installers import InstallOptions, install_codex_plus_plus, uninstall_codex_plus_plus
 from codex_session_delete.launcher import launch_and_inject, shutdown_helper
@@ -57,6 +58,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("check-update", help="Check GitHub Releases for a newer Codex++ version")
     subparsers.add_parser("update", help="Update Codex++ from the latest GitHub Release")
+
+    chrome_repair_parser = subparsers.add_parser("chrome-repair", help="Repair Codex Chrome native messaging host")
+    chrome_repair_parser.add_argument("--app-dir", type=Path, default=None)
+    chrome_repair_parser.add_argument("--host-path", type=Path, default=None)
 
     add_launch_arguments(parser)
     return parser
@@ -204,6 +209,24 @@ def run_update() -> int:
     return 0
 
 
+def run_chrome_repair(args: argparse.Namespace) -> int:
+    result = repair_chrome_native_host(args.app_dir, args.host_path)
+    print(f"{result.status}: {result.message}")
+    if result.extension_id:
+        print(f"extension id: {result.extension_id}")
+    if result.extension_host_name:
+        print(f"native host: {result.extension_host_name}")
+    if result.source_host_path:
+        print(f"source host: {result.source_host_path}")
+    if result.host_path:
+        print(f"installed host: {result.host_path}")
+    if result.manifest_path:
+        print(f"manifest: {result.manifest_path}")
+    if result.host_sha256:
+        print(f"sha256: {result.host_sha256}")
+    return 0 if result.status in {"repaired", "skipped"} else 1
+
+
 WATCHER_RUN_NAME = "CodexPlusPlusWatcher"
 WATCHER_RUN_KEY = "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"
 WATCHER_STARTUP_SHORTCUT_NAME = "CodexPlusPlusWatcher.lnk"
@@ -323,6 +346,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_check_update()
     if args.command == "update":
         return run_update()
+    if args.command == "chrome-repair":
+        return run_chrome_repair(args)
     return run_launch(args)
 
 

@@ -5,6 +5,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from codex_session_delete.chrome_native_host import repair_chrome_native_host
 from codex_session_delete.macos_installer import install_macos_app, uninstall_macos_app
 from codex_session_delete.windows_installer import install_windows_shortcuts, uninstall_windows_shortcuts
 
@@ -22,6 +23,11 @@ def install_codex_plus_plus(options: InstallOptions) -> None:
         return
     if sys.platform == "win32":
         install_windows_shortcuts(options)
+        try:
+            result = repair_chrome_native_host()
+            print(f"chrome-native-host: {result.status}: {result.message}")
+        except Exception as exc:
+            print(f"chrome-native-host: skipped: {exc}")
         return
     raise RuntimeError(f"Unsupported platform for Codex++ install: {sys.platform}")
 
