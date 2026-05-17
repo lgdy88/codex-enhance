@@ -10,7 +10,14 @@ def test_project_file_tree_returns_direct_children(tmp_path):
 
     assert result["status"] == "ok"
     assert [entry["name"] for entry in result["entries"]] == ["src", "README.md"]
-    assert result["entries"][0] == {"name": "src", "path": "src", "type": "directory", "has_children": True}
+    assert result["entries"][0] == {
+        "name": "src",
+        "path": "src",
+        "absolute_path": str(tmp_path / "src"),
+        "type": "directory",
+        "has_children": True,
+    }
+    assert result["entries"][1]["absolute_path"] == str(tmp_path / "README.md")
 
 
 def test_project_file_tree_blocks_parent_traversal(tmp_path):

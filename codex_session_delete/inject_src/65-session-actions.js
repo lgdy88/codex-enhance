@@ -90,10 +90,12 @@
     }
   }
 
-  function removeDeletedRow(row, button, ref) {
+  async function removeDeletedRow(row, button, ref) {
     releaseDeleteFocus(row, button);
     const shouldReload = isCurrentSessionRow(row, ref);
+    await cleanupDeletedSessionState(ref);
     row.remove();
+    refreshAfterSessionDelete(ref);
     if (shouldReload) {
       window.location.reload();
     }
@@ -122,7 +124,7 @@
       releaseDeleteFocus(row, button);
       const result = await postJson("/delete", ref);
       if (result.status === "server_deleted" || result.status === "local_deleted") {
-        removeDeletedRow(row, button, ref);
+        await removeDeletedRow(row, button, ref);
         showToast(result.message || "删除成功", result.undo_token);
       } else {
         showToast(result.message || "删除失败", null);
@@ -434,7 +436,9 @@
       if (!ref.session_id) continue;
       const result = await postJson("/delete", ref);
       if (result.status === "server_deleted" || result.status === "local_deleted") {
+        await cleanupDeletedSessionState(ref);
         row.remove();
+        refreshAfterSessionDelete(ref);
         deleted += 1;
       }
     }
@@ -491,7 +495,9 @@
         if (!(await confirmDelete(ref.title))) return;
         const result = await postJson("/delete", ref);
         if (result.status === "server_deleted" || result.status === "local_deleted") {
+          await cleanupDeletedSessionState(ref);
           row.remove();
+          refreshAfterSessionDelete(ref);
           showToast(result.message || "删除成功", result.undo_token);
         } else {
           showToast(result.message || "删除失败", null);

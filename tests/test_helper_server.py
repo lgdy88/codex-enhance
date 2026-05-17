@@ -2,7 +2,6 @@ import json
 import threading
 import urllib.error
 import urllib.request
-from importlib import resources
 
 from codex_session_delete.helper_server import HelperServer
 from codex_session_delete.models import DeleteResult, DeleteStatus, ExportResult, ExportStatus, SessionRef
@@ -43,7 +42,7 @@ class FakeDeleteService:
             "status": "ok",
             "project_cwd": project_cwd,
             "path": relative_path,
-            "entries": [{"name": "src", "path": "src", "type": "directory", "has_children": True}],
+            "entries": [{"name": "src", "path": "src", "absolute_path": "/project/a/src", "type": "directory", "has_children": True}],
         }
 
     def provider_status(self):
@@ -302,28 +301,27 @@ def test_helper_server_returns_project_file_tree():
         "status": "ok",
         "project_cwd": "/project/a",
         "path": "",
-        "entries": [{"name": "src", "path": "src", "type": "directory", "has_children": True}],
+        "entries": [{"name": "src", "path": "src", "absolute_path": "/project/a/src", "type": "directory", "has_children": True}],
     }
 
 
-def test_helper_server_serves_packaged_sponsor_assets():
+def test_helper_server_does_not_serve_removed_sponsor_assets():
     service = FakeDeleteService()
     server = HelperServer("127.0.0.1", 0, service)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        with resources.files("codex_session_delete").joinpath("assets/sponsor-alipay.jpg").open("rb") as asset:
-            expected = asset.read()
         request = urllib.request.Request(f"http://127.0.0.1:{server.port}/assets/sponsor-alipay.jpg", method="GET")
-        with urllib.request.urlopen(request, timeout=3) as response:
-            body = response.read()
-            content_type = response.headers.get("Content-Type")
+        try:
+            urllib.request.urlopen(request, timeout=3)
+            assert False, "expected removed asset to return 404"
+        except urllib.error.HTTPError as exc:
+            status = exc.code
     finally:
         server.shutdown()
         thread.join(timeout=3)
 
-    assert body == expected
-    assert content_type == "image/jpeg"
+    assert status == 404
 
 
 def test_helper_server_preflight_omits_private_network_access():

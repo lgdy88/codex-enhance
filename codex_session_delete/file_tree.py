@@ -52,6 +52,7 @@ def _entry_payload(root: Path, entry: Path) -> dict[str, object]:
     return {
         "name": entry.name,
         "path": _relative_posix(root, entry),
+        "absolute_path": str(entry),
         "type": "directory" if is_dir else "file",
         "has_children": _has_children(entry) if is_dir else False,
     }

@@ -42,6 +42,7 @@
   let codexPlusProviderDiagnostics = { status: "checking" };
   let codexProviderHistoryTransport = { mode: "local-sqlite", appServer: "not_checked", message: "本地 SQLite bridge 优先" };
   let codexPlusBackendStatusInFlight = false;
+  let codexPlusBackendConsecutiveFailures = 0;
   let codexPlusProviderStatusInFlight = false;
   let codexPlusProviderDiagnosticsInFlight = false;
 
@@ -63,7 +64,7 @@
   function withBackendTimeout(request) {
     return Promise.race([
       request,
-      new Promise((resolve) => setTimeout(() => resolve({ status: "failed", message: "后端已断开" }), 2000)),
+      new Promise((resolve) => setTimeout(() => resolve({ status: "timeout", message: "后端响应较慢" }), 5000)),
     ]);
   }
 
@@ -71,7 +72,22 @@
     if (codexPlusBackendStatusInFlight) return;
     codexPlusBackendStatusInFlight = true;
     try {
-      codexPlusBackendStatus = await withBackendTimeout(postJson("/backend/status", {}));
+      const result = await withBackendTimeout(postJson("/backend/status", {}));
+      if (result?.status === "ok") {
+        codexPlusBackendConsecutiveFailures = 0;
+        codexPlusBackendStatus = result;
+      } else {
+        codexPlusBackendConsecutiveFailures += 1;
+        codexPlusBackendStatus = codexPlusBackendConsecutiveFailures >= 3
+          ? { status: "failed", message: result?.message || "后端已断开" }
+          : { status: "checking", message: result?.message || "后端响应较慢，正在重试…" };
+      }
+      renderBackendStatus();
+    } catch (error) {
+      codexPlusBackendConsecutiveFailures += 1;
+      codexPlusBackendStatus = codexPlusBackendConsecutiveFailures >= 3
+        ? { status: "failed", message: "后端已断开" }
+        : { status: "checking", message: "后端连接不稳定，正在重试…" };
       renderBackendStatus();
     } finally {
       codexPlusBackendStatusInFlight = false;
@@ -83,6 +99,7 @@
     renderBackendStatus();
     try {
       codexPlusBackendStatus = await postJson("/backend/repair", {});
+      if (codexPlusBackendStatus?.status === "ok") codexPlusBackendConsecutiveFailures = 0;
     } catch (error) {
       codexPlusBackendStatus = { status: "failed", message: "后端修复失败" };
     }

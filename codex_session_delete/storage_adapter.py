@@ -194,11 +194,9 @@ class SQLiteStorageAdapter:
             return DeleteResult(DeleteStatus.FAILED, session.session_id, "Thread not found in local storage")
 
         tables: dict[str, list[dict[str, Any]]] = {"threads": thread_rows}
-        self._backup_related_rows(db, tables, "thread_dynamic_tools", "thread_id = ?", (thread_id,))
-        self._backup_related_rows(db, tables, "thread_goals", "thread_id = ?", (thread_id,))
-        self._backup_related_rows(db, tables, "thread_spawn_edges", "parent_thread_id = ? OR child_thread_id = ?", (thread_id, thread_id))
-        self._backup_related_rows(db, tables, "stage1_outputs", "thread_id = ?", (thread_id,))
-        self._backup_related_rows(db, tables, "agent_job_items", "assigned_thread_id = ?", (thread_id,))
+        related_refs = self._codex_thread_references(db, thread_id)
+        for table, where, params, _mode in related_refs:
+            self._backup_related_rows(db, tables, table, where, params)
 
         file_backups = self._rollout_file_backups(thread_rows)
         if file_backups:
@@ -206,12 +204,11 @@ class SQLiteStorageAdapter:
 
         token = self.backup_store.write_backup(thread_id, str(self.db_path), tables)
 
-        self._delete_related_rows(db, "thread_dynamic_tools", "thread_id = ?", (thread_id,))
-        self._delete_related_rows(db, "thread_goals", "thread_id = ?", (thread_id,))
-        self._delete_related_rows(db, "thread_spawn_edges", "parent_thread_id = ? OR child_thread_id = ?", (thread_id, thread_id))
-        self._delete_related_rows(db, "stage1_outputs", "thread_id = ?", (thread_id,))
-        if self._has_table(db, "agent_job_items") and self._has_columns(db, "agent_job_items", {"assigned_thread_id"}):
-            db.execute("UPDATE agent_job_items SET assigned_thread_id = NULL WHERE assigned_thread_id = ?", (thread_id,))
+        for table, where, params, mode in related_refs:
+            if mode == "null":
+                db.execute(f"UPDATE {self._quote_identifier(table)} SET assigned_thread_id = NULL WHERE {where}", params)
+            else:
+                self._delete_related_rows(db, table, where, params)
         db.execute("DELETE FROM threads WHERE id = ?", (thread_id,))
         db.commit()
 
@@ -345,11 +342,28 @@ class SQLiteStorageAdapter:
 
     def _backup_related_rows(self, db: sqlite3.Connection, tables: dict[str, list[dict[str, Any]]], table: str, where: str, params: tuple[Any, ...]) -> None:
         if self._has_table(db, table):
-            tables[table] = self._select_dicts(db, f'SELECT * FROM "{table}" WHERE {where}', params)
+            existing = tables.setdefault(table, [])
+            for row in self._select_dicts(db, f"SELECT * FROM {self._quote_identifier(table)} WHERE {where}", params):
+                if row not in existing:
+                    existing.append(row)
 
     def _delete_related_rows(self, db: sqlite3.Connection, table: str, where: str, params: tuple[Any, ...]) -> None:
         if self._has_table(db, table):
-            db.execute(f'DELETE FROM "{table}" WHERE {where}', params)
+            db.execute(f"DELETE FROM {self._quote_identifier(table)} WHERE {where}", params)
+
+    def _codex_thread_references(self, db: sqlite3.Connection, thread_id: str) -> list[tuple[str, str, tuple[Any, ...], str]]:
+        refs = []
+        for table in self._tables(db):
+            if table == "threads" or table.startswith("sqlite_"):
+                continue
+            columns = set(self._table_columns(db, table))
+            match_columns = [column for column in ("thread_id", "session_id", "parent_thread_id", "child_thread_id") if column in columns]
+            if match_columns:
+                where = " OR ".join(f'"{column}" = ?' for column in match_columns)
+                refs.append((table, where, tuple(thread_id for _ in match_columns), "delete"))
+            if "assigned_thread_id" in columns:
+                refs.append((table, '"assigned_thread_id" = ?', (thread_id,), "null"))
+        return refs
 
     def _rollout_file_backups(self, thread_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         file_backups = []
@@ -404,17 +418,26 @@ class SQLiteStorageAdapter:
         return db.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)).fetchone() is not None
 
     def _has_columns(self, db: sqlite3.Connection, table: str, columns: set[str]) -> bool:
-        return columns.issubset(set(self._thread_columns(db)) if table == "threads" else {row[1] for row in db.execute(f'PRAGMA table_info("{table}")')})
+        return columns.issubset(set(self._thread_columns(db)) if table == "threads" else set(self._table_columns(db, table)))
+
+    def _tables(self, db: sqlite3.Connection) -> list[str]:
+        return [row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]
+
+    def _table_columns(self, db: sqlite3.Connection, table: str) -> list[str]:
+        return [row[1] for row in db.execute(f"PRAGMA table_info({self._quote_identifier(table)})")]
 
     def _thread_columns(self, db: sqlite3.Connection) -> list[str]:
-        return [row[1] for row in db.execute('PRAGMA table_info("threads")')]
+        return self._table_columns(db, "threads")
 
     def _select_dicts(self, db: sqlite3.Connection, sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
         return [dict(row) for row in db.execute(sql, params).fetchall()]
 
     def _insert_row(self, db: sqlite3.Connection, table: str, row: dict[str, Any]) -> None:
         columns = list(row.keys())
-        quoted = ", ".join(f'"{column}"' for column in columns)
+        quoted = ", ".join(self._quote_identifier(column) for column in columns)
         marks = ", ".join("?" for _ in columns)
         values = [row[column] for column in columns]
-        db.execute(f'INSERT OR REPLACE INTO "{table}" ({quoted}) VALUES ({marks})', values)
+        db.execute(f"INSERT OR REPLACE INTO {self._quote_identifier(table)} ({quoted}) VALUES ({marks})", values)
+
+    def _quote_identifier(self, identifier: str) -> str:
+        return '"' + identifier.replace('"', '""') + '"'

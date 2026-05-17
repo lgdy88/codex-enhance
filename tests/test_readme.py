@@ -52,17 +52,18 @@ def test_readme_documents_browser_mcp_commands_and_boundary():
     assert "does not bypass official Computer Use" in english
 
 
-def test_readme_includes_sponsor_qr_codes_near_front():
+def test_readme_does_not_include_sponsor_qr_codes():
     text = Path("README.md").read_text(encoding="utf-8")
+    english = Path("README_EN.md").read_text(encoding="utf-8")
 
-    assert "## 赞赏支持" in text
-    assert "请我喝杯咖啡" in text
-    assert '<img src="docs/images/sponsor-alipay.jpg"' in text
-    assert '<img src="docs/images/sponsor-wechat.jpg"' in text
-    assert 'width="220"' in text
-    assert Path("docs/images/sponsor-alipay.jpg").exists()
-    assert Path("docs/images/sponsor-wechat.jpg").exists()
-    assert text.index("## 赞赏支持") < text.index("## 功能亮点")
+    assert "赞赏支持" not in text
+    assert "请我喝杯咖啡" not in text
+    assert "docs/images/sponsor-alipay.jpg" not in text
+    assert "docs/images/sponsor-wechat.jpg" not in text
+    assert "## Support" not in english
+    assert "buy me a coffee" not in english
+    assert "docs/images/sponsor-alipay.jpg" not in english
+    assert "docs/images/sponsor-wechat.jpg" not in english
 
 
 def test_english_readme_exists_and_matches_core_sections():

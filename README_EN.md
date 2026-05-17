@@ -20,7 +20,6 @@ Codex++ is an external enhancement launcher for the Codex App. It does not modif
 ## Table of Contents
 
 - [Community](#community)
-- [Support](#support)
 - [Quick Start](#quick-start)
 - [Highlights](#highlights)
 - [Screenshots](#screenshots)
@@ -43,15 +42,6 @@ Codex++ is an external enhancement launcher for the Codex App. It does not modif
 Scan the QR code to join the Codex++ discussion group, report issues, share usage notes, or suggest features:
 
 <img src="docs/images/discussion-group-qr.jpg" alt="Codex++ discussion group QR code" width="260">
-
-## Support
-
-If Codex++ has helped you, you can buy me a coffee or send a small tip to support continued maintenance.
-
-<p align="center">
-  <img src="docs/images/sponsor-alipay.jpg" alt="Alipay sponsor QR code" width="220">
-  <img src="docs/images/sponsor-wechat.jpg" alt="WeChat sponsor QR code" width="220">
-</p>
 
 ## Quick Start
 

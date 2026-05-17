@@ -1,6 +1,8 @@
 from pathlib import Path
 
-from scripts.build_renderer_inject import build_renderer
+import pytest
+
+from scripts.build_renderer_inject import assert_csp_safe_source, build_renderer, validate_csp_safe_source
 
 
 def test_renderer_inject_is_generated_from_source_modules():
@@ -23,3 +25,23 @@ def test_renderer_source_modules_cover_feature_boundaries():
         "70-timeline.js",
         "80-dom-scan-runtime.js",
     }.issubset(names)
+
+
+def test_renderer_source_modules_avoid_csp_unsafe_patterns():
+    assert validate_csp_safe_source() == []
+
+
+def test_renderer_csp_guard_rejects_string_evaluation(tmp_path):
+    unsafe = tmp_path / "unsafe.js"
+    unsafe.write_text('setTimeout("window.bad = true", 1);\n', encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="string-timer"):
+        assert_csp_safe_source([unsafe])
+
+
+def test_renderer_csp_guard_rejects_external_src_fallbacks(tmp_path):
+    unsafe = tmp_path / "unsafe.js"
+    unsafe.write_text('img.src = `${helperBase}/assets/sponsor-alipay.jpg`;\n', encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="external-src-resource"):
+        assert_csp_safe_source([unsafe])

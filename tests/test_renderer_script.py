@@ -295,6 +295,25 @@ def test_renderer_script_reloads_after_deleting_current_session():
     assert "window.location.reload()" in text
 
 
+def test_renderer_script_cleans_project_caches_after_delete():
+    text = Path("codex_session_delete/inject/renderer-inject.js").read_text(encoding="utf-8")
+    remove_start = text.index("function removeDeletedRow")
+    remove_end = text.index("\n\n  function updateDeleteButtonOffsets", remove_start)
+    remove_code = text[remove_start:remove_end]
+
+    assert "async function removeDeletedRow" in text
+    assert "await cleanupDeletedSessionState(ref)" in remove_code
+    assert "cleanupDeletedSessionState(ref)" in remove_code
+    assert "refreshAfterSessionDelete(ref)" in remove_code
+    assert "resetProjectThreadState()" in text[text.index("function refreshAfterSessionDelete"):text.index("\n\n  function projectionForSessionId")]
+    assert "clearProjectMoveProjection(ref)" in text
+    assert "removeProjectThreadStateSession(ref)" in text
+    assert "clearDeletedSessionGlobalState" in text
+    assert "projectless-thread-ids" in text
+    assert "thread-workspace-root-hints" in text
+    assert "refreshRecentConversationsForHost()" in text
+
+
 def test_renderer_script_toast_does_not_capture_page_interactions():
     text = Path("codex_session_delete/inject/renderer-inject.js").read_text(encoding="utf-8")
     assert "z-index: 2147483000" in text
@@ -303,7 +322,7 @@ def test_renderer_script_toast_does_not_capture_page_interactions():
 def test_renderer_script_sidebar_delete_opens_on_pointerup_when_click_is_unreliable():
     text = Path("codex_session_delete/inject/renderer-inject.js").read_text(encoding="utf-8")
     assert "openDeleteConfirm" in text
-    assert "codexDeleteVersion = \"6\"" in text
+    assert "codexDeleteVersion = \"7\"" in text
     assert "actionGroupFromRow" in text
     assert "removeActionGroups(row)" in text
     assert "row.dataset.codexDeleteRow = \"false\"" in text
@@ -316,7 +335,7 @@ def test_renderer_script_sidebar_delete_opens_on_pointerup_when_click_is_unrelia
 
     text = Path("codex_session_delete/inject/renderer-inject.js").read_text(encoding="utf-8")
     assert "updateDeleteButtonOffsets" in text
-    assert "codexDeleteStyleVersion = \"8\"" in text
+    assert "codexDeleteStyleVersion = \"11\"" in text
     assert "right: 66px" in text
     assert "确认" in text
     assert "归档对话" in text
@@ -452,6 +471,7 @@ def test_renderer_script_includes_user_script_manager_ui_contract():
     assert "data-codex-open-devtools" in text
     assert "/devtools/open" in text
     assert "后端连接" in text
+    assert "连续失败后才提示修复" in text
     assert "data-codex-backend-status" in text
     assert "data-codex-backend-repair" in text
     assert "checkBackendStatus" in text
@@ -461,7 +481,10 @@ def test_renderer_script_includes_user_script_manager_ui_contract():
     assert "scheduleBackendHeartbeat();\n    loadUserScripts();" not in text
     assert "installCodexPlusMenu();\n    scheduleBackendHeartbeat();" in text
     assert "withBackendTimeout" in text
-    assert "setTimeout(() => resolve({ status: \"failed\", message: \"后端已断开\" }), 2000)" in text
+    assert "codexPlusBackendConsecutiveFailures" in text
+    assert "setTimeout(() => resolve({ status: \"timeout\", message: \"后端响应较慢\" }), 5000)" in text
+    assert "codexPlusBackendConsecutiveFailures >= 3" in text
+    assert "setTimeout(() => resolve({ status: \"failed\", message: \"后端已断开\" }), 2000)" not in text
     assert "data-codex-backend-indicator" in text
     assert "codex-plus-backend-indicator" in text
     assert "/backend/status" in text
@@ -470,7 +493,7 @@ def test_renderer_script_includes_user_script_manager_ui_contract():
     assert "setAuthMethod(\"chatgpt\")" in text
     assert "patchFastModeGateOnObject" not in text
     assert "Codex++" in text
-    assert "codexPlusVersion = \"1.0.7\"" in text
+    assert "codexPlusVersion = \"1.0.8\"" in text
     assert "codexPlusDisplayName = \"syke\"" in text
     assert "${codexPlusDisplayName} ${codexPlusVersion}" in text
     assert "aria-label=\"${codexPlusDisplayName}\"" in text
@@ -527,17 +550,17 @@ def test_renderer_script_includes_user_script_manager_ui_contract():
     assert ".filter(({ button, rect }) => isHeaderToolbarButton(button, header, rect))" in text
 
 
-def test_renderer_script_has_sponsor_tab():
+def test_renderer_script_has_no_sponsor_tab():
     text = Path("codex_session_delete/inject/renderer-inject.js").read_text(encoding="utf-8")
 
-    assert "data-codex-plus-tab=\"sponsor\"" in text
-    assert "赞赏" in text
-    assert "请我喝杯咖啡" in text
-    assert "data-codex-plus-panel=\"sponsor\"" in text
-    assert "window.__CODEX_PLUS_SPONSOR_IMAGES__?.alipay" in text
-    assert "window.__CODEX_PLUS_SPONSOR_IMAGES__?.wechat" in text
-    assert "codex-plus-sponsor-grid" in text
-    assert "codex-plus-sponsor-qr" in text
+    assert "data-codex-plus-tab=\"sponsor\"" not in text
+    assert "data-codex-plus-panel=\"sponsor\"" not in text
+    assert "请我喝杯咖啡" not in text
+    assert "window.__CODEX_PLUS_SPONSOR_IMAGES__" not in text
+    assert "codex-plus-sponsor-grid" not in text
+    assert "codex-plus-sponsor-qr" not in text
+    assert "sponsor-alipay" not in text
+    assert "sponsor-wechat" not in text
 
 
 def test_renderer_script_has_provider_history_manager_ui():
@@ -595,6 +618,7 @@ def test_renderer_script_provider_watchers_are_idempotent_and_non_reentrant():
     assert "clearInterval(window.__codexPlusBackendHeartbeat)" not in heartbeat_code
     assert "clearInterval(window.__codexPlusProviderWatcher)" not in watcher_code
     assert "codexPlusBackendStatusInFlight" in backend_code
+    assert "codexPlusBackendConsecutiveFailures" in backend_code
     assert "codexPlusProviderStatusInFlight" in provider_code
     assert "codexPlusProviderDiagnosticsInFlight" in diagnostics_code
     assert "loadProviderDiagnostics" not in project_refresh_code
@@ -773,15 +797,28 @@ def test_renderer_script_has_project_file_tree_contract():
     assert "function installProjectFileTreeHandlers" in text
     assert "function openProjectFileTree" in text
     assert "function toggleProjectFileTreeDirectory" in text
+    assert "function openProjectFileTreeMenu" in text
+    assert "function copyProjectFileTreeAbsolutePath" in text
     assert "data-app-action-sidebar-project-row" in text
+    assert "transform: translateX(${projectFileTreePanelWidth}px)" not in text
+    assert "transform: translateX(${projectFileTreeCollapsedWidth}px)" not in text
+    assert "transform: translateX(var(--codex-project-file-tree-expanded-width))" not in text
     assert "html[data-codex-project-file-tree-open=\"true\"] main" in text
+    assert "html[data-codex-project-file-tree-open=\"collapsed\"] main" in text
+    assert "--codex-project-file-tree-content-left" in text
+    assert "--codex-project-file-tree-content-width" in text
+    assert "margin-left: var(--codex-project-file-tree-active-width)" in text
+    assert "width: var(--codex-project-file-tree-content-width)" in text
+    assert ".thread-scroll-container" in text
+    assert "overflow-x: hidden" in text
     assert "window.__codexProjectFileTreeOpen" in text
+    assert "window.__codexProjectFileTreeCollapse" in text
 
 
 def test_renderer_project_file_tree_matches_codex_light_theme_without_extra_icons():
     text = Path("codex_session_delete/inject/renderer-inject.js").read_text(encoding="utf-8")
     css_start = text.index(".${projectFileTreePanelClass}")
-    css_end = text.index("html[data-codex-project-file-tree-open", css_start)
+    css_end = text.index(".codex-archive-delete-all", css_start)
     css = text[css_start:css_end]
     panel_start = text.index("function createProjectFileTreePanel")
     panel_end = text.index("\n\n  function markActiveProjectFileTreeTarget", panel_start)
@@ -793,14 +830,34 @@ def test_renderer_project_file_tree_matches_codex_light_theme_without_extra_icon
     toggle_end = text.index("\n\n  async function openProjectFileTree", toggle_start)
     toggle_code = text[toggle_start:toggle_end]
 
-    assert "background: rgba(255, 255, 255, .98)" in css
+    assert "background: #ffffff" in css
+    assert "background: rgba(255, 255, 255, .98)" not in css
     assert "color: #111827" in css
     assert "background: #f3f4f6" in css
     assert "background: #e5e7eb" in css
+    assert "position: fixed" in css
+    assert "z-index: 2147481200" in css
+    assert "box-shadow: none" in css
+    assert "--codex-project-file-tree-expanded-width: clamp(320px, 25vw, 520px)" in text
+    assert "--codex-project-file-tree-offset-left" in text
+    assert "--codex-project-file-tree-active-width" in text
+    assert "--codex-project-file-tree-content-width" in text
+    assert "width: var(--codex-project-file-tree-expanded-width)" in css
+    assert "width: var(--codex-project-file-tree-collapsed-width)" in css
+    assert "document.documentElement.style.setProperty(\"--codex-project-file-tree-offset-left\"" in text
     assert "codex-project-file-tree-header" in panel_code
     assert "codex-project-file-tree-title" in panel_code
-    assert "codex-project-file-tree-close" in panel_code
+    assert "codex-project-file-tree-collapse" in panel_code
+    assert "收起文件树" in panel_code
+    assert "codex-project-file-tree-collapse-icon" in panel_code
+    assert "border-right: 1.5px solid currentColor" in css
+    assert ">折叠<" not in text
+    assert "data-collapsed" in text
+    assert "collapseProjectFileTreePanel" in text
+    assert "restoreProjectFileTreePanel" in text
     assert "role=\"tree\"" in panel_code
+    assert "codex-project-file-tree-menu" in text
+    assert "复制绝对路径" in text
     assert "codex-project-file-tree-toolbar" not in text
     assert "codex-project-file-tree-refresh" not in text
     assert "codex-project-file-tree-root" not in text
@@ -810,7 +867,10 @@ def test_renderer_project_file_tree_matches_codex_light_theme_without_extra_icon
     assert "aria-selected" in toggle_code
     assert "--codex-project-file-tree-depth" in row_code
     assert "dataset.fileKind" in row_code
+    assert "dataset.absolutePath" in row_code
     assert "fileTreeKind(entry.name)" in row_code
+    assert "contextmenu" in row_code
+    assert "writeClipboardText" in text
     assert "&gt;" in row_code
     assert 'textContent = "v"' in toggle_code
     assert 'textContent = row.dataset.hasChildren === "true" ? ">" : ""' in toggle_code

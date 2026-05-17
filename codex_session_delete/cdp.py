@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import base64
 import json
 import secrets
 import threading
 import webbrowser
 from dataclasses import dataclass
-from importlib import resources
 from pathlib import Path
 from typing import Callable
 
@@ -76,8 +74,17 @@ def open_devtools(port: int) -> dict[str, object]:
     target_id = str(target.get("id", ""))
     if not target_id:
         return {"status": "failed", "message": "No DevTools target id"}
-    webbrowser.open(f"http://127.0.0.1:{port}/devtools/inspector.html?ws=127.0.0.1:{port}/devtools/page/{target_id}")
+    webbrowser.open(devtools_frontend_url(port, target, target_id))
     return {"status": "ok", "target_id": target_id}
+
+
+def devtools_frontend_url(port: int, target: dict[str, object], target_id: str) -> str:
+    frontend_url = str(target.get("devtoolsFrontendUrl", "") or "")
+    if frontend_url.startswith(("devtools://", "http://", "https://")):
+        return frontend_url
+    if frontend_url.startswith("/"):
+        return f"http://127.0.0.1:{port}{frontend_url}"
+    return f"http://127.0.0.1:{port}/devtools/inspector.html?ws=127.0.0.1:{port}/devtools/page/{target_id}"
 
 
 def add_script_to_new_documents(websocket_url: str, script: str) -> dict[str, object]:
@@ -157,14 +164,6 @@ def install_bridge(
     return ws
 
 
-def sponsor_image_data_uris() -> dict[str, str]:
-    assets = resources.files("codex_session_delete").joinpath("assets")
-    return {
-        "alipay": "data:image/jpeg;base64," + base64.b64encode(assets.joinpath("sponsor-alipay.jpg").read_bytes()).decode("ascii"),
-        "wechat": "data:image/jpeg;base64," + base64.b64encode(assets.joinpath("sponsor-wechat.jpg").read_bytes()).decode("ascii"),
-    }
-
-
 def inject_file(port: int, script_path: Path, helper_port: int, handler: BridgeHandler | None = None) -> InjectionResult:
     targets = list_targets(port)
     target = pick_page_target(targets)
@@ -176,7 +175,6 @@ def inject_file(port: int, script_path: Path, helper_port: int, handler: BridgeH
         "(() => {\n"
         f"{private_bridge_script}"
         f"  window.__CODEX_SESSION_DELETE_HELPER__ = 'http://127.0.0.1:{helper_port}';\n"
-        f"  window.__CODEX_PLUS_SPONSOR_IMAGES__ = {json.dumps(sponsor_image_data_uris())};\n"
     )
     full_script = prefix + script + "\n})();"
     bridge_socket = install_bridge(websocket_url, BRIDGE_BINDING_NAME, handler, [full_script], bridge_token=bridge_token) if handler else None

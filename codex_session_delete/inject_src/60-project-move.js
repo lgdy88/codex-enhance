@@ -247,6 +247,58 @@
     if (changed) writeProjectMoveProjection(projection);
   }
 
+  function removeProjectThreadStateSession(ref) {
+    const keys = new Set(threadIdVariants(ref?.session_id || "").map(projectMoveSessionKey).filter(Boolean));
+    if (!keys.size) return;
+    Object.values(window.__codexProjectThreadsState || {}).forEach((state) => {
+      if (!Array.isArray(state?.threads)) return;
+      state.threads = state.threads.filter((thread) => !keys.has(projectMoveSessionKey(thread?.session_id || "")));
+    });
+  }
+
+  async function clearDeletedSessionGlobalState(ref) {
+    const variants = threadIdVariants(ref?.session_id || "");
+    if (!variants.length) return;
+    const variantSet = new Set(variants);
+    const existingIds = await getCodexGlobalState("projectless-thread-ids").catch(() => []);
+    if (Array.isArray(existingIds)) {
+      const nextIds = existingIds.filter((id) => !variantSet.has(String(id || "")));
+      if (nextIds.length !== existingIds.length) await setCodexGlobalState("projectless-thread-ids", nextIds);
+    }
+    const hints = objectGlobalState(await getCodexGlobalState("thread-workspace-root-hints").catch(() => ({})));
+    let changed = false;
+    variants.forEach((id) => {
+      if (Object.prototype.hasOwnProperty.call(hints, id)) {
+        delete hints[id];
+        changed = true;
+      }
+    });
+    if (changed) await setCodexGlobalState("thread-workspace-root-hints", hints);
+  }
+
+  async function cleanupDeletedSessionState(ref) {
+    clearProjectMoveProjection(ref);
+    removeProjectThreadStateSession(ref);
+    try {
+      await clearDeletedSessionGlobalState(ref);
+    } catch (error) {
+      window.__codexSessionDeleteCleanupFailures = window.__codexSessionDeleteCleanupFailures || [];
+      window.__codexSessionDeleteCleanupFailures.push(String(error?.stack || error));
+    }
+  }
+
+  function refreshAfterSessionDelete(ref) {
+    resetProjectThreadState();
+    scheduleChatsSortCorrection(0);
+    refreshProjectThreadFallbacks();
+    refreshRecentConversationsForHost().finally(() => {
+      projectMoveRefreshDelaysMs.forEach((delay) => setTimeout(() => {
+        scheduleChatsSortCorrection(0);
+        refreshProjectThreadFallbacks();
+      }, delay));
+    });
+  }
+
   function projectionForSessionId(sessionId, projection = readProjectMoveProjection()) {
     const key = projectMoveSessionKey(sessionId);
     return key ? projection[key] || null : null;
@@ -287,20 +339,56 @@
     return document.querySelector(`.${projectFileTreePanelClass}`);
   }
 
+  function removeProjectFileTreeMenu() {
+    window.__codexProjectFileTreeMenuCleanup?.();
+    window.__codexProjectFileTreeMenuCleanup = null;
+    document.querySelectorAll(`.${projectFileTreeMenuClass}`).forEach((node) => node.remove());
+  }
+
   function projectFileTreeBody() {
     return activeProjectFileTreePanel()?.querySelector("[data-codex-project-file-tree-body]") || null;
   }
 
   function setProjectFileTreeOpenState(open) {
-    document.documentElement.dataset.codexProjectFileTreeOpen = open ? "true" : "false";
+    document.documentElement.dataset.codexProjectFileTreeOpen = open;
   }
 
   function removeProjectFileTreePanel() {
+    removeProjectFileTreeMenu();
     activeProjectFileTreePanel()?.remove();
     document.querySelectorAll('[data-codex-project-file-tree-active="true"]').forEach((row) => {
       row.dataset.codexProjectFileTreeActive = "false";
     });
-    setProjectFileTreeOpenState(false);
+    document.documentElement.style.removeProperty("--codex-project-file-tree-left");
+    document.documentElement.style.removeProperty("--codex-project-file-tree-top");
+    document.documentElement.style.removeProperty("--codex-project-file-tree-offset-left");
+    setProjectFileTreeOpenState("false");
+  }
+
+  function collapseProjectFileTreePanel(event = null) {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    const panel = activeProjectFileTreePanel();
+    if (!panel) return;
+    removeProjectFileTreeMenu();
+    panel.dataset.collapsed = "true";
+    const collapseButton = panel.querySelector(".codex-project-file-tree-collapse");
+    collapseButton?.setAttribute("aria-label", "展开文件树");
+    collapseButton?.setAttribute("title", "展开文件树");
+    setProjectFileTreeOpenState("collapsed");
+  }
+
+  function restoreProjectFileTreePanel(event = null) {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    const panel = activeProjectFileTreePanel();
+    if (!panel) return;
+    panel.dataset.collapsed = "false";
+    const collapseButton = panel.querySelector(".codex-project-file-tree-collapse");
+    collapseButton?.setAttribute("aria-label", "收起文件树");
+    collapseButton?.setAttribute("title", "收起文件树");
+    positionProjectFileTreePanel();
+    setProjectFileTreeOpenState("true");
   }
 
   function projectFileTreeAnchorLeft() {
@@ -317,8 +405,11 @@
   function positionProjectFileTreePanel() {
     const panel = activeProjectFileTreePanel();
     if (!panel) return;
-    panel.style.setProperty("--codex-project-file-tree-left", `${projectFileTreeAnchorLeft()}px`);
-    panel.style.setProperty("--codex-project-file-tree-top", `${projectFileTreeTop()}px`);
+    const left = `${projectFileTreeAnchorLeft()}px`;
+    const top = `${projectFileTreeTop()}px`;
+    document.documentElement.style.setProperty("--codex-project-file-tree-left", left);
+    document.documentElement.style.setProperty("--codex-project-file-tree-top", top);
+    document.documentElement.style.setProperty("--codex-project-file-tree-offset-left", left);
   }
 
   function projectFileTreeState(message) {
@@ -335,20 +426,26 @@
     panel.dataset.codexProjectFileTreeVersion = codexProjectFileTreeVersion;
     panel.dataset.projectCwd = target.path || "";
     panel.dataset.projectLabel = target.label || displayProjectName(target.path);
+    panel.dataset.collapsed = "false";
     panel.innerHTML = `
       <div class="codex-project-file-tree-header">
         <div class="codex-project-file-tree-title">
           <div class="codex-project-file-tree-name">${escapeHtml(target.label || displayProjectName(target.path))}</div>
           <div class="codex-project-file-tree-path">${escapeHtml(target.path || "")}</div>
         </div>
-        <button type="button" class="codex-project-file-tree-close" aria-label="关闭文件树">×</button>
+        <button type="button" class="codex-project-file-tree-collapse" aria-label="收起文件树" title="收起文件树">
+          <span class="codex-project-file-tree-collapse-icon" aria-hidden="true"></span>
+        </button>
       </div>
       <div class="codex-project-file-tree-body" data-codex-project-file-tree-body="true" role="tree"></div>
     `;
-    panel.querySelector(".codex-project-file-tree-close")?.addEventListener("click", removeProjectFileTreePanel, true);
+    panel.querySelector(".codex-project-file-tree-collapse")?.addEventListener("click", collapseProjectFileTreePanel, true);
+    panel.addEventListener("click", (event) => {
+      if (panel.dataset.collapsed === "true") restoreProjectFileTreePanel(event);
+    }, true);
     document.documentElement.appendChild(panel);
     positionProjectFileTreePanel();
-    setProjectFileTreeOpenState(true);
+    setProjectFileTreeOpenState("true");
     return panel;
   }
 
@@ -369,12 +466,80 @@
     return "file";
   }
 
+  function projectFileTreeMenuPosition(event, menu) {
+    const gap = 8;
+    const rect = menu.getBoundingClientRect();
+    const maxLeft = Math.max(gap, window.innerWidth - rect.width - gap);
+    const maxTop = Math.max(gap, window.innerHeight - rect.height - gap);
+    menu.style.left = `${Math.min(Math.max(gap, event.clientX), maxLeft)}px`;
+    menu.style.top = `${Math.min(Math.max(gap, event.clientY), maxTop)}px`;
+  }
+
+  async function writeClipboardText(text) {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    const input = document.createElement("textarea");
+    input.value = text;
+    input.style.position = "fixed";
+    input.style.opacity = "0";
+    document.body.appendChild(input);
+    input.select();
+    document.execCommand("copy");
+    input.remove();
+  }
+
+  async function copyProjectFileTreeAbsolutePath(row) {
+    const absolutePath = row?.dataset?.absolutePath || "";
+    if (!absolutePath) return;
+    await writeClipboardText(absolutePath);
+    showToast("已复制绝对路径", null);
+  }
+
+  function installProjectFileTreeMenuDismiss(menu) {
+    setTimeout(() => {
+      const onPointerDown = (event) => {
+        if (!menu.contains(event.target)) removeProjectFileTreeMenu();
+      };
+      const onKeyDown = (event) => {
+        if (event.key === "Escape") removeProjectFileTreeMenu();
+      };
+      window.__codexProjectFileTreeMenuCleanup = () => {
+        document.removeEventListener("pointerdown", onPointerDown, true);
+        document.removeEventListener("keydown", onKeyDown, true);
+      };
+      document.addEventListener("pointerdown", onPointerDown, true);
+      document.addEventListener("keydown", onKeyDown, true);
+    }, 0);
+  }
+
+  function openProjectFileTreeMenu(event, row) {
+    event.preventDefault();
+    event.stopPropagation();
+    selectProjectFileTreeRow(row);
+    removeProjectFileTreeMenu();
+    const menu = document.createElement("div");
+    menu.className = projectFileTreeMenuClass;
+    menu.setAttribute("role", "menu");
+    menu.innerHTML = '<button type="button" class="codex-project-file-tree-menu-item" role="menuitem">复制绝对路径</button>';
+    menu.querySelector("button")?.addEventListener("click", () => {
+      copyProjectFileTreeAbsolutePath(row).catch((error) => showToast(`复制失败：${String(error?.message || error)}`, null));
+      removeProjectFileTreeMenu();
+    }, true);
+    document.documentElement.appendChild(menu);
+    projectFileTreeMenuPosition(event, menu);
+    menu.querySelector("button")?.focus?.();
+    installProjectFileTreeMenuDismiss(menu);
+  }
+
   function createProjectFileTreeRow(entry, level) {
     const row = document.createElement("button");
     row.type = "button";
     row.className = "codex-project-file-tree-row";
     row.dataset.kind = entry.type || "file";
     row.dataset.path = entry.path || "";
+    row.dataset.absolutePath = entry.absolute_path || "";
     row.dataset.hasChildren = String(!!entry.has_children);
     row.dataset.fileKind = fileTreeKind(entry.name);
     row.dataset.loaded = "false";
@@ -388,6 +553,7 @@
     `;
     if (entry.type === "directory") row.addEventListener("click", () => toggleProjectFileTreeDirectory(row, level + 1), true);
     if (entry.type !== "directory") row.addEventListener("click", () => selectProjectFileTreeRow(row), true);
+    row.addEventListener("contextmenu", (event) => openProjectFileTreeMenu(event, row), true);
     return row;
   }
 
@@ -449,6 +615,12 @@
 
   async function openProjectFileTree(target) {
     if (!codexPlusSettings().projectFileTree || !target?.path) return;
+    const existing = activeProjectFileTreePanel();
+    if (existing?.dataset.projectCwd === target.path) {
+      markActiveProjectFileTreeTarget(target);
+      restoreProjectFileTreePanel();
+      return;
+    }
     const panel = createProjectFileTreePanel(target);
     markActiveProjectFileTreeTarget(target);
     await loadProjectFileTreeDirectory(target, "", panel.querySelector("[data-codex-project-file-tree-body]"), 0);

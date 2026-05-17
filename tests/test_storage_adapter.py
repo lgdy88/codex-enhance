@@ -81,6 +81,54 @@ def test_delete_codex_thread_schema_creates_backup_and_removes_thread_rows(tmp_p
         assert db.execute("SELECT assigned_thread_id FROM agent_job_items WHERE id = 'job1'").fetchone()[0] is None
 
 
+def test_delete_codex_thread_schema_removes_extra_thread_references(tmp_path):
+    db_path = tmp_path / "state_5.sqlite"
+    rollout_path = tmp_path / "rollout.jsonl"
+    rollout_path.write_text('{"type":"message"}\n', encoding="utf-8")
+    create_codex_thread_db(db_path, rollout_path)
+    with sqlite3.connect(db_path) as db:
+        db.execute("CREATE TABLE thread_notes (id TEXT PRIMARY KEY, thread_id TEXT, note TEXT)")
+        db.execute("CREATE TABLE session_annotations (id TEXT PRIMARY KEY, session_id TEXT, note TEXT)")
+        db.execute("CREATE TABLE composite_refs (id TEXT PRIMARY KEY, parent_thread_id TEXT, child_thread_id TEXT)")
+        db.execute("CREATE TABLE job_refs (id TEXT PRIMARY KEY, assigned_thread_id TEXT, note TEXT)")
+        db.execute("INSERT INTO thread_notes VALUES ('n1', 't1', 'delete')")
+        db.execute("INSERT INTO thread_notes VALUES ('n2', 'other', 'keep')")
+        db.execute("INSERT INTO session_annotations VALUES ('a1', 't1', 'delete')")
+        db.execute("INSERT INTO composite_refs VALUES ('c1', 't1', 'child')")
+        db.execute("INSERT INTO composite_refs VALUES ('c2', 'parent', 't1')")
+        db.execute("INSERT INTO job_refs VALUES ('j1', 't1', 'null assigned')")
+    adapter = SQLiteStorageAdapter(db_path, BackupStore(tmp_path / "backups"))
+
+    result = adapter.delete_local(SessionRef(session_id="t1", title="Codex Thread"))
+
+    assert result.status == DeleteStatus.LOCAL_DELETED
+    with sqlite3.connect(db_path) as db:
+        assert db.execute("SELECT COUNT(*) FROM thread_notes WHERE thread_id = 't1'").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM thread_notes WHERE thread_id = 'other'").fetchone()[0] == 1
+        assert db.execute("SELECT COUNT(*) FROM session_annotations WHERE session_id = 't1'").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM composite_refs WHERE parent_thread_id = 't1' OR child_thread_id = 't1'").fetchone()[0] == 0
+        assert db.execute("SELECT assigned_thread_id FROM job_refs WHERE id = 'j1'").fetchone()[0] is None
+
+
+def test_delete_codex_thread_schema_quotes_dynamic_reference_tables(tmp_path):
+    db_path = tmp_path / "state_5.sqlite"
+    rollout_path = tmp_path / "rollout.jsonl"
+    rollout_path.write_text('{"type":"message"}\n', encoding="utf-8")
+    create_codex_thread_db(db_path, rollout_path)
+    with sqlite3.connect(db_path) as db:
+        db.execute('CREATE TABLE "thread refs" (id TEXT PRIMARY KEY, thread_id TEXT, note TEXT)')
+        db.execute('INSERT INTO "thread refs" VALUES ("r1", "t1", "delete")')
+    adapter = SQLiteStorageAdapter(db_path, BackupStore(tmp_path / "backups"))
+
+    result = adapter.delete_local(SessionRef(session_id="t1", title="Codex Thread"))
+    restored = adapter.undo(result.undo_token or "")
+
+    assert result.status == DeleteStatus.LOCAL_DELETED
+    assert restored.status == DeleteStatus.UNDONE
+    with sqlite3.connect(db_path) as db:
+        assert db.execute('SELECT note FROM "thread refs" WHERE id = "r1"').fetchone()[0] == "delete"
+
+
 def test_undo_restores_deleted_codex_thread_schema_and_rollout_file(tmp_path):
     db_path = tmp_path / "state_5.sqlite"
     rollout_path = tmp_path / "rollout.jsonl"

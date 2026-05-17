@@ -114,6 +114,7 @@
   window.__codexProjectMoveSortChats = applyChatsSortCorrection;
   window.__codexProjectThreadsRefresh = refreshProjectThreadFallbacks;
   window.__codexProjectFileTreeOpen = openProjectFileTree;
+  window.__codexProjectFileTreeCollapse = collapseProjectFileTreePanel;
   window.__codexProjectFileTreeClose = removeProjectFileTreePanel;
   window.removeEventListener("resize", window.__codexPlusResizeHandler);
   let codexPlusResizeRafId = 0;

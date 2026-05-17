@@ -5,7 +5,7 @@ from pathlib import Path
 import codex_session_delete.cdp as cdp
 import websocket
 
-from codex_session_delete.cdp import BRIDGE_BINDING_NAME, _bridge_loop, add_script_to_new_documents, build_bridge_script, evaluate_user_scripts, install_bridge, list_targets, open_devtools, pick_page_target
+from codex_session_delete.cdp import BRIDGE_BINDING_NAME, _bridge_loop, add_script_to_new_documents, build_bridge_script, devtools_frontend_url, evaluate_user_scripts, install_bridge, list_targets, open_devtools, pick_page_target
 
 
 class TimeoutThenMessageSocket:
@@ -152,7 +152,7 @@ def test_install_bridge_enables_runtime_before_adding_binding(monkeypatch):
     assert ws.sent[5]["params"]["source"] == "window.__codexPlusTest = true;"
 
 
-def test_inject_file_exposes_packaged_sponsor_images_as_data_uris(monkeypatch, tmp_path):
+def test_inject_file_does_not_bundle_removed_sponsor_images(monkeypatch, tmp_path):
     script_path = tmp_path / "renderer.js"
     script_path.write_text("window.__rendererLoaded = true;", encoding="utf-8")
     captured = {}
@@ -163,9 +163,9 @@ def test_inject_file_exposes_packaged_sponsor_images_as_data_uris(monkeypatch, t
 
     cdp.inject_file(9229, script_path, 57321, lambda path, payload: {})
 
-    assert "window.__CODEX_PLUS_SPONSOR_IMAGES__" in captured["evaluated"]
-    assert '"alipay": "data:image/jpeg;base64,' in captured["evaluated"]
-    assert '"wechat": "data:image/jpeg;base64,' in captured["evaluated"]
+    assert "window.__CODEX_PLUS_SPONSOR_IMAGES__" not in captured["evaluated"]
+    assert "sponsor-alipay" not in captured["evaluated"]
+    assert "sponsor-wechat" not in captured["evaluated"]
     assert captured["new_document"] == captured["evaluated"]
 
 
@@ -179,6 +179,31 @@ def test_open_devtools_opens_chrome_devtools_frontend(monkeypatch):
 
     assert result == {"status": "ok", "target_id": "page-1"}
     assert opened == ["http://127.0.0.1:9229/devtools/inspector.html?ws=127.0.0.1:9229/devtools/page/page-1"]
+
+
+def test_open_devtools_prefers_target_frontend_url(monkeypatch):
+    targets = [{
+        "type": "page",
+        "title": "Codex",
+        "url": "app://codex",
+        "id": "page-1",
+        "webSocketDebuggerUrl": "ws://page",
+        "devtoolsFrontendUrl": "devtools://devtools/bundled/inspector.html?ws=127.0.0.1:9229/devtools/page/page-1",
+    }]
+    opened = []
+    monkeypatch.setattr(cdp, "list_targets", lambda port: targets)
+    monkeypatch.setattr(webbrowser, "open", lambda url: opened.append(url) or True)
+
+    result = open_devtools(9229)
+
+    assert result == {"status": "ok", "target_id": "page-1"}
+    assert opened == ["devtools://devtools/bundled/inspector.html?ws=127.0.0.1:9229/devtools/page/page-1"]
+
+
+def test_devtools_frontend_url_resolves_relative_frontend_path():
+    target = {"devtoolsFrontendUrl": "/devtools/inspector.html?ws=127.0.0.1:9229/devtools/page/page-1"}
+
+    assert devtools_frontend_url(9229, target, "page-1") == "http://127.0.0.1:9229/devtools/inspector.html?ws=127.0.0.1:9229/devtools/page/page-1"
 
 
 def test_bridge_loop_continues_after_idle_timeout():

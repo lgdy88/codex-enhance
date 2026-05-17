@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from importlib import resources
-from urllib.parse import unquote
 from typing import Protocol
 
 from codex_session_delete.bridge_routes import BridgeRoute, BridgeRouteContext, dispatch_route, route_for_path
@@ -64,9 +62,6 @@ class _Handler(BaseHTTPRequestHandler):
         if self.path == "/health":
             self._send_json({"ok": True})
             return
-        if self.path.startswith("/assets/"):
-            self._send_asset(self.path.removeprefix("/assets/"))
-            return
         self._send_json({"error": "not found"}, status=404)
 
     def do_POST(self) -> None:
@@ -118,19 +113,6 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", TRUSTED_BROWSER_ORIGIN)
         self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Codex-Session-Delete-Token")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
-
-    def _send_asset(self, name: str) -> None:
-        asset_name = unquote(name)
-        if asset_name not in {"sponsor-alipay.jpg", "sponsor-wechat.jpg"}:
-            self._send_json({"error": "not found"}, status=404)
-            return
-        data = resources.files("codex_session_delete").joinpath("assets", asset_name).read_bytes()
-        self.send_response(200)
-        self.send_header("Content-Type", "image/jpeg")
-        self.send_header("Access-Control-Allow-Origin", TRUSTED_BROWSER_ORIGIN)
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
