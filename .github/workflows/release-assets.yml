@@ -54,6 +54,7 @@ jobs:
           sha256sum CodexPlusPlus.zip > CodexPlusPlus.zip.sha256
 
       - name: Attest release artifacts
+        if: ${{ github.event.repository.visibility == 'public' }}
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: |
