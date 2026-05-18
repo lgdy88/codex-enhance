@@ -58,8 +58,9 @@ fn app_paths_find_latest_windows_package_checks_roots_before_fallback() {
 
 #[test]
 fn app_paths_extracts_codex_version_from_windows_package_app_dir() {
-    let app_dir =
-        PathBuf::from(r"C:\Program Files\WindowsApps\OpenAI.Codex_26.513.3673.0_x64__abc\app");
+    let app_dir = PathBuf::from("WindowsApps")
+        .join("OpenAI.Codex_26.513.3673.0_x64__abc")
+        .join("app");
 
     assert_eq!(
         codex_app_version(&app_dir).as_deref(),
@@ -131,9 +132,9 @@ fn launcher_builds_debug_arguments_and_commands() {
 
 #[test]
 fn launcher_constructs_windows_packaged_activation_without_real_app() {
-    let app_dir = PathBuf::from(
-        r"C:\Program Files\WindowsApps\OpenAI.Codex_26.506.2212.0_x64__2p2nqsd0c76g0\app",
-    );
+    let app_dir = PathBuf::from("WindowsApps")
+        .join("OpenAI.Codex_26.506.2212.0_x64__2p2nqsd0c76g0")
+        .join("app");
 
     assert_eq!(
         packaged_app_user_model_id(&app_dir).unwrap(),
