@@ -115,7 +115,11 @@ jobs:
           done
           cd desktop-dist
           if compgen -G "*" >/dev/null; then
-            shasum -a 256 * > SHA256SUMS-${{ matrix.os }}
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum * > SHA256SUMS-${{ matrix.os }}
+            else
+              shasum -a 256 * > SHA256SUMS-${{ matrix.os }}
+            fi
           else
             echo "No desktop artifacts found"
             exit 1
