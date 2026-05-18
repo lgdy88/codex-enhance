@@ -108,10 +108,17 @@ jobs:
         shell: bash
         run: |
           mkdir -p desktop-dist
-          find apps/codex-plus-manager/src-tauri/target/release/bundle -type f \( -name '*.msi' -o -name '*.exe' -o -name '*.dmg' -o -name '*.app.tar.gz' \) -print -exec cp {} desktop-dist/ \;
+          for bundle_dir in target/release/bundle apps/codex-plus-manager/src-tauri/target/release/bundle; do
+            if [ -d "$bundle_dir" ]; then
+              find "$bundle_dir" -type f \( -name '*.msi' -o -name '*.exe' -o -name '*.dmg' -o -name '*.app.tar.gz' \) -print -exec cp {} desktop-dist/ \;
+            fi
+          done
           cd desktop-dist
-          if ls * >/dev/null 2>&1; then
+          if compgen -G "*" >/dev/null; then
             shasum -a 256 * > SHA256SUMS-${{ matrix.os }}
+          else
+            echo "No desktop artifacts found"
+            exit 1
           fi
 
       - name: Upload desktop assets to release
