@@ -10,7 +10,7 @@ permissions:
   attestations: write
 
 jobs:
-  upload-release-assets:
+  python-assets:
     runs-on: ubuntu-latest
 
     steps:
@@ -28,7 +28,7 @@ jobs:
         run: python -m pip install build
 
       - name: Verify generated renderer
-        run: python scripts/build_renderer_inject.py && git diff --exit-code -- codex_session_delete/inject/renderer-inject.js
+        run: python scripts/build_renderer_inject.py && git diff --exit-code -- codex_session_delete/inject/renderer-inject.js assets/inject/renderer-inject.js
 
       - name: Build Python distributions
         run: python -m build
@@ -69,3 +69,53 @@ jobs:
             dist/*
             CodexPlusPlus.zip
             CodexPlusPlus.zip.sha256
+
+  desktop-assets:
+    name: Desktop ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Verify generated renderer
+        shell: bash
+        run: python scripts/build_renderer_inject.py && git diff --exit-code -- codex_session_delete/inject/renderer-inject.js assets/inject/renderer-inject.js
+
+      - name: Install manager dependencies
+        working-directory: apps/codex-plus-manager
+        run: npm install
+
+      - name: Build desktop app
+        working-directory: apps/codex-plus-manager
+        run: npm run build
+
+      - name: Collect desktop artifacts
+        shell: bash
+        run: |
+          mkdir -p desktop-dist
+          find apps/codex-plus-manager/src-tauri/target/release/bundle -type f \( -name '*.msi' -o -name '*.exe' -o -name '*.dmg' -o -name '*.app.tar.gz' \) -print -exec cp {} desktop-dist/ \;
+          cd desktop-dist
+          if ls * >/dev/null 2>&1; then
+            shasum -a 256 * > SHA256SUMS-${{ matrix.os }}
+          fi
+
+      - name: Upload desktop assets to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.release.tag_name }}
+          files: desktop-dist/*

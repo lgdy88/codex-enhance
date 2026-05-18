@@ -42,7 +42,48 @@ jobs:
         run: node --check codex_session_delete/inject/renderer-inject.js
 
       - name: Check generated renderer is current
-        run: python scripts/build_renderer_inject.py && git diff --exit-code -- codex_session_delete/inject/renderer-inject.js
+        run: python scripts/build_renderer_inject.py && git diff --exit-code -- codex_session_delete/inject/renderer-inject.js assets/inject/renderer-inject.js
 
       - name: Check whitespace
         run: git diff --check
+
+  desktop:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Linux desktop dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - name: Verify generated renderer
+        run: python scripts/build_renderer_inject.py && git diff --exit-code -- codex_session_delete/inject/renderer-inject.js assets/inject/renderer-inject.js
+
+      - name: Rust fmt
+        run: cargo fmt --check
+
+      - name: Rust tests
+        run: cargo test
+
+      - name: Install manager dependencies
+        working-directory: apps/codex-plus-manager
+        run: npm install
+
+      - name: Typecheck manager
+        working-directory: apps/codex-plus-manager
+        run: npm run check
+
+      - name: Build manager frontend
+        working-directory: apps/codex-plus-manager
+        run: npm run vite:build

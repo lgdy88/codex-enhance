@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_DIR = ROOT / "codex_session_delete" / "inject_src"
 TARGET = ROOT / "codex_session_delete" / "inject" / "renderer-inject.js"
+DESKTOP_TARGET = ROOT / "assets" / "inject" / "renderer-inject.js"
 
 
 @dataclass(frozen=True)
@@ -70,8 +71,12 @@ def build_renderer() -> str:
 def main() -> int:
     if not SOURCE_DIR.exists():
         raise SystemExit(f"renderer source directory not found: {SOURCE_DIR}")
-    TARGET.write_text(build_renderer(), encoding="utf-8")
+    renderer = build_renderer()
+    TARGET.write_text(renderer, encoding="utf-8")
     print(f"built {TARGET}")
+    if DESKTOP_TARGET.parent.exists():
+        DESKTOP_TARGET.write_text(renderer, encoding="utf-8")
+        print(f"synced {DESKTOP_TARGET}")
     return 0
 
 
