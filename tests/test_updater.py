@@ -76,28 +76,67 @@ def test_parse_sha256_digest_prefers_matching_asset_line():
     assert digest == "a" * 64
 
 
-def test_fetch_latest_release_uses_github_api(monkeypatch):
+def test_latest_release_url_parser_accepts_redirect_target():
+    assert (
+        updater.parse_latest_release_tag_url(
+            "https://github.com/lgdy88/codex-enhance/releases/tag/v1.0.12"
+        )
+        == "v1.0.12"
+    )
+    assert (
+        updater.parse_latest_release_tag_url(
+            "https://github.com/lgdy88/codex-enhance/releases/tag/v1.0.12?expanded_assets=true"
+        )
+        == "v1.0.12"
+    )
+    with pytest.raises(updater.UpdateError, match="无法从 GitHub Release 地址解析版本"):
+        updater.parse_latest_release_tag_url("https://github.com/lgdy88/codex-enhance/releases/latest")
+
+
+def test_release_from_latest_release_url_uses_source_archive_asset(monkeypatch):
+    seen = {}
+
+    def fake_download_digest(url, asset_name=""):
+        seen["url"] = url
+        seen["asset_name"] = asset_name
+        return "a" * 64
+
+    monkeypatch.setattr(updater, "download_digest", fake_download_digest)
+
+    release = updater.Release.from_latest_release_url(
+        "https://github.com/lgdy88/codex-enhance/releases/tag/v1.0.12"
+    )
+
+    assert release.version == "v1.0.12"
+    assert release.url == "https://github.com/lgdy88/codex-enhance/releases/tag/v1.0.12"
+    assert release.asset_name == "CodexPlusPlus.zip"
+    assert release.asset_url == "https://github.com/lgdy88/codex-enhance/releases/download/v1.0.12/CodexPlusPlus.zip"
+    assert release.asset_sha256 == "a" * 64
+    assert seen == {
+        "url": "https://github.com/lgdy88/codex-enhance/releases/download/v1.0.12/CodexPlusPlus.zip.sha256",
+        "asset_name": "CodexPlusPlus.zip",
+    }
+
+
+def test_fetch_latest_release_uses_github_release_redirect(monkeypatch):
     requested = []
 
     class Response:
+        url = "https://github.com/lgdy88/codex-enhance/releases/tag/v1.0.12"
+
         def raise_for_status(self):
             pass
 
-        def json(self):
-            return {
-                "tag_name": "v1.0.5",
-                "html_url": "https://github.com/lgdy88/codex-enhance/releases/tag/v1.0.5",
-                "assets": [],
-            }
-
     monkeypatch.setattr(updater.requests, "get", lambda url, **kwargs: requested.append((url, kwargs)) or Response())
+    monkeypatch.setattr(updater, "download_digest", lambda *args: "a" * 64)
 
     release = updater.fetch_latest_release()
 
-    assert release.version == "v1.0.5"
-    assert requested[0][0] == updater.DEFAULT_RELEASE_API_URL
+    assert release.version == "v1.0.12"
+    assert requested[0][0] == updater.DEFAULT_LATEST_RELEASE_URL
     assert requested[0][1]["timeout"] == 10
     assert "Codex++" in requested[0][1]["headers"]["User-Agent"]
+    assert "Accept" not in requested[0][1]["headers"]
 
 
 def test_download_asset_writes_release_file(monkeypatch, tmp_path):

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "codex-session-delete"
-version = "1.0.11"
+version = "1.0.12"
 description = "External Codex App session delete injector"
 authors = [{ name = "lgdy88" }]
 license = "MIT"

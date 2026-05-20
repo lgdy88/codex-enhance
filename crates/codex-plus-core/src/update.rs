@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub const DEFAULT_REPOSITORY: &str = "lgdy88/codex-enhance";
-pub const DEFAULT_RELEASE_API_URL: &str =
-    "https://api.github.com/repos/lgdy88/codex-enhance/releases/latest";
+pub const DEFAULT_LATEST_RELEASE_URL: &str =
+    "https://github.com/lgdy88/codex-enhance/releases/latest";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReleaseAsset {
@@ -103,6 +103,66 @@ pub fn release_from_github_payload(payload: &Value) -> anyhow::Result<Release> {
     })
 }
 
+pub fn parse_latest_release_tag_url(value: &str) -> anyhow::Result<String> {
+    let path = value
+        .split('#')
+        .next()
+        .unwrap_or(value)
+        .split('?')
+        .next()
+        .unwrap_or(value)
+        .trim_end_matches('/');
+    let marker = "/releases/tag/";
+    let tag = path
+        .split_once(marker)
+        .map(|(_, tag)| tag)
+        .and_then(|tag| tag.split('/').next())
+        .filter(|tag| !tag.trim().is_empty())
+        .ok_or_else(|| anyhow::anyhow!("无法从 GitHub Release 地址解析版本：{value}"))?;
+    parse_version_tag(tag)?;
+    Ok(tag.to_string())
+}
+
+pub fn release_from_latest_release_url(value: &str) -> anyhow::Result<Release> {
+    let version = parse_latest_release_tag_url(value)?;
+    let asset = platform_download_asset_for_version(&version);
+    Ok(Release {
+        version,
+        url: value.to_string(),
+        body: String::new(),
+        asset_name: asset.as_ref().map(|asset| asset.name.clone()),
+        asset_url: asset.map(|asset| asset.browser_download_url),
+    })
+}
+
+pub fn platform_download_asset_for_version(version: &str) -> Option<ReleaseAsset> {
+    parse_version_tag(version).ok()?;
+    let tag = normalized_release_tag(version);
+    let asset_version = tag.trim_start_matches(['v', 'V']);
+    let name = if cfg!(windows) {
+        format!("CodexPlusPlus-{asset_version}-windows-x64-setup.exe")
+    } else if cfg!(target_os = "macos") {
+        format!("CodexPlusPlus-{asset_version}-macos-universal.dmg")
+    } else {
+        return None;
+    };
+    Some(ReleaseAsset {
+        browser_download_url: format!(
+            "https://github.com/{DEFAULT_REPOSITORY}/releases/download/{tag}/{name}"
+        ),
+        name,
+    })
+}
+
+fn normalized_release_tag(version: &str) -> String {
+    let trimmed = version.trim();
+    if trimmed.starts_with(['v', 'V']) {
+        trimmed.to_string()
+    } else {
+        format!("v{trimmed}")
+    }
+}
+
 pub fn select_update_asset(assets: &[(String, String)]) -> Option<ReleaseAsset> {
     let named = assets
         .iter()
@@ -123,19 +183,12 @@ pub fn select_update_asset(assets: &[(String, String)]) -> Option<ReleaseAsset> 
 pub async fn fetch_latest_release(api_url: &str) -> anyhow::Result<Release> {
     let client =
         crate::http_client::proxied_client(&format!("Codex++/{}", crate::version::VERSION))?;
-    let payload = client
-        .get(api_url)
-        .header(reqwest::header::ACCEPT, "application/vnd.github+json")
-        .send()
-        .await?
-        .error_for_status()?
-        .json::<Value>()
-        .await?;
-    release_from_github_payload(&payload)
+    let response = client.get(api_url).send().await?.error_for_status()?;
+    release_from_latest_release_url(response.url().as_str())
 }
 
 pub async fn check_for_update(current_version: &str) -> anyhow::Result<UpdateCheck> {
-    let release = fetch_latest_release(DEFAULT_RELEASE_API_URL).await?;
+    let release = fetch_latest_release(DEFAULT_LATEST_RELEASE_URL).await?;
     let update_available = is_newer_version(&release.version, current_version)?;
     Ok(UpdateCheck {
         current_version: current_version.to_string(),

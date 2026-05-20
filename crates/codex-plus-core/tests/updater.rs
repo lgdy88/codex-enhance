@@ -1,6 +1,7 @@
 use codex_plus_core::update::{
-    Release, download_asset_to, is_newer_version, parse_version_tag, release_from_github_payload,
-    safe_asset_name, select_update_asset,
+    Release, download_asset_to, is_newer_version, parse_latest_release_tag_url, parse_version_tag,
+    platform_download_asset_for_version, release_from_github_payload,
+    release_from_latest_release_url, safe_asset_name, select_update_asset,
 };
 use serde_json::json;
 
@@ -46,6 +47,87 @@ fn github_payload_selects_platform_installer() {
         );
     } else {
         assert_eq!(release.asset_name.as_deref(), None);
+    }
+}
+
+#[test]
+fn latest_release_url_parser_accepts_redirect_target() {
+    assert_eq!(
+        parse_latest_release_tag_url(
+            "https://github.com/lgdy88/codex-enhance/releases/tag/v1.0.12"
+        )
+        .unwrap(),
+        "v1.0.12"
+    );
+    assert_eq!(
+        parse_latest_release_tag_url(
+            "https://github.com/lgdy88/codex-enhance/releases/tag/v1.0.12?expanded_assets=true"
+        )
+        .unwrap(),
+        "v1.0.12"
+    );
+    assert!(
+        parse_latest_release_tag_url("https://github.com/lgdy88/codex-enhance/releases/latest")
+            .is_err()
+    );
+}
+
+#[test]
+fn latest_release_url_builds_platform_download_asset_without_github_api() {
+    let release = release_from_latest_release_url(
+        "https://github.com/lgdy88/codex-enhance/releases/tag/v1.0.12",
+    )
+    .unwrap();
+
+    assert_eq!(release.version, "v1.0.12");
+    assert_eq!(release.body, "");
+    if cfg!(windows) {
+        assert_eq!(
+            release.asset_name.as_deref(),
+            Some("CodexPlusPlus-1.0.12-windows-x64-setup.exe")
+        );
+        assert_eq!(
+            release.asset_url.as_deref(),
+            Some(
+                "https://github.com/lgdy88/codex-enhance/releases/download/v1.0.12/CodexPlusPlus-1.0.12-windows-x64-setup.exe"
+            )
+        );
+    } else if cfg!(target_os = "macos") {
+        assert_eq!(
+            release.asset_name.as_deref(),
+            Some("CodexPlusPlus-1.0.12-macos-universal.dmg")
+        );
+        assert_eq!(
+            release.asset_url.as_deref(),
+            Some(
+                "https://github.com/lgdy88/codex-enhance/releases/download/v1.0.12/CodexPlusPlus-1.0.12-macos-universal.dmg"
+            )
+        );
+    } else {
+        assert_eq!(release.asset_name.as_deref(), None);
+        assert_eq!(release.asset_url.as_deref(), None);
+    }
+}
+
+#[test]
+fn platform_download_asset_normalizes_tags() {
+    let selected = platform_download_asset_for_version("1.0.12");
+    if cfg!(windows) {
+        let selected = selected.unwrap();
+        assert_eq!(selected.name, "CodexPlusPlus-1.0.12-windows-x64-setup.exe");
+        assert_eq!(
+            selected.browser_download_url,
+            "https://github.com/lgdy88/codex-enhance/releases/download/v1.0.12/CodexPlusPlus-1.0.12-windows-x64-setup.exe"
+        );
+    } else if cfg!(target_os = "macos") {
+        let selected = selected.unwrap();
+        assert_eq!(selected.name, "CodexPlusPlus-1.0.12-macos-universal.dmg");
+        assert_eq!(
+            selected.browser_download_url,
+            "https://github.com/lgdy88/codex-enhance/releases/download/v1.0.12/CodexPlusPlus-1.0.12-macos-universal.dmg"
+        );
+    } else {
+        assert!(selected.is_none());
     }
 }
 

@@ -41,7 +41,7 @@
   const codexArchiveRowActionsVersion = "1";
   const codexArchiveDeleteAllVersion = "2";
   const codexConversationTimelineVersion = "2";
-  const codexPlusVersion = "1.0.10";
+  const codexPlusVersion = "1.0.12";
   const codexPlusDisplayName = "syke";
   const codexPlusSettingsKey = "codexPlusSettings";
   window.__codexProjectMoveRuntimeId = (window.__codexProjectMoveRuntimeId || 0) + 1;

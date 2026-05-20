@@ -14,7 +14,7 @@ import requests
 from codex_session_delete import __version__
 
 DEFAULT_REPOSITORY = "lgdy88/codex-enhance"
-DEFAULT_RELEASE_API_URL = f"https://api.github.com/repos/{DEFAULT_REPOSITORY}/releases/latest"
+DEFAULT_LATEST_RELEASE_URL = f"https://github.com/{DEFAULT_REPOSITORY}/releases/latest"
 USER_AGENT = f"Codex++/{__version__}"
 PACKAGE_MODULE_FILE = Path(__file__).resolve()
 
@@ -46,6 +46,20 @@ class Release:
             asset_sha256=download_digest(digest_asset["browser_download_url"], asset_name) if digest_asset else None,
         )
 
+    @classmethod
+    def from_latest_release_url(cls, url: str) -> "Release":
+        version = parse_latest_release_tag_url(url)
+        asset = source_archive_asset_for_version(version)
+        digest_url = f"{asset['browser_download_url']}.sha256"
+        return cls(
+            version=version,
+            url=release_page_url(version),
+            body="",
+            asset_name=asset["name"],
+            asset_url=asset["browser_download_url"],
+            asset_sha256=download_digest(digest_url, asset["name"]),
+        )
+
 
 @dataclass(frozen=True)
 class UpdateResult:
@@ -68,6 +82,39 @@ def is_newer_version(candidate: str, current: str = __version__) -> bool:
     left += (0,) * (length - len(left))
     right += (0,) * (length - len(right))
     return left > right
+
+
+def parse_latest_release_tag_url(value: str) -> str:
+    path = value.split("#", 1)[0].split("?", 1)[0].rstrip("/")
+    marker = "/releases/tag/"
+    if marker not in path:
+        raise UpdateError(f"无法从 GitHub Release 地址解析版本：{value}")
+    tag = path.split(marker, 1)[1].split("/", 1)[0]
+    if not tag:
+        raise UpdateError(f"无法从 GitHub Release 地址解析版本：{value}")
+    parse_version_tag(tag)
+    return tag
+
+
+def normalized_release_tag(version: str) -> str:
+    value = version.strip()
+    if value.startswith(("v", "V")):
+        return value
+    return f"v{value}"
+
+
+def release_page_url(version: str) -> str:
+    return f"https://github.com/{DEFAULT_REPOSITORY}/releases/tag/{normalized_release_tag(version)}"
+
+
+def source_archive_asset_for_version(version: str) -> dict[str, str]:
+    parse_version_tag(version)
+    tag = normalized_release_tag(version)
+    name = "CodexPlusPlus.zip"
+    return {
+        "name": name,
+        "browser_download_url": f"https://github.com/{DEFAULT_REPOSITORY}/releases/download/{tag}/{name}",
+    }
 
 
 def select_update_asset(assets: list[dict[str, Any]]) -> dict[str, str] | None:
@@ -113,10 +160,10 @@ def parse_sha256_digest(text: str, asset_name: str = "") -> str:
     return match.group(0).lower()
 
 
-def fetch_latest_release(api_url: str = DEFAULT_RELEASE_API_URL, timeout: int = 10) -> Release:
-    response = requests.get(api_url, timeout=timeout, headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"})
+def fetch_latest_release(latest_release_url: str = DEFAULT_LATEST_RELEASE_URL, timeout: int = 10) -> Release:
+    response = requests.get(latest_release_url, timeout=timeout, headers={"User-Agent": USER_AGENT})
     response.raise_for_status()
-    return Release.from_github_payload(response.json())
+    return Release.from_latest_release_url(response.url)
 
 
 def source_tree_root(module_file: Path = PACKAGE_MODULE_FILE) -> Path | None:
