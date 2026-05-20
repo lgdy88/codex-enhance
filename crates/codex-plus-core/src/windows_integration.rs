@@ -5,7 +5,7 @@ use std::iter::once;
 #[cfg(windows)]
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 #[cfg(windows)]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[cfg(windows)]
 use anyhow::Context;
@@ -14,7 +14,7 @@ use windows::Win32::Foundation::{CloseHandle, HANDLE, MAX_PATH};
 #[cfg(windows)]
 use windows::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
-    CoTaskMemFree, CoUninitialize, IPersistFile,
+    CoTaskMemFree, CoUninitialize, IPersistFile, STGM_READ,
 };
 #[cfg(windows)]
 use windows::Win32::System::Diagnostics::ToolHelp::{
@@ -124,6 +124,29 @@ pub fn create_shortcut(spec: &ShortcutSpec) -> anyhow::Result<()> {
             .context("保存快捷方式失败")?;
     }
     Ok(())
+}
+
+#[cfg(windows)]
+pub fn shortcut_target(path: &Path) -> anyhow::Result<Option<PathBuf>> {
+    let _com = ComApartment::init().context("初始化 COM 失败")?;
+    unsafe {
+        let shell_link: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)
+            .context("创建 ShellLink COM 对象失败")?;
+        let persist_file: IPersistFile = shell_link.cast().context("获取 IPersistFile 失败")?;
+        persist_file
+            .Load(PCWSTR(wide_null(path.as_os_str()).as_ptr()), STGM_READ)
+            .context("加载快捷方式失败")?;
+
+        let mut target = vec![0u16; MAX_PATH as usize * 4];
+        shell_link
+            .GetPath(&mut target, std::ptr::null_mut(), 0)
+            .context("读取快捷方式目标失败")?;
+        let target = nul_terminated_wide_to_string(&target);
+        if target.trim().is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(PathBuf::from(target)))
+    }
 }
 
 #[cfg(windows)]

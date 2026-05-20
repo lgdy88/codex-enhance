@@ -67,6 +67,16 @@ impl ShortcutState {
         }
         Self::missing(candidates.into_iter().next())
     }
+
+    pub fn valid_entrypoint(path: PathBuf) -> Self {
+        if shortcut_target_exists(&path) {
+            return Self {
+                installed: true,
+                path: Some(path.to_string_lossy().to_string()),
+            };
+        }
+        Self::missing(Some(path))
+    }
 }
 
 pub fn shortcut_names() -> (&'static str, &'static str) {
@@ -79,9 +89,21 @@ pub fn app_bundle_names() -> (&'static str, &'static str) {
 
 pub fn inspect_entrypoints() -> EntryPointState {
     let root = default_install_root();
+    let candidates = entrypoint_candidates(&root, false);
+    let silent_shortcut = candidates
+        .into_iter()
+        .next()
+        .map(ShortcutState::valid_entrypoint)
+        .unwrap_or_else(|| ShortcutState::missing(None));
+    let candidates = entrypoint_candidates(&root, true);
+    let management_shortcut = candidates
+        .into_iter()
+        .next()
+        .map(ShortcutState::valid_entrypoint)
+        .unwrap_or_else(|| ShortcutState::missing(None));
     EntryPointState {
-        silent_shortcut: ShortcutState::from_candidates(entrypoint_candidates(&root, false)),
-        management_shortcut: ShortcutState::from_candidates(entrypoint_candidates(&root, true)),
+        silent_shortcut,
+        management_shortcut,
     }
 }
 
@@ -214,6 +236,29 @@ fn entrypoint_candidates(root: &Option<PathBuf>, manager: bool) -> Vec<PathBuf> 
     } else {
         vec![root.join(format!("{name}.desktop"))]
     }
+}
+
+fn shortcut_target_exists(path: &Path) -> bool {
+    if !path.exists() {
+        return false;
+    }
+    if cfg!(windows) {
+        return windows_shortcut_target_exists(path);
+    }
+    true
+}
+
+#[cfg(windows)]
+fn windows_shortcut_target_exists(path: &Path) -> bool {
+    crate::windows_integration::shortcut_target(path)
+        .ok()
+        .flatten()
+        .is_some_and(|target| target.exists())
+}
+
+#[cfg(not(windows))]
+fn windows_shortcut_target_exists(_path: &Path) -> bool {
+    false
 }
 
 pub fn option_or_current_exe(value: &Option<PathBuf>, binary: &str) -> PathBuf {

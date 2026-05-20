@@ -65,6 +65,27 @@ fn windows_binaries_request_administrator_privileges() {
 }
 
 #[test]
+fn release_workflow_builds_unified_desktop_installers() {
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workflow = manifest_dir
+        .parent()
+        .and_then(std::path::Path::parent)
+        .and_then(std::path::Path::parent)
+        .unwrap()
+        .join(".github/workflows/release-assets.yml");
+    let workflow = std::fs::read_to_string(&workflow).expect("read release workflow");
+
+    assert!(workflow.contains("Build silent launcher"));
+    assert!(workflow.contains("Package Windows installer"));
+    assert!(workflow.contains("makensis"));
+    assert!(workflow.contains("dist/windows/app/codex-plus-plus.exe"));
+    assert!(workflow.contains("CodexPlusPlus-*-windows-x64-setup.exe"));
+    assert!(workflow.contains("Package macOS installer"));
+    assert!(workflow.contains("package-dmg.sh"));
+    assert!(!workflow.contains("-name '*.msi'"));
+}
+
+#[test]
 fn manager_launch_button_spawns_silent_launcher_binary() {
     let commands_rs =
         std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/commands.rs"))

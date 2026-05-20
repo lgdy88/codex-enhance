@@ -39,6 +39,8 @@ def test_build_install_shortcut_script_contains_codex_plus_shortcuts(tmp_path):
     assert "--install-root" in script
     assert "QuietUninstallString" in script
     assert f"DisplayVersion -Value '{__version__}'" in script
+    assert "Publisher -Value 'lgdy88'" in script
+    assert "BigPizzaV3" not in script
 
 
 def test_default_windows_launcher_uses_current_python_executable(tmp_path):

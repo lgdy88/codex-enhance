@@ -78,7 +78,7 @@ $UninstallCommand = 'cmd.exe /c cd /d "' + $ProjectRoot + '" && "' + $LauncherPy
 New-Item -Path $UninstallKey -Force | Out-Null
 Set-ItemProperty -Path $UninstallKey -Name DisplayName -Value 'Codex++'
 Set-ItemProperty -Path $UninstallKey -Name DisplayVersion -Value '{__version__}'
-Set-ItemProperty -Path $UninstallKey -Name Publisher -Value 'BigPizzaV3'
+Set-ItemProperty -Path $UninstallKey -Name Publisher -Value 'lgdy88'
 Set-ItemProperty -Path $UninstallKey -Name DisplayIcon -Value $CodexPlusIcon
 Set-ItemProperty -Path $UninstallKey -Name InstallLocation -Value $ProjectRoot
 Set-ItemProperty -Path $UninstallKey -Name UninstallString -Value $UninstallCommand
