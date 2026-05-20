@@ -493,7 +493,7 @@ def test_renderer_script_includes_user_script_manager_ui_contract():
     assert "setAuthMethod(\"chatgpt\")" in text
     assert "patchFastModeGateOnObject" not in text
     assert "Codex++" in text
-    assert "codexPlusVersion = \"1.0.8\"" in text
+    assert "codexPlusVersion = \"1.0.10\"" in text
     assert "codexPlusDisplayName = \"syke\"" in text
     assert "${codexPlusDisplayName} ${codexPlusVersion}" in text
     assert "aria-label=\"${codexPlusDisplayName}\"" in text
