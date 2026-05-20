@@ -452,6 +452,10 @@ export function App() {
             <Button onClick={actions.toggleTheme} size="icon" title={theme === "dark" ? "切换到浅色" : "切换到深色"} variant="outline">
               {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </Button>
+            <Button onClick={() => void actions.launch()} title="启动 Codex++">
+              <Rocket className="h-4 w-4" />
+              启动 Codex++
+            </Button>
             <Button onClick={() => void actions.restart()} title="重启 Codex" variant="outline">
               <Rocket className="h-4 w-4" />
               重启 Codex
@@ -574,11 +578,7 @@ function OverviewScreen({ overview, actions }: { overview: OverviewResult | null
         <CardHead title="最近启动" detail={overview?.logs_path ?? "暂无状态文件"} />
         <CardContent>
           <LatestLaunch status={overview?.latest_launch ?? null} />
-          <Toolbar>
-            <Button onClick={() => void actions.launch()}>
-              <Rocket className="h-4 w-4" />
-              启动 Codex++
-            </Button>
+          <Toolbar sticky>
             <Button variant="secondary" onClick={() => void actions.goLogs()}>打开日志</Button>
           </Toolbar>
         </CardContent>
@@ -912,8 +912,8 @@ function AboutScreen({ overview, update, actions }: { overview: OverviewResult |
             <Metric label="资源" value={update?.assetName ?? "-"} />
             <Metric label="进度" value={`${update?.progress ?? 0}%`} />
           </div>
-          <Textarea className="log-view" readOnly value={update?.releaseSummary || update?.message || "尚未检查 GitHub Release；更新会下载并启动安装包。"} />
-          <Toolbar>
+          <UpdateMessage message={update?.releaseSummary || update?.message || "尚未检查 GitHub Release；更新会下载并启动安装包。"} />
+          <Toolbar sticky>
             <Button onClick={() => void actions.checkUpdate()}>检查更新</Button>
             <Button variant="secondary" onClick={() => void actions.performUpdate()}>下载并运行安装包</Button>
           </Toolbar>
@@ -978,8 +978,8 @@ function CardHead({ title, detail }: { title: string; detail: string }) {
   );
 }
 
-function Toolbar({ children }: { children: React.ReactNode }) {
-  return <div className="toolbar">{children}</div>;
+function Toolbar({ children, sticky = false }: { children: React.ReactNode; sticky?: boolean }) {
+  return <div className={`toolbar ${sticky ? "sticky-actions" : ""}`}>{children}</div>;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -1020,6 +1020,10 @@ function LatestLaunch({ status }: { status: LaunchStatus | null }) {
       <Metric label="时间" value={formatTime(status.started_at_ms)} />
     </div>
   );
+}
+
+function UpdateMessage({ message }: { message: string }) {
+  return <div className="update-message">{message}</div>;
 }
 
 function Metric({ label, value }: { label: string; value: string }) {

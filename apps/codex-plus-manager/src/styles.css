@@ -89,6 +89,7 @@ body {
   min-width: 760px;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background: hsl(var(--background));
 }
@@ -98,6 +99,8 @@ body {
   grid-template-columns: 208px minmax(0, 1fr);
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   overflow: hidden;
   background: hsl(var(--background));
   color: hsl(var(--foreground));
@@ -147,6 +150,7 @@ body {
   margin-top: 12px;
   overflow: auto;
   max-height: calc(100vh - 82px);
+  max-height: calc(100dvh - 82px);
 }
 
 .nav-item {
@@ -204,6 +208,7 @@ body {
 .workspace {
   display: flex;
   height: 100vh;
+  height: 100dvh;
   min-width: 0;
   min-height: 0;
   flex-direction: column;
@@ -215,25 +220,36 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
   min-height: 72px;
   padding: 14px 20px;
   border-bottom: 1px solid hsl(var(--border));
   background: hsl(var(--card));
 }
 
+.topbar > div:first-child {
+  min-width: 0;
+}
+
 .topbar h1 {
   margin: 0;
   font-size: 20px;
+  overflow-wrap: anywhere;
 }
 
 .topbar p {
   margin: 4px 0 0;
   color: hsl(var(--muted-foreground));
+  overflow-wrap: anywhere;
 }
 
 .topbar-actions {
   display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .notice,
@@ -263,7 +279,8 @@ body {
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  padding: 16px 20px 24px;
+  overscroll-behavior: contain;
+  padding: 16px 20px 32px;
   scrollbar-gutter: stable;
 }
 
@@ -277,6 +294,7 @@ body {
 }
 
 .panel {
+  min-width: 0;
   padding: 0;
   border-color: hsl(var(--border));
   background: hsl(var(--card));
@@ -306,7 +324,6 @@ body {
 .hero-layout p,
 .theme-row span,
 .feature-item span,
-.mcp-row span,
 .health-item span {
   color: hsl(var(--muted-foreground));
   line-height: 1.45;
@@ -320,7 +337,8 @@ body {
 }
 
 .fill {
-  min-height: calc(100vh - 188px);
+  min-height: clamp(260px, calc(100vh - 188px), 640px);
+  min-height: clamp(260px, calc(100dvh - 188px), 640px);
 }
 
 .panel-head {
@@ -411,45 +429,6 @@ body {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-}
-
-.mcp-actions {
-  display: grid;
-  gap: 12px;
-}
-
-.mcp-list {
-  display: grid;
-  gap: 10px;
-}
-
-.mcp-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(110px, 0.7fr) minmax(90px, 0.6fr) 90px auto;
-  gap: 12px;
-  align-items: center;
-  border: 1px solid hsl(var(--border));
-  border-radius: 8px;
-  background: hsl(var(--background));
-  padding: 12px;
-}
-
-.mcp-row > div:first-child {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.mcp-row strong,
-.mcp-row span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.mcp-row .metric-list div,
-.mcp-row div:not(:first-child) {
-  border-bottom: 0;
-  padding: 0;
 }
 
 .metric-list div,
@@ -591,7 +570,17 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
   margin-top: 12px;
+}
+
+.sticky-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin-top: 10px;
+  padding: 10px 0 1px;
+  background: linear-gradient(to top, hsl(var(--card)) 76%, hsl(var(--card) / 0));
 }
 
 .divider {
@@ -641,13 +630,31 @@ body {
 }
 
 .log-view.tall {
-  min-height: calc(100vh - 260px);
+  min-height: clamp(180px, calc(100vh - 260px), 620px);
+  min-height: clamp(180px, calc(100dvh - 260px), 620px);
+}
+
+.update-message {
+  min-height: 42px;
+  max-height: 92px;
+  overflow: auto;
+  margin-top: 10px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--background));
+  color: hsl(var(--muted-foreground));
+  line-height: 1.45;
+  padding: 9px 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .log-lines {
   display: grid;
   align-content: start;
-  max-height: calc(100vh - 250px);
+  min-height: 180px;
+  max-height: clamp(220px, calc(100vh - 250px), 640px);
+  max-height: clamp(220px, calc(100dvh - 250px), 640px);
   overflow: auto;
   border: 1px solid hsl(var(--border));
   border-radius: 8px;
@@ -766,7 +773,6 @@ body {
   .grid.two,
   .form-row,
   .setting-grid,
-  .mcp-row,
   .hero-layout {
     grid-template-columns: 1fr;
   }
@@ -778,5 +784,24 @@ body {
   .health-item .inline-flex {
     grid-column: 2;
     width: fit-content;
+  }
+}
+
+@media (max-height: 640px) {
+  .topbar {
+    min-height: 60px;
+    padding-block: 10px;
+  }
+
+  .screen {
+    padding-block: 12px 24px;
+  }
+
+  .health-item,
+  .feature-item,
+  .theme-row,
+  .guide-step,
+  .switch-row {
+    padding-block: 9px;
   }
 }

@@ -68,10 +68,6 @@
               <button type="button" class="codex-plus-toggle" data-codex-plus-setting="projectMove"><span></span></button>
             </div>
             <div class="codex-plus-row">
-              <div><div class="codex-plus-row-title">项目文件树</div><div class="codex-plus-row-description">点击项目时在聊天区域左侧显示可展开/折叠的目录树。</div></div>
-              <button type="button" class="codex-plus-toggle" data-codex-plus-setting="projectFileTree"><span></span></button>
-            </div>
-            <div class="codex-plus-row">
               <div><div class="codex-plus-row-title">对话 Timeline</div><div class="codex-plus-row-description">在对话右侧显示用户提问时间线，悬停查看摘要，点击跳转。</div></div>
               <button type="button" class="codex-plus-toggle" data-codex-plus-setting="conversationTimeline"><span></span></button>
             </div>

@@ -12,7 +12,6 @@
     patchCodexModelWhitelist();
     sessionRows().forEach(tryAttachButton);
     updateDeleteButtonOffsets();
-    installProjectFileTreeHandlers();
     scheduleProjectMoveProjection();
     scheduleChatsSortCorrection();
     scheduleProjectThreadFallbacks();
@@ -36,7 +35,7 @@
   }
 
   function isExtensionUiNode(node) {
-    return !!node?.closest?.(`.codex-delete-toast, .codex-delete-confirm-overlay, .codex-plus-modal-overlay, .${projectMoveOverlayClass}, .${projectFileTreePanelClass}, .${timelineClass}, .codex-conversation-timeline, #codex-plus-menu`);
+    return !!node?.closest?.(`.codex-delete-toast, .codex-delete-confirm-overlay, .codex-plus-modal-overlay, .${projectMoveOverlayClass}, .${timelineClass}, .codex-conversation-timeline, #codex-plus-menu`);
   }
 
   const scanRelevantSelector = [
@@ -114,16 +113,12 @@
   window.__codexProjectMoveTargets = projectMoveTargets;
   window.__codexProjectMoveSortChats = applyChatsSortCorrection;
   window.__codexProjectThreadsRefresh = refreshProjectThreadFallbacks;
-  window.__codexProjectFileTreeOpen = openProjectFileTree;
-  window.__codexProjectFileTreeCollapse = collapseProjectFileTreePanel;
-  window.__codexProjectFileTreeClose = removeProjectFileTreePanel;
   window.removeEventListener("resize", window.__codexPlusResizeHandler);
   let codexPlusResizeRafId = 0;
   window.__codexPlusResizeHandler = () => {
     cancelAnimationFrame(codexPlusResizeRafId);
     codexPlusResizeRafId = requestAnimationFrame(() => {
       updateFloatingCodexPlusMenuPosition(document.getElementById(codexPlusMenuId));
-      positionProjectFileTreePanel();
       runScanStep(refreshConversationTimeline);
     });
   };

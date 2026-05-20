@@ -17,9 +17,6 @@ class FakeDeleteService:
     def project_threads(self, project_cwd, limit=30, cursor=None):
         return {"status": "ok", "project_cwd": project_cwd, "cursor": cursor or "", "threads": []}
 
-    def project_file_tree(self, project_cwd, relative_path="", limit=200):
-        return {"status": "ok", "project_cwd": project_cwd, "path": relative_path, "entries": []}
-
     def provider_status(self):
         return {"status": "ok", "current_provider": "custom", "config_mtime_ms": 1}
 
@@ -197,13 +194,14 @@ def test_handle_bridge_request_exports_markdown(tmp_path):
     assert exported["filename"] == "thread.md"
 
 
-def test_handle_bridge_request_returns_project_file_tree(tmp_path):
+def test_handle_bridge_request_does_not_expose_project_file_tree(tmp_path):
     manager = UserScriptManager(tmp_path / "builtin", tmp_path / "user", tmp_path / "config.json")
     runtime = FakeRuntime(manager)
 
     result = handle_bridge_request(FakeDeleteService(), FakeExportService(), "/project-file-tree", {"project_cwd": str(tmp_path), "path": ""}, runtime)
 
-    assert result == {"status": "ok", "project_cwd": str(tmp_path), "path": "", "entries": []}
+    assert result["status"] == "failed"
+    assert result["message"] == "Unknown bridge path: /project-file-tree"
 
 
 def test_handle_bridge_request_returns_provider_history_endpoints(tmp_path):

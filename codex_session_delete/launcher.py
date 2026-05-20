@@ -18,7 +18,6 @@ from codex_session_delete.api_adapter import ApiAdapter, UnavailableApiAdapter
 from codex_session_delete.backup_store import BackupStore
 from codex_session_delete.bridge_routes import BridgeRouteContext, dispatch_route
 from codex_session_delete.cdp import evaluate_user_scripts, inject_file, open_devtools
-from codex_session_delete.file_tree import project_file_tree
 from codex_session_delete.helper_server import HelperServer
 from codex_session_delete.history_index import HistoryIndex, quarantine_state_db
 from codex_session_delete.markdown_exporter import MarkdownExportService
@@ -74,9 +73,6 @@ class ApiFirstDeleteService:
         if self.history_index is None:
             return {"status": DeleteStatus.FAILED.value, "message": "No local database configured", "threads": []}
         return self.history_index.project_threads(project_cwd, limit, cursor)
-
-    def project_file_tree(self, project_cwd: str, relative_path: str = "", limit: int = 200) -> dict[str, object]:
-        return project_file_tree(project_cwd, relative_path, limit)
 
     def provider_status(self) -> dict[str, object]:
         return provider_status()

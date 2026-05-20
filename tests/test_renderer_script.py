@@ -493,7 +493,7 @@ def test_renderer_script_includes_user_script_manager_ui_contract():
     assert "setAuthMethod(\"chatgpt\")" in text
     assert "patchFastModeGateOnObject" not in text
     assert "Codex++" in text
-    assert "codexPlusVersion = \"1.0.12\"" in text
+    assert "codexPlusVersion = \"1.0.13\"" in text
     assert "codexPlusDisplayName = \"syke\"" in text
     assert "${codexPlusDisplayName} ${codexPlusVersion}" in text
     assert "aria-label=\"${codexPlusDisplayName}\"" in text
@@ -779,97 +779,14 @@ def test_renderer_project_threads_uses_local_sqlite_before_optional_app_server()
     assert "return localResult" in code
 
 
-def test_renderer_script_has_project_file_tree_contract():
+def test_renderer_script_does_not_expose_project_file_tree():
     text = Path("codex_session_delete/inject/renderer-inject.js").read_text(encoding="utf-8")
 
-    assert "项目文件树" in text
-    assert "projectFileTree: true" in text
-    assert "/project-file-tree" in text
-    assert "codex-project-file-tree-panel" in text
-    assert "codexProjectFileTreeVersion" in text
-    assert "function installProjectFileTreeHandlers" in text
-    assert "function openProjectFileTree" in text
-    assert "function toggleProjectFileTreeDirectory" in text
-    assert "function openProjectFileTreeMenu" in text
-    assert "function copyProjectFileTreeAbsolutePath" in text
-    assert "data-app-action-sidebar-project-row" in text
-    assert "transform: translateX(${projectFileTreePanelWidth}px)" not in text
-    assert "transform: translateX(${projectFileTreeCollapsedWidth}px)" not in text
-    assert "transform: translateX(var(--codex-project-file-tree-expanded-width))" not in text
-    assert "html[data-codex-project-file-tree-open=\"true\"] main" in text
-    assert "html[data-codex-project-file-tree-open=\"collapsed\"] main" in text
-    assert "--codex-project-file-tree-content-left" in text
-    assert "--codex-project-file-tree-content-width" in text
-    assert "margin-left: var(--codex-project-file-tree-active-width)" in text
-    assert "width: var(--codex-project-file-tree-content-width)" in text
-    assert ".thread-scroll-container" in text
-    assert "overflow-x: hidden" in text
-    assert "window.__codexProjectFileTreeOpen" in text
-    assert "window.__codexProjectFileTreeCollapse" in text
-
-
-def test_renderer_project_file_tree_matches_codex_light_theme_without_extra_icons():
-    text = Path("codex_session_delete/inject/renderer-inject.js").read_text(encoding="utf-8")
-    css_start = text.index(".${projectFileTreePanelClass}")
-    css_end = text.index(".codex-archive-delete-all", css_start)
-    css = text[css_start:css_end]
-    panel_start = text.index("function createProjectFileTreePanel")
-    panel_end = text.index("\n\n  function markActiveProjectFileTreeTarget", panel_start)
-    panel_code = text[panel_start:panel_end]
-    row_start = text.index("function createProjectFileTreeRow")
-    row_end = text.index("\n\n  function renderProjectFileTreeEntries", row_start)
-    row_code = text[row_start:row_end]
-    toggle_start = text.index("async function toggleProjectFileTreeDirectory")
-    toggle_end = text.index("\n\n  async function openProjectFileTree", toggle_start)
-    toggle_code = text[toggle_start:toggle_end]
-
-    assert "background: #ffffff" in css
-    assert "background: rgba(255, 255, 255, .98)" not in css
-    assert "color: #111827" in css
-    assert "background: #f3f4f6" in css
-    assert "background: #e5e7eb" in css
-    assert "position: fixed" in css
-    assert "z-index: 2147481200" in css
-    assert "box-shadow: none" in css
-    assert "--codex-project-file-tree-expanded-width: clamp(320px, 25vw, 520px)" in text
-    assert "--codex-project-file-tree-offset-left" in text
-    assert "--codex-project-file-tree-active-width" in text
-    assert "--codex-project-file-tree-content-width" in text
-    assert "width: var(--codex-project-file-tree-expanded-width)" in css
-    assert "width: var(--codex-project-file-tree-collapsed-width)" in css
-    assert "document.documentElement.style.setProperty(\"--codex-project-file-tree-offset-left\"" in text
-    assert "codex-project-file-tree-header" in panel_code
-    assert "codex-project-file-tree-title" in panel_code
-    assert "codex-project-file-tree-collapse" in panel_code
-    assert "收起文件树" in panel_code
-    assert "codex-project-file-tree-collapse-icon" in panel_code
-    assert "border-right: 1.5px solid currentColor" in css
-    assert ">折叠<" not in text
-    assert "data-collapsed" in text
-    assert "collapseProjectFileTreePanel" in text
-    assert "restoreProjectFileTreePanel" in text
-    assert "role=\"tree\"" in panel_code
-    assert "codex-project-file-tree-menu" in text
-    assert "复制绝对路径" in text
-    assert "codex-project-file-tree-toolbar" not in text
-    assert "codex-project-file-tree-refresh" not in text
-    assert "codex-project-file-tree-root" not in text
-    assert "codex-project-file-tree-icon" not in text
-    assert "background: #2b2d30" not in css
-    assert "data-selected=\"true\"" in text
-    assert "aria-selected" in toggle_code
-    assert "--codex-project-file-tree-depth" in row_code
-    assert "dataset.fileKind" in row_code
-    assert "dataset.absolutePath" in row_code
-    assert "fileTreeKind(entry.name)" in row_code
-    assert "contextmenu" in row_code
-    assert "writeClipboardText" in text
-    assert "&gt;" in row_code
-    assert 'textContent = "v"' in toggle_code
-    assert 'textContent = row.dataset.hasChildren === "true" ? ">" : ""' in toggle_code
-    assert "fileTreeBranchIcon" not in text
-    assert "fileTreeKindIcon" not in text
-    row_to_open_code = text[row_start:toggle_end]
-    assert "›" not in row_to_open_code
-    assert "⌄" not in row_to_open_code
-    assert ">□<" not in text
+    assert "项目文件树" not in text
+    assert "projectFileTree" not in text
+    assert "/project-file-tree" not in text
+    assert "codex-project-file-tree" not in text
+    assert "codexProjectFileTree" not in text
+    assert "function installProjectFileTreeHandlers" not in text
+    assert "function openProjectFileTree" not in text
+    assert "window.__codexProjectFileTree" not in text

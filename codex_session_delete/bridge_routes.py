@@ -206,10 +206,6 @@ def route_project_threads(context: BridgeRouteContext, payload: dict[str, object
     return context.service.project_threads(str(payload.get("project_cwd", "")), bounded_int(payload.get("limit"), 30), str(cursor) if cursor else None)
 
 
-def route_project_file_tree(context: BridgeRouteContext, payload: dict[str, object]) -> dict[str, object]:
-    return context.service.project_file_tree(str(payload.get("project_cwd", "")), str(payload.get("path", "")), bounded_int(payload.get("limit"), 200))
-
-
 def route_provider_status(context: BridgeRouteContext, payload: dict[str, object]) -> dict[str, object]:
     return context.service.provider_status()
 
@@ -265,7 +261,6 @@ ROUTES: tuple[BridgeRoute, ...] = (
     BridgeRoute("/thread-sort-key", "read", validate_session, route_thread_sort_key),
     BridgeRoute("/thread-sort-keys", "read", validate_thread_sort_keys, route_thread_sort_keys),
     BridgeRoute("/project-threads", "read", validate_any, route_project_threads),
-    BridgeRoute("/project-file-tree", "read", validate_any, route_project_file_tree),
     BridgeRoute("/provider/status", "read", validate_any, route_provider_status),
     BridgeRoute("/provider/diagnostics", "read", validate_any, route_provider_diagnostics),
     BridgeRoute("/provider/repair-paths", "mutation", validate_any, route_provider_repair_paths),

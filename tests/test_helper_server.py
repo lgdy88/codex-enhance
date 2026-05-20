@@ -37,14 +37,6 @@ class FakeDeleteService:
     def project_threads(self, project_cwd: str, limit: int = 30, cursor: str | None = None):
         return {"status": "ok", "project_cwd": project_cwd, "cursor": cursor or "", "threads": [{"session_id": "s1", "title": "First", "cwd": project_cwd}]}
 
-    def project_file_tree(self, project_cwd: str, relative_path: str = "", limit: int = 200):
-        return {
-            "status": "ok",
-            "project_cwd": project_cwd,
-            "path": relative_path,
-            "entries": [{"name": "src", "path": "src", "absolute_path": "/project/a/src", "type": "directory", "has_children": True}],
-        }
-
     def provider_status(self):
         return {"status": "ok", "current_provider": "custom", "config_mtime_ms": 1}
 
@@ -285,24 +277,28 @@ def test_helper_server_returns_provider_history_endpoints():
     assert quarantined["message"] == "State DB quarantined"
 
 
-def test_helper_server_returns_project_file_tree():
+def test_helper_server_does_not_expose_project_file_tree():
     service = FakeDeleteService()
     server = HelperServer("127.0.0.1", 0, service, allow_http_mutation=True)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        base = f"http://127.0.0.1:{server.port}"
-        tree = post_json(base + "/project-file-tree", {"project_cwd": "/project/a", "path": "", "limit": 20})
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{server.port}/project-file-tree",
+            data=b'{"project_cwd":"/project/a"}',
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            urllib.request.urlopen(request, timeout=3)
+            assert False, "expected removed endpoint to return 404"
+        except urllib.error.HTTPError as exc:
+            status = exc.code
     finally:
         server.shutdown()
         thread.join(timeout=3)
 
-    assert tree == {
-        "status": "ok",
-        "project_cwd": "/project/a",
-        "path": "",
-        "entries": [{"name": "src", "path": "src", "absolute_path": "/project/a/src", "type": "directory", "has_children": True}],
-    }
+    assert status == 404
 
 
 def test_helper_server_does_not_serve_removed_sponsor_assets():
