@@ -2,6 +2,8 @@ from codex_session_delete.bridge_routes import ROUTES_BY_PATH, BridgeRouteContex
 
 
 def test_bridge_routes_classify_read_mutation_and_dangerous_paths():
+    assert ROUTES_BY_PATH["/codex-model-catalog"].kind == "read"
+    assert ROUTES_BY_PATH["/codex-config-model"].kind == "read"
     assert ROUTES_BY_PATH["/provider/diagnostics"].kind == "read"
     assert ROUTES_BY_PATH["/provider/repair-paths"].kind == "mutation"
     assert ROUTES_BY_PATH["/provider/converge"].kind == "dangerous"

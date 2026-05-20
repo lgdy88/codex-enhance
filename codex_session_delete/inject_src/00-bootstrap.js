@@ -29,7 +29,7 @@
   const projectFileTreeCollapsedWidth = 42;
   const projectFileTreeMenuClass = "codex-project-file-tree-menu";
   const styleId = "codex-delete-style";
-  const codexDeleteStyleVersion = "11";
+  const codexDeleteStyleVersion = "12";
   const codexPlusMenuId = "codex-plus-menu";
   const codexPlusMenuFloatingClass = "codex-plus-menu-floating";
   const codexDeleteVersion = "7";
@@ -666,6 +666,15 @@
       .codex-plus-user-script-error { margin-top: 2px; color: #f87171; font-size: 11px; word-break: break-all; }
       .codex-plus-user-script-actions { display: grid; justify-items: end; gap: 8px; min-width: 120px; }
       .codex-plus-user-script-reload { border: 1px solid rgba(255,255,255,.18); border-radius: 7px; background: #3f3f46; color: #f3f4f6; font: 12px system-ui, sans-serif; padding: 6px 8px; }
+      .codex-plus-model-catalog { display: grid; gap: 6px; margin-top: 8px; color: #d1d5db; font-size: 12px; line-height: 1.45; }
+      .codex-plus-model-catalog-row { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid rgba(255,255,255,.06); padding-bottom: 4px; }
+      .codex-plus-model-catalog-row span:first-child { color: #a1a1aa; }
+      .codex-plus-model-catalog-row span:last-child { text-align: right; word-break: break-all; }
+      .codex-plus-model-list { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+      .codex-plus-model-chip { border: 1px solid rgba(255,255,255,.12); border-radius: 999px; background: rgba(16,163,127,.12); color: #d1fae5; padding: 2px 7px; font-size: 11px; }
+      .codex-plus-model-actions { display: grid; justify-items: end; gap: 8px; min-width: 92px; }
+      .codex-plus-model-compat-warning { margin-top: 4px; color: #fbbf24; font-size: 12px; line-height: 1.4; }
+      .codex-plus-model-compat-warning[hidden] { display: none; }
       .codex-plus-provider-diagnostics { display: grid; gap: 6px; margin-top: 8px; color: #d1d5db; font-size: 12px; line-height: 1.45; }
       .codex-plus-provider-diagnostics-row { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid rgba(255,255,255,.06); padding-bottom: 4px; }
       .codex-plus-provider-diagnostics-row span:first-child { color: #a1a1aa; }
@@ -750,7 +759,7 @@
   }
 
   function defaultCodexPlusSettings() {
-    return { pluginEntryUnlock: true, forcePluginInstall: true, sessionDelete: true, markdownExport: true, projectMove: true, projectFileTree: true, conversationTimeline: true, nativeMenuPlacement: true };
+    return { pluginEntryUnlock: true, forcePluginInstall: true, modelWhitelistUnlock: false, sessionDelete: true, markdownExport: true, projectMove: true, projectFileTree: true, conversationTimeline: true, nativeMenuPlacement: true };
   }
 
   function codexPlusSettings() {

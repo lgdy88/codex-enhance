@@ -9,6 +9,7 @@
   function scanDeferred() {
     enablePluginEntry();
     unblockPluginInstallButtons();
+    patchCodexModelWhitelist();
     sessionRows().forEach(tryAttachButton);
     updateDeleteButtonOffsets();
     installProjectFileTreeHandlers();

@@ -61,6 +61,7 @@ pub trait BridgeRuntimeService: Send + Sync {
     async fn open_manager(&self) -> anyhow::Result<Value>;
     async fn backend_status(&self) -> anyhow::Result<Value>;
     async fn repair_backend(&self) -> anyhow::Result<Value>;
+    async fn codex_model_catalog(&self) -> anyhow::Result<Value>;
 }
 
 #[async_trait]
@@ -125,6 +126,7 @@ pub async fn handle_bridge_request(
         "/manager/open" => ctx.runtime.open_manager().await,
         "/backend/status" => ctx.runtime.backend_status().await,
         "/backend/repair" => ctx.runtime.repair_backend().await,
+        "/codex-model-catalog" | "/codex-config-model" => ctx.runtime.codex_model_catalog().await,
         "/diagnostics/log" => diagnostic_log_value(payload.clone()),
         "/delete" => result_value(ctx.data.delete(session_from_payload(&payload)).await),
         "/undo" => {
@@ -350,6 +352,10 @@ impl BridgeRuntimeService for CoreRuntimeService {
 
     async fn repair_backend(&self) -> anyhow::Result<Value> {
         self.backend_status().await
+    }
+
+    async fn codex_model_catalog(&self) -> anyhow::Result<Value> {
+        Ok(crate::model_catalog::read_codex_model_catalog().await)
     }
 }
 

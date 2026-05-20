@@ -99,6 +99,17 @@
     });
   }
 
+  function patchCodexModelWhitelist() {
+    if (!codexPlusModelUnlockEnabled()) return;
+    patchAppServerModelMessages();
+    if (!codexPlusModelNames().length) {
+      loadCodexModelCatalog();
+      return;
+    }
+    patchStatsigModelWhitelist();
+    patchReactModelState();
+  }
+
   let cachedSessionRows = [];
   let cachedSessionRowsAt = 0;
 

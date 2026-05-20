@@ -5,6 +5,7 @@ from typing import Any, Callable
 
 from codex_session_delete.markdown_exporter import MarkdownExportService
 from codex_session_delete.mcp_config import all_mcp_status, install_browser_mcp_servers, remove_browser_mcp_servers, set_mcp_server_enabled
+from codex_session_delete.model_catalog import read_codex_model_catalog
 from codex_session_delete.models import DeleteStatus, SessionRef
 from codex_session_delete.settings_store import SettingsStore
 
@@ -163,6 +164,10 @@ def route_mcp_remove(context: BridgeRouteContext, payload: dict[str, object]) ->
     return remove_browser_mcp_servers(selected).to_dict()
 
 
+def route_codex_model_catalog(context: BridgeRouteContext, payload: dict[str, object]) -> dict[str, object]:
+    return read_codex_model_catalog()
+
+
 def route_delete(context: BridgeRouteContext, payload: dict[str, object]) -> dict[str, object]:
     return context.service.delete(session_ref(payload)).to_dict()
 
@@ -250,6 +255,8 @@ ROUTES: tuple[BridgeRoute, ...] = (
     BridgeRoute("/mcp/set-enabled", "mutation", validate_mcp_name, route_mcp_set_enabled, runtime_required=True),
     BridgeRoute("/mcp/install", "mutation", validate_any, route_mcp_install, runtime_required=True),
     BridgeRoute("/mcp/remove", "mutation", validate_any, route_mcp_remove, runtime_required=True),
+    BridgeRoute("/codex-model-catalog", "read", validate_any, route_codex_model_catalog),
+    BridgeRoute("/codex-config-model", "read", validate_any, route_codex_model_catalog),
     BridgeRoute("/delete", "dangerous", validate_session, route_delete),
     BridgeRoute("/undo", "dangerous", validate_undo, route_undo),
     BridgeRoute("/export-markdown", "mutation", validate_session, route_export_markdown),

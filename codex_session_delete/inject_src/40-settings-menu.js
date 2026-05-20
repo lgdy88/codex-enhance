@@ -8,6 +8,7 @@
     if (tab === "userScripts") loadUserScripts();
     if (tab === "mcp") loadMcpStatus();
     if (tab === "provider") loadProviderDiagnostics();
+    if (tab === "home") loadCodexModelCatalog();
   }
 
   function openCodexPlusModal() {
@@ -43,6 +44,18 @@
             <div class="codex-plus-row">
               <div><div class="codex-plus-row-title">特殊插件强制安装</div><div class="codex-plus-row-description">解除 App unavailable / 应用不可用导致的前端安装禁用。</div></div>
               <button type="button" class="codex-plus-toggle" data-codex-plus-setting="forcePluginInstall"><span></span></button>
+            </div>
+            <div class="codex-plus-row">
+              <div>
+                <div class="codex-plus-row-title">模型白名单解锁</div>
+                <div class="codex-plus-row-description">开启后读取 Codex config/env 里的 OpenAI-compatible provider，只展示模型和兼容状态，不展示 token。</div>
+                <div class="codex-plus-model-compat-warning" data-codex-model-compat-warning="true" hidden></div>
+                <div class="codex-plus-model-catalog" data-codex-model-catalog="true">未启用模型目录读取。</div>
+              </div>
+              <div class="codex-plus-model-actions">
+                <button type="button" class="codex-plus-toggle" data-codex-plus-setting="modelWhitelistUnlock"><span></span></button>
+                <button type="button" class="codex-plus-action-button" data-codex-model-catalog-refresh="true">刷新模型</button>
+              </div>
             </div>
             <div class="codex-plus-row">
               <div><div class="codex-plus-row-title">会话删除</div><div class="codex-plus-row-description">在会话列表悬停显示删除按钮，并支持撤销。</div></div>
@@ -186,6 +199,10 @@
         loadProviderDiagnostics();
         return;
       }
+      if (target?.closest("[data-codex-model-catalog-refresh]")) {
+        loadCodexModelCatalog(true);
+        return;
+      }
       if (target?.closest("[data-codex-provider-repair-paths]")) {
         repairProviderPaths();
         return;
@@ -217,6 +234,7 @@
       if (toggle) {
         const key = toggle.getAttribute("data-codex-plus-setting");
         setCodexPlusSetting(key, !codexPlusSettings()[key]);
+        if (key === "modelWhitelistUnlock") loadCodexModelCatalog(true);
         return;
       }
       const backendToggle = target?.closest("[data-codex-backend-setting]");
@@ -231,6 +249,8 @@
     refreshCodexPlusBackendToggles();
     renderBackendStatus();
     loadBackendSettings();
+    renderCodexModelCatalog();
+    if (codexPlusModelUnlockEnabled()) loadCodexModelCatalog();
     loadUserScripts();
   }
 

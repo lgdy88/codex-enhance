@@ -32,6 +32,8 @@ async fn bridge_routes_cover_all_current_paths() {
         ("/manager/open", json!({})),
         ("/backend/status", json!({})),
         ("/backend/repair", json!({})),
+        ("/codex-model-catalog", json!({})),
+        ("/codex-config-model", json!({})),
         ("/delete", json!({"session_id": "s1", "title": "First"})),
         ("/undo", json!({"undo_token": "undo-1"})),
         (
@@ -538,6 +540,17 @@ impl BridgeRuntimeService for FakeRuntime {
         Ok(
             json!({"status": "ok", "message": "后端已修复", "version": codex_plus_core::version::VERSION}),
         )
+    }
+
+    async fn codex_model_catalog(&self) -> anyhow::Result<Value> {
+        Ok(json!({
+            "status": "ok",
+            "model": "local-model",
+            "default_model": "local-model",
+            "models": ["local-model"],
+            "sources": [],
+            "responses_api": {"status": "unknown", "endpoint": "", "message": ""}
+        }))
     }
 }
 
