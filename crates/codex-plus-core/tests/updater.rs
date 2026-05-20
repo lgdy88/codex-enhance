@@ -27,7 +27,7 @@ fn github_payload_selects_platform_installer() {
         "assets": [
             {"name": "source.zip", "browser_download_url": "https://example.test/source.zip"},
             {"name": "codex-plus-plus-manager.exe", "browser_download_url": "https://example.test/manager.exe"},
-            {"name": "CodexPlusPlus_1.0.9_x64-setup.exe", "browser_download_url": "https://example.test/setup.exe"},
+            {"name": "CodexPlusPlus-1.0.9-windows-x64-setup.exe", "browser_download_url": "https://example.test/setup.exe"},
             {"name": "CodexPlusPlus_1.0.9_x64.dmg", "browser_download_url": "https://example.test/app.dmg"}
         ]
     }))
@@ -37,7 +37,7 @@ fn github_payload_selects_platform_installer() {
     if cfg!(windows) {
         assert_eq!(
             release.asset_name.as_deref(),
-            Some("CodexPlusPlus_1.0.9_x64-setup.exe")
+            Some("CodexPlusPlus-1.0.9-windows-x64-setup.exe")
         );
     } else if cfg!(target_os = "macos") {
         assert_eq!(
@@ -61,7 +61,7 @@ fn asset_selection_prefers_current_platform_artifacts() {
             "https://example.test/manager.exe".to_string(),
         ),
         (
-            "CodexPlusPlus_1.0.9_x64-setup.exe".to_string(),
+            "CodexPlusPlus-1.0.9-windows-x64-setup.exe".to_string(),
             "https://example.test/setup.exe".to_string(),
         ),
         (
@@ -72,13 +72,23 @@ fn asset_selection_prefers_current_platform_artifacts() {
 
     if cfg!(windows) {
         let selected = select_update_asset(&assets).unwrap();
-        assert_eq!(selected.name, "CodexPlusPlus_1.0.9_x64-setup.exe");
+        assert_eq!(selected.name, "CodexPlusPlus-1.0.9-windows-x64-setup.exe");
     } else if cfg!(target_os = "macos") {
         let selected = select_update_asset(&assets).unwrap();
         assert_eq!(selected.name, "CodexPlusPlus_1.0.9_x64.dmg");
     } else {
         assert!(select_update_asset(&assets).is_none());
     }
+}
+
+#[test]
+fn asset_selection_rejects_manager_only_windows_installers() {
+    let assets = vec![(
+        "Codex++ Manager_1.0.9_x64-setup.exe".to_string(),
+        "https://example.test/manager-setup.exe".to_string(),
+    )];
+
+    assert!(select_update_asset(&assets).is_none());
 }
 
 #[test]

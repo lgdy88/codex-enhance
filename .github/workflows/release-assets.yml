@@ -104,15 +104,44 @@ jobs:
         working-directory: apps/codex-plus-manager
         run: npm run build
 
+      - name: Build silent launcher
+        run: cargo build --release -p codex-plus-launcher
+
+      - name: Package Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install nsis -y --no-progress
+          $version = "${{ github.event.release.tag_name }}" -replace '^v', ''
+          New-Item -ItemType Directory -Force -Path dist/windows/app | Out-Null
+          $launcher = "target/release/codex-plus-plus.exe"
+          $managerCandidates = @(
+            "target/release/codex-plus-plus-manager.exe",
+            "apps/codex-plus-manager/src-tauri/target/release/codex-plus-plus-manager.exe"
+          )
+          $manager = $managerCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          if (!(Test-Path -LiteralPath $launcher)) { throw "Missing silent launcher: $launcher" }
+          if (!$manager) { throw "Missing manager binary" }
+          Copy-Item -LiteralPath $launcher -Destination dist/windows/app/codex-plus-plus.exe -Force
+          Copy-Item -LiteralPath $manager -Destination dist/windows/app/codex-plus-plus-manager.exe -Force
+          makensis "/DVERSION=$version" scripts/installer/windows/CodexPlusPlus.nsi
+
+      - name: Package macOS installer
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          scripts/installer/macos/package-dmg.sh "$VERSION"
+
       - name: Collect desktop artifacts
         shell: bash
         run: |
           mkdir -p desktop-dist
-          for bundle_dir in target/release/bundle apps/codex-plus-manager/src-tauri/target/release/bundle; do
-            if [ -d "$bundle_dir" ]; then
-              find "$bundle_dir" -type f \( -name '*.msi' -o -name '*.exe' -o -name '*.dmg' -o -name '*.app.tar.gz' \) -print -exec cp {} desktop-dist/ \;
-            fi
-          done
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp dist/windows/CodexPlusPlus-*-windows-x64-setup.exe desktop-dist/
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            cp dist/macos/CodexPlusPlus-*-macos-universal.dmg desktop-dist/
+          fi
           cd desktop-dist
           if compgen -G "*" >/dev/null; then
             if command -v sha256sum >/dev/null 2>&1; then

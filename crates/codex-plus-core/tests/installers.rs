@@ -1,6 +1,6 @@
 use codex_plus_core::install::{
-    InstallOptions, app_bundle_names, build_macos_app_bundle, build_windows_entrypoint_plan,
-    default_install_root_strategy, shortcut_names,
+    InstallOptions, ShortcutState, app_bundle_names, build_macos_app_bundle,
+    build_windows_entrypoint_plan, default_install_root_strategy, shortcut_names,
 };
 
 #[test]
@@ -41,6 +41,18 @@ fn windows_entrypoint_plan_can_request_owned_data_removal_without_shell_script()
     assert!(plan.silent_shortcut.ends_with("Codex++.lnk"));
     assert!(plan.manager_shortcut.ends_with("Codex++ 管理工具.lnk"));
     assert!(plan.remove_owned_data);
+}
+
+#[test]
+fn shortcut_state_requires_target_to_exist_when_validating_entrypoint() {
+    let dir = tempfile::tempdir().unwrap();
+    let shortcut = dir.path().join("Codex++.lnk");
+    std::fs::write(&shortcut, b"not a real shell link").unwrap();
+
+    let state = ShortcutState::valid_entrypoint(shortcut.clone());
+
+    assert!(!state.installed);
+    assert_eq!(state.path, Some(shortcut.to_string_lossy().to_string()));
 }
 
 #[test]
