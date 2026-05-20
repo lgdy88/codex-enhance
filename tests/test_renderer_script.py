@@ -624,27 +624,20 @@ def test_renderer_script_provider_watchers_are_idempotent_and_non_reentrant():
     assert "loadProviderDiagnostics" not in project_refresh_code
 
 
-def test_renderer_script_has_browser_mcp_manager_ui_contract():
+def test_renderer_script_does_not_expose_browser_mcp_manager_ui():
     text = Path("codex_session_delete/inject/renderer-inject.js").read_text(encoding="utf-8")
 
-    assert "MCP 服务器" in text
-    assert "检测 Codex 配置里的全部 MCP server" in text
-    assert "当前 Codex 会话通常需要重启或新会话" in text
-    assert "不展示 env、token、DSN 或完整命令参数" in text
-    assert "data-codex-plus-tab=\"mcp\"" in text
-    assert "data-codex-plus-panel=\"mcp\"" in text
-    assert "data-codex-mcp-list" in text
-    assert "data-codex-mcp-server" in text
-    assert "data-codex-mcp-install" in text
-    assert "data-codex-mcp-remove" in text
-    assert "data-codex-mcp-status" in text
-    assert "/mcp/status" in text
-    assert "/mcp/install" in text
-    assert "/mcp/remove" in text
-    assert "/mcp/set-enabled" in text
-    assert "loadMcpStatus" in text
-    assert "renderMcpStatus" in text
-    assert "server.command" not in text[text.index("function renderMcpStatus"):text.index("\n\n  async function loadMcpStatus")]
+    assert "MCP 服务器" not in text
+    assert "检测 Codex 配置里的全部 MCP server" not in text
+    assert "data-codex-plus-tab=\"mcp\"" not in text
+    assert "data-codex-plus-panel=\"mcp\"" not in text
+    assert "data-codex-mcp-list" not in text
+    assert "data-codex-mcp-server" not in text
+    assert "data-codex-mcp-install" not in text
+    assert "data-codex-mcp-remove" not in text
+    assert "data-codex-mcp-status" not in text
+    assert "loadMcpStatus" not in text
+    assert "renderMcpStatus" not in text
 
 
 def test_renderer_script_can_move_sidebar_threads_between_projects():

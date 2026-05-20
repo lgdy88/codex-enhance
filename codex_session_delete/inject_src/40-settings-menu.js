@@ -6,7 +6,6 @@
       panel.hidden = panel.getAttribute("data-codex-plus-panel") !== tab;
     });
     if (tab === "userScripts") loadUserScripts();
-    if (tab === "mcp") loadMcpStatus();
     if (tab === "provider") loadProviderDiagnostics();
     if (tab === "home") loadCodexModelCatalog();
   }
@@ -25,7 +24,6 @@
         <div class="codex-plus-tabs" role="tablist" aria-label="${codexPlusDisplayName}">
           <button type="button" class="codex-plus-tab-button" data-codex-plus-tab="home" data-active="true">主页</button>
           <button type="button" class="codex-plus-tab-button" data-codex-plus-tab="provider" data-active="false">Provider</button>
-          <button type="button" class="codex-plus-tab-button" data-codex-plus-tab="mcp" data-active="false">MCP</button>
           <button type="button" class="codex-plus-tab-button" data-codex-plus-tab="userScripts" data-active="false">用户脚本</button>
         </div>
         <div class="codex-plus-modal-body">
@@ -105,26 +103,11 @@
                 <div class="codex-plus-user-script-warning">兼容模式收敛 provider metadata 前会备份；它只保证列表可见，不保证 encrypted_content 能跨账号或跨 provider 续聊。</div>
                 <div class="codex-plus-provider-diagnostics" data-codex-provider-diagnostics="true">正在读取诊断信息…</div>
               </div>
-              <div class="codex-plus-mcp-actions">
+              <div class="codex-plus-provider-actions">
                 <button type="button" class="codex-plus-action-button" data-codex-provider-refresh="true">刷新诊断</button>
                 <button type="button" class="codex-plus-action-button" data-codex-provider-repair-paths="true">修复路径</button>
                 <button type="button" class="codex-plus-action-button codex-plus-danger-button" data-codex-provider-converge="true">收敛到当前 provider</button>
                 <button type="button" class="codex-plus-action-button codex-plus-danger-button" data-codex-provider-quarantine-state="true">隔离脏库</button>
-              </div>
-            </div>
-          </div>
-          <div class="codex-plus-panel" data-codex-plus-panel="mcp" hidden>
-            <div class="codex-plus-row">
-              <div>
-                <div class="codex-plus-row-title">MCP 服务器</div>
-                <div class="codex-plus-row-description">检测 Codex 配置里的全部 MCP server，并写入 enabled 开关。配置会立即保存，当前 Codex 会话通常需要重启或新会话才会重新加载工具。</div>
-                <div class="codex-plus-user-script-warning">为避免泄露密钥，这里只显示 server 名称和状态，不展示 env、token、DSN 或完整命令参数。</div>
-                <div class="codex-plus-mcp-list" data-codex-mcp-list="true">正在读取 MCP 状态…</div>
-              </div>
-              <div class="codex-plus-mcp-actions">
-                <button type="button" class="codex-plus-action-button" data-codex-mcp-install="all">安装浏览器 MCP</button>
-                <button type="button" class="codex-plus-action-button" data-codex-mcp-status="true">刷新</button>
-                <button type="button" class="codex-plus-action-button" data-codex-mcp-remove="all">移除浏览器 MCP</button>
               </div>
             </div>
           </div>
@@ -191,10 +174,6 @@
         loadUserScripts("/user-scripts/reload", {});
         return;
       }
-      if (target?.closest("[data-codex-mcp-status]")) {
-        loadMcpStatus();
-        return;
-      }
       if (target?.closest("[data-codex-provider-refresh]")) {
         loadProviderDiagnostics();
         return;
@@ -213,21 +192,6 @@
       }
       if (target?.closest("[data-codex-provider-quarantine-state]")) {
         quarantineProviderStateDb();
-        return;
-      }
-      const mcpServerToggle = target?.closest("[data-codex-mcp-server]");
-      if (mcpServerToggle) {
-        setMcpEnabled(mcpServerToggle.getAttribute("data-codex-mcp-server"), mcpServerToggle.dataset.enabled !== "true");
-        return;
-      }
-      const mcpInstall = target?.closest("[data-codex-mcp-install]");
-      if (mcpInstall) {
-        loadMcpStatus("/mcp/install", { servers: ["all"], chromeMode: "auto-connect" });
-        return;
-      }
-      const mcpRemove = target?.closest("[data-codex-mcp-remove]");
-      if (mcpRemove) {
-        loadMcpStatus("/mcp/remove", { servers: ["all"] });
         return;
       }
       const toggle = target?.closest("[data-codex-plus-setting]");

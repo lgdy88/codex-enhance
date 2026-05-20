@@ -36,7 +36,6 @@
   }
 
   let codexPlusUserScripts = { enabled: true, builtin_dir: "", user_dir: "", scripts: [] };
-  let codexPlusMcpStatus = { status: "checking", servers: [] };
   let codexPlusBackendStatus = { status: "checking", message: "正在检查后端…" };
   let codexPlusProviderStatus = { status: "checking", current_provider: "", config_mtime_ms: 0 };
   let codexPlusProviderDiagnostics = { status: "checking" };

@@ -2,7 +2,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use codex_plus_core::install::SILENT_BINARY;
 use codex_plus_core::settings::{BackendSettings, SettingsStore};
 use codex_plus_core::status::{LaunchStatus, StatusStore};
 use codex_plus_core::user_scripts::UserScriptManager;
@@ -249,7 +248,7 @@ fn spawn_codex_plus_launch(request: LaunchRequest, accepted_message: &str) -> Co
 }
 
 fn spawn_silent_launcher(request: &LaunchRequest) -> anyhow::Result<()> {
-    let launcher = codex_plus_core::install::option_or_current_exe(&None, SILENT_BINARY);
+    let launcher = codex_plus_core::install::resolve_silent_launcher();
     let mut command = std::process::Command::new(&launcher);
     if !request.app_path.trim().is_empty() {
         command.arg("--app-path").arg(request.app_path.trim());
@@ -466,10 +465,7 @@ pub fn load_watcher_state() -> CommandResult<WatcherPayload> {
 
 #[tauri::command]
 pub fn install_watcher() -> CommandResult<WatcherPayload> {
-    let launcher_path = codex_plus_core::install::option_or_current_exe(
-        &None,
-        codex_plus_core::install::SILENT_BINARY,
-    );
+    let launcher_path = codex_plus_core::install::resolve_silent_launcher();
     match codex_plus_core::watcher::install_watcher(&launcher_path, default_debug_port()) {
         Ok(()) => ok("watcher 已安装。", watcher_payload()),
         Err(error) => failed(&format!("安装 watcher 失败：{error}"), watcher_payload()),

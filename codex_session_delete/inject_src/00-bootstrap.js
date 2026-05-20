@@ -636,7 +636,7 @@
       .codex-plus-toggle,
       .codex-plus-action-button,
       .codex-plus-issue-button,
-      .codex-plus-mcp-actions,
+      .codex-plus-provider-actions,
       .codex-plus-backend-status {
         flex-shrink: 0;
         align-self: center;
@@ -679,12 +679,7 @@
       .codex-plus-provider-diagnostics-row { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid rgba(255,255,255,.06); padding-bottom: 4px; }
       .codex-plus-provider-diagnostics-row span:first-child { color: #a1a1aa; }
       .codex-plus-provider-diagnostics-row span:last-child { text-align: right; word-break: break-all; }
-      .codex-plus-mcp-list { margin-top: 8px; display: grid; gap: 6px; }
-      .codex-plus-mcp-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid rgba(255,255,255,.08); border-radius: 8px; padding: 7px 8px; }
-      .codex-plus-mcp-name { font-size: 12px; color: #f3f4f6; }
-      .codex-plus-mcp-meta { margin-top: 2px; color: #a1a1aa; font-size: 11px; }
-      .codex-plus-mcp-command { margin-top: 2px; color: #d4d4d8; font-size: 11px; line-height: 1.35; word-break: break-all; }
-      .codex-plus-mcp-actions { display: grid; justify-items: end; gap: 8px; min-width: 92px; }
+      .codex-plus-provider-actions { display: grid; justify-items: end; gap: 8px; min-width: 92px; }
       .${timelineClass} {
         position: fixed;
         top: calc(72px + 12px);

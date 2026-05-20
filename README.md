@@ -37,7 +37,7 @@ Codex++ 是面向 Codex App 的外部增强启动器。它通过外部 launcher 
 - 需要在 API Key 模式下恢复插件入口的可见性。
 - 需要删除、导出或移动本地会话。
 - 切换 `model_provider` 后，希望旧会话仍能在原项目下可见。
-- 需要快速写入 Chrome DevTools MCP / Playwright MCP 配置。
+- 需要通过 CLI 管理 Chrome DevTools MCP / Playwright MCP 配置。
 
 ## 安装
 
@@ -124,7 +124,7 @@ python -m codex_session_delete remove --remove-data
 - 会话项目移动：把会话移动到普通对话或其他本地项目。
 - 对话 Timeline：在对话右侧显示用户提问时间线，支持快速跳转。
 - Provider History Manager：通过本地 SQLite bridge 处理跨 provider 历史可见性。
-- Browser MCP：写入 Chrome DevTools MCP 和 Playwright MCP 配置。
+- Browser MCP CLI：写入 Chrome DevTools MCP 和 Playwright MCP 配置；桌面管理工具不提供 MCP 选择入口。
 - Windows 入口安装/修复、可选 watcher、GitHub Release 更新。
 
 ## 界面预览
@@ -141,7 +141,7 @@ Codex++ 启动后会解锁插件入口，并在会话列表悬停时显示删除
 
 ![Codex++ 解锁插件入口并添加删除按钮](docs/images/solution-plugin-and-delete.png)
 
-管理工具用于检查入口、启动状态、Browser MCP、Provider History 和日志：
+管理工具用于检查入口、启动状态、Provider History 和日志：
 
 ![Codex++ 设置面板](docs/images/settings-panel.png)
 
@@ -158,7 +158,7 @@ Codex++ 使用外部启动方式运行 Codex：
 
 - 不修改 Codex App 原始安装文件。
 - 不绕过官方账号、地区、灰度或后端权限限制。
-- Browser MCP 只写入本机 Codex 配置，不读取或展示 token、DSN、完整命令参数。
+- Browser MCP CLI 只写入本机 Codex 配置，不读取或展示 token、DSN、完整命令参数。
 - 删除、路径修复、provider metadata 收敛等写操作会先备份相关本地数据。
 - 可选 watcher 默认只记录状态；只有设置 `CODEX_PLUS_ALLOW_FORCE_TAKEOVER=1` 后才会尝试接管原生启动。
 
@@ -183,6 +183,8 @@ python -m codex_session_delete provider-repair-paths
 兼容模式的“收敛到当前 provider”会先备份，再把历史 metadata 收敛到当前 `model_provider`。这只保证列表可见，不保证跨账号或跨 provider 的 `encrypted_content` 能续聊。
 
 ## Browser MCP
+
+Browser MCP 保留为命令行能力；桌面管理工具不再提供当前项目的 MCP 选择入口。
 
 安装、查看、移除浏览器 MCP：
 

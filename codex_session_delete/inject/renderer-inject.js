@@ -636,7 +636,7 @@
       .codex-plus-toggle,
       .codex-plus-action-button,
       .codex-plus-issue-button,
-      .codex-plus-mcp-actions,
+      .codex-plus-provider-actions,
       .codex-plus-backend-status {
         flex-shrink: 0;
         align-self: center;
@@ -679,12 +679,7 @@
       .codex-plus-provider-diagnostics-row { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid rgba(255,255,255,.06); padding-bottom: 4px; }
       .codex-plus-provider-diagnostics-row span:first-child { color: #a1a1aa; }
       .codex-plus-provider-diagnostics-row span:last-child { text-align: right; word-break: break-all; }
-      .codex-plus-mcp-list { margin-top: 8px; display: grid; gap: 6px; }
-      .codex-plus-mcp-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid rgba(255,255,255,.08); border-radius: 8px; padding: 7px 8px; }
-      .codex-plus-mcp-name { font-size: 12px; color: #f3f4f6; }
-      .codex-plus-mcp-meta { margin-top: 2px; color: #a1a1aa; font-size: 11px; }
-      .codex-plus-mcp-command { margin-top: 2px; color: #d4d4d8; font-size: 11px; line-height: 1.35; word-break: break-all; }
-      .codex-plus-mcp-actions { display: grid; justify-items: end; gap: 8px; min-width: 92px; }
+      .codex-plus-provider-actions { display: grid; justify-items: end; gap: 8px; min-width: 92px; }
       .${timelineClass} {
         position: fixed;
         top: calc(72px + 12px);
@@ -815,7 +810,6 @@
   }
 
   let codexPlusUserScripts = { enabled: true, builtin_dir: "", user_dir: "", scripts: [] };
-  let codexPlusMcpStatus = { status: "checking", servers: [] };
   let codexPlusBackendStatus = { status: "checking", message: "正在检查后端…" };
   let codexPlusProviderStatus = { status: "checking", current_provider: "", config_mtime_ms: 0 };
   let codexPlusProviderDiagnostics = { status: "checking" };
@@ -930,39 +924,6 @@
       codexPlusUserScripts = result;
       renderUserScripts();
     }
-  }
-
-  function mcpServerLabel(name) {
-    return { "chrome-devtools": "chrome-devtools", playwright: "playwright" }[name] || name;
-  }
-
-  function renderMcpStatus() {
-    const list = document.querySelector("[data-codex-mcp-list]");
-    if (!list) return;
-    const servers = codexPlusMcpStatus.servers || [];
-    if (!servers.length) {
-      list.textContent = codexPlusMcpStatus.message || "正在读取 MCP 状态…";
-      return;
-    }
-    list.innerHTML = servers.map((server) => `
-      <div class="codex-plus-mcp-item">
-        <div>
-          <div class="codex-plus-mcp-name">${escapeHtml(mcpServerLabel(server.name))}</div>
-          <div class="codex-plus-mcp-meta">${server.enabled ? "启用" : "停用"} · ${escapeHtml(server.serverType || "stdio")} · ${escapeHtml(server.mode || "default")}</div>
-        </div>
-        <button type="button" class="codex-plus-toggle" data-codex-mcp-server="${escapeHtml(server.name)}" data-enabled="${String(!!server.enabled)}"><span></span></button>
-      </div>
-    `).join("");
-  }
-
-  async function loadMcpStatus(path = "/mcp/status", payload = {}) {
-    codexPlusMcpStatus = await postJson(path, payload);
-    renderMcpStatus();
-    if (path !== "/mcp/status") showToast(codexPlusMcpStatus.message || "MCP 配置已更新，请重启 Codex", null);
-  }
-
-  function setMcpEnabled(name, enabled) {
-    loadMcpStatus("/mcp/set-enabled", { name, enabled });
   }
 
   function providerDistributionText(value) {
@@ -1525,7 +1486,6 @@
       panel.hidden = panel.getAttribute("data-codex-plus-panel") !== tab;
     });
     if (tab === "userScripts") loadUserScripts();
-    if (tab === "mcp") loadMcpStatus();
     if (tab === "provider") loadProviderDiagnostics();
     if (tab === "home") loadCodexModelCatalog();
   }
@@ -1544,7 +1504,6 @@
         <div class="codex-plus-tabs" role="tablist" aria-label="${codexPlusDisplayName}">
           <button type="button" class="codex-plus-tab-button" data-codex-plus-tab="home" data-active="true">主页</button>
           <button type="button" class="codex-plus-tab-button" data-codex-plus-tab="provider" data-active="false">Provider</button>
-          <button type="button" class="codex-plus-tab-button" data-codex-plus-tab="mcp" data-active="false">MCP</button>
           <button type="button" class="codex-plus-tab-button" data-codex-plus-tab="userScripts" data-active="false">用户脚本</button>
         </div>
         <div class="codex-plus-modal-body">
@@ -1624,26 +1583,11 @@
                 <div class="codex-plus-user-script-warning">兼容模式收敛 provider metadata 前会备份；它只保证列表可见，不保证 encrypted_content 能跨账号或跨 provider 续聊。</div>
                 <div class="codex-plus-provider-diagnostics" data-codex-provider-diagnostics="true">正在读取诊断信息…</div>
               </div>
-              <div class="codex-plus-mcp-actions">
+              <div class="codex-plus-provider-actions">
                 <button type="button" class="codex-plus-action-button" data-codex-provider-refresh="true">刷新诊断</button>
                 <button type="button" class="codex-plus-action-button" data-codex-provider-repair-paths="true">修复路径</button>
                 <button type="button" class="codex-plus-action-button codex-plus-danger-button" data-codex-provider-converge="true">收敛到当前 provider</button>
                 <button type="button" class="codex-plus-action-button codex-plus-danger-button" data-codex-provider-quarantine-state="true">隔离脏库</button>
-              </div>
-            </div>
-          </div>
-          <div class="codex-plus-panel" data-codex-plus-panel="mcp" hidden>
-            <div class="codex-plus-row">
-              <div>
-                <div class="codex-plus-row-title">MCP 服务器</div>
-                <div class="codex-plus-row-description">检测 Codex 配置里的全部 MCP server，并写入 enabled 开关。配置会立即保存，当前 Codex 会话通常需要重启或新会话才会重新加载工具。</div>
-                <div class="codex-plus-user-script-warning">为避免泄露密钥，这里只显示 server 名称和状态，不展示 env、token、DSN 或完整命令参数。</div>
-                <div class="codex-plus-mcp-list" data-codex-mcp-list="true">正在读取 MCP 状态…</div>
-              </div>
-              <div class="codex-plus-mcp-actions">
-                <button type="button" class="codex-plus-action-button" data-codex-mcp-install="all">安装浏览器 MCP</button>
-                <button type="button" class="codex-plus-action-button" data-codex-mcp-status="true">刷新</button>
-                <button type="button" class="codex-plus-action-button" data-codex-mcp-remove="all">移除浏览器 MCP</button>
               </div>
             </div>
           </div>
@@ -1710,10 +1654,6 @@
         loadUserScripts("/user-scripts/reload", {});
         return;
       }
-      if (target?.closest("[data-codex-mcp-status]")) {
-        loadMcpStatus();
-        return;
-      }
       if (target?.closest("[data-codex-provider-refresh]")) {
         loadProviderDiagnostics();
         return;
@@ -1732,21 +1672,6 @@
       }
       if (target?.closest("[data-codex-provider-quarantine-state]")) {
         quarantineProviderStateDb();
-        return;
-      }
-      const mcpServerToggle = target?.closest("[data-codex-mcp-server]");
-      if (mcpServerToggle) {
-        setMcpEnabled(mcpServerToggle.getAttribute("data-codex-mcp-server"), mcpServerToggle.dataset.enabled !== "true");
-        return;
-      }
-      const mcpInstall = target?.closest("[data-codex-mcp-install]");
-      if (mcpInstall) {
-        loadMcpStatus("/mcp/install", { servers: ["all"], chromeMode: "auto-connect" });
-        return;
-      }
-      const mcpRemove = target?.closest("[data-codex-mcp-remove]");
-      if (mcpRemove) {
-        loadMcpStatus("/mcp/remove", { servers: ["all"] });
         return;
       }
       const toggle = target?.closest("[data-codex-plus-setting]");

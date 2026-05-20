@@ -37,7 +37,7 @@ Repository: [https://github.com/lgdy88/codex-enhance](https://github.com/lgdy88/
 - Restore plugin-entry visibility in API Key mode.
 - Delete, export, or move local sessions.
 - Keep historical conversations visible after switching `model_provider`.
-- Write Chrome DevTools MCP / Playwright MCP config quickly.
+- Manage Chrome DevTools MCP / Playwright MCP config from the CLI.
 
 ## Install
 
@@ -124,7 +124,7 @@ python -m codex_session_delete remove --remove-data
 - Session project move for local conversations.
 - Conversation Timeline for user-message navigation.
 - Provider History Manager backed by local SQLite visibility repair.
-- Browser MCP setup for Chrome DevTools MCP and Playwright MCP.
+- Browser MCP CLI setup for Chrome DevTools MCP and Playwright MCP; the desktop manager does not expose MCP selection controls.
 - Windows entry setup/repair, optional watcher, and GitHub Release updates.
 
 ## Screenshots
@@ -141,7 +141,7 @@ After launching through Codex++, the plugin entry is unlocked and a delete butto
 
 ![Codex++ unlocks plugin entry and adds delete button](docs/images/solution-plugin-and-delete.png)
 
-The management tool checks entry points, launch state, Browser MCP, Provider History, and logs:
+The management tool checks entry points, launch state, Provider History, and logs:
 
 ![Codex++ settings panel](docs/images/settings-panel.png)
 
@@ -158,7 +158,7 @@ Boundaries:
 
 - It does not modify original Codex App files.
 - It does not bypass official account, region, rollout, or backend permissions.
-- Browser MCP only writes local Codex config and does not display tokens, DSNs, or full command arguments.
+- Browser MCP CLI only writes local Codex config and does not display tokens, DSNs, or full command arguments.
 - Delete, path repair, and provider metadata convergence back up related local data before writing.
 - The optional watcher only logs by default; it attempts native-launch takeover only when `CODEX_PLUS_ALLOW_FORCE_TAKEOVER=1` is set.
 
@@ -183,6 +183,8 @@ python -m codex_session_delete provider-repair-paths
 Compatibility mode's "Converge to current provider" action backs up first, then converges historical metadata to the current `model_provider`. This only guarantees list visibility; it does not guarantee that cross-account or cross-provider `encrypted_content` can resume.
 
 ## Browser MCP
+
+Browser MCP remains available from the command line; the desktop manager no longer exposes current-project MCP selection controls.
 
 Install, inspect, and remove browser MCP entries:
 

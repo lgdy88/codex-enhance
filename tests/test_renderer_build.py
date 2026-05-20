@@ -16,7 +16,6 @@ def test_renderer_source_modules_cover_feature_boundaries():
     names = {path.name for path in source_dir.glob("*.js")}
 
     assert {
-        "20-mcp-panel.js",
         "30-provider-history.js",
         "40-settings-menu.js",
         "50-plugin-unlock.js",
@@ -25,6 +24,7 @@ def test_renderer_source_modules_cover_feature_boundaries():
         "70-timeline.js",
         "80-dom-scan-runtime.js",
     }.issubset(names)
+    assert "20-mcp-panel.js" not in names
 
 
 def test_renderer_source_modules_avoid_csp_unsafe_patterns():

@@ -142,7 +142,7 @@ jobs:
           ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
           $makensis = $makensisCandidates | Select-Object -First 1
           if (!$makensis) { throw "Missing makensis.exe after NSIS install" }
-          & $makensis "/DVERSION=$version" "scripts/installer/windows/CodexPlusPlus.nsi"
+          & $makensis "/INPUTCHARSET" "UTF8" "/DVERSION=$version" "scripts/installer/windows/CodexPlusPlus.nsi"
 
       - name: Package macOS installer
         if: runner.os == 'macOS'

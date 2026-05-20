@@ -7,6 +7,7 @@ pub mod windows;
 
 pub const SILENT_NAME: &str = "Codex++";
 pub const MANAGER_NAME: &str = "Codex++ 管理工具";
+pub(crate) const LEGACY_MOJIBAKE_MANAGER_NAME: &str = "Codex++ ç®¡ç†å·¥å…·";
 pub const SILENT_BINARY: &str = "codex-plus-plus";
 pub const MANAGER_BINARY: &str = "codex-plus-plus-manager";
 
@@ -77,6 +78,19 @@ impl ShortcutState {
         }
         Self::missing(Some(path))
     }
+
+    fn from_entrypoint_candidates(candidates: Vec<PathBuf>) -> Self {
+        if let Some(path) = candidates
+            .iter()
+            .find(|candidate| shortcut_target_exists(candidate))
+        {
+            return Self {
+                installed: true,
+                path: Some(path.to_string_lossy().to_string()),
+            };
+        }
+        Self::missing(candidates.into_iter().next())
+    }
 }
 
 pub fn shortcut_names() -> (&'static str, &'static str) {
@@ -90,17 +104,9 @@ pub fn app_bundle_names() -> (&'static str, &'static str) {
 pub fn inspect_entrypoints() -> EntryPointState {
     let root = default_install_root();
     let candidates = entrypoint_candidates(&root, false);
-    let silent_shortcut = candidates
-        .into_iter()
-        .next()
-        .map(ShortcutState::valid_entrypoint)
-        .unwrap_or_else(|| ShortcutState::missing(None));
+    let silent_shortcut = ShortcutState::from_entrypoint_candidates(candidates);
     let candidates = entrypoint_candidates(&root, true);
-    let management_shortcut = candidates
-        .into_iter()
-        .next()
-        .map(ShortcutState::valid_entrypoint)
-        .unwrap_or_else(|| ShortcutState::missing(None));
+    let management_shortcut = ShortcutState::from_entrypoint_candidates(candidates);
     EntryPointState {
         silent_shortcut,
         management_shortcut,
@@ -170,6 +176,14 @@ pub fn default_install_root_strategy() -> &'static str {
     }
 }
 
+pub fn resolve_silent_launcher() -> PathBuf {
+    let launcher = option_or_current_exe(&None, SILENT_BINARY);
+    if launcher.exists() {
+        return launcher;
+    }
+    shortcut_target_for_state(&inspect_entrypoints().silent_shortcut).unwrap_or(launcher)
+}
+
 fn platform_install(options: &InstallOptions) -> anyhow::Result<()> {
     #[cfg(windows)]
     {
@@ -230,7 +244,11 @@ fn entrypoint_candidates(root: &Option<PathBuf>, manager: bool) -> Vec<PathBuf> 
     };
     let name = if manager { MANAGER_NAME } else { SILENT_NAME };
     if cfg!(windows) {
-        vec![root.join(format!("{name}.lnk"))]
+        let mut candidates = vec![root.join(format!("{name}.lnk"))];
+        if manager {
+            candidates.push(root.join(format!("{LEGACY_MOJIBAKE_MANAGER_NAME}.lnk")));
+        }
+        candidates
     } else if cfg!(target_os = "macos") {
         vec![root.join(format!("{name}.app"))]
     } else {
@@ -259,6 +277,39 @@ fn windows_shortcut_target_exists(path: &Path) -> bool {
 #[cfg(not(windows))]
 fn windows_shortcut_target_exists(_path: &Path) -> bool {
     false
+}
+
+#[cfg(windows)]
+fn shortcut_target_for_state(shortcut: &ShortcutState) -> Option<PathBuf> {
+    let shortcut_path = PathBuf::from(shortcut.path.as_deref()?);
+    crate::windows_integration::shortcut_target(&shortcut_path)
+        .ok()
+        .flatten()
+        .filter(|target| target.exists())
+}
+
+#[cfg(not(windows))]
+fn shortcut_target_for_state(_shortcut: &ShortcutState) -> Option<PathBuf> {
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(not(windows))]
+    #[test]
+    fn entrypoint_candidates_use_first_existing_fallback() {
+        use super::ShortcutState;
+
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("Codex++ 管理工具.desktop");
+        let fallback = dir.path().join("Codex++ legacy.desktop");
+        std::fs::write(&fallback, b"fallback").unwrap();
+
+        let state = ShortcutState::from_entrypoint_candidates(vec![missing, fallback.clone()]);
+
+        assert!(state.installed);
+        assert_eq!(state.path, Some(fallback.to_string_lossy().to_string()));
+    }
 }
 
 pub fn option_or_current_exe(value: &Option<PathBuf>, binary: &str) -> PathBuf {

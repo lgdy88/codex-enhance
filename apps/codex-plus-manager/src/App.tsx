@@ -14,7 +14,6 @@ import {
   Rocket,
   ScrollText,
   Settings,
-  ShieldCheck,
   Sun,
   Wrench,
   type LucideIcon,
@@ -124,25 +123,6 @@ type UpdateResult = CommandResult<{
   progress?: number;
 }>;
 
-type McpServer = {
-  name: string;
-  installed: boolean;
-  enabled: boolean;
-  command: string;
-  args: string[];
-  mode: string;
-  serverType: string;
-  managed: boolean;
-};
-
-type McpResult = {
-  status: Status;
-  message: string;
-  configPath: string;
-  backupPath: string;
-  servers: McpServer[];
-};
-
 type StartupResult = CommandResult<{
   showUpdate: boolean;
 }>;
@@ -152,7 +132,6 @@ type Route =
   | "enhance"
   | "userScripts"
   | "providerSync"
-  | "browserMcp"
   | "maintenance"
   | "settings"
   | "logs"
@@ -166,7 +145,6 @@ const routes: Array<{ id: Route; label: string; icon: LucideIcon }> = [
   { id: "enhance", label: "增强功能", icon: Hammer },
   { id: "userScripts", label: "用户脚本", icon: FileCode2 },
   { id: "providerSync", label: "Provider History", icon: Link2 },
-  { id: "browserMcp", label: "Browser MCP", icon: ShieldCheck },
   { id: "maintenance", label: "安装维护", icon: Wrench },
   { id: "settings", label: "设置", icon: Settings },
   { id: "logs", label: "日志", icon: ScrollText },
@@ -187,7 +165,6 @@ export function App() {
   const [overview, setOverview] = useState<OverviewResult | null>(null);
   const [settings, setSettings] = useState<SettingsResult | null>(null);
   const [providerResult, setProviderResult] = useState<ProviderActionResult | null>(null);
-  const [mcp, setMcp] = useState<McpResult | null>(null);
   const [logs, setLogs] = useState<LogsResult | null>(null);
   const [diagnostics, setDiagnostics] = useState<DiagnosticsResult | null>(null);
   const [watcher, setWatcher] = useState<WatcherResult | null>(null);
@@ -199,7 +176,6 @@ export function App() {
   });
   const [settingsForm, setSettingsForm] = useState<BackendSettings>({ ...defaultSettings });
   const [removeOwnedData, setRemoveOwnedData] = useState(false);
-  const [browserUrl, setBrowserUrl] = useState("http://127.0.0.1:9222");
 
   const call = <T,>(command: string, args?: Record<string, unknown>) => invoke<T>(command, args);
 
@@ -230,13 +206,6 @@ export function App() {
     if (!silent) showNotice("设置已加载", result.message, result.status);
   };
 
-  const refreshMcp = async (silent = false) => {
-    const result = await run(() => call<McpResult>("load_mcp_status"));
-    if (!result) return;
-    setMcp(result);
-    if (!silent) showNotice("MCP 状态", result.message, result.status);
-  };
-
   const refreshLogs = async (silent = false) => {
     const result = await run(() => call<LogsResult>("read_latest_logs", { request: { lines: 240 } }));
     if (!result) return;
@@ -262,7 +231,6 @@ export function App() {
     setRoute(next);
     if (next === "overview" || next === "about") await refreshOverview(true);
     if (next === "settings" || next === "userScripts" || next === "providerSync" || next === "enhance") await refreshSettings(true);
-    if (next === "browserMcp") await refreshMcp(true);
     if (next === "logs") await refreshLogs(true);
     if (next === "diagnostics") await refreshDiagnostics(true);
     if (next === "maintenance") {
@@ -325,39 +293,6 @@ export function App() {
     if (!result) return;
     setProviderResult(result);
     showNotice("Provider History", result.message, result.status);
-  };
-
-  const installBrowserMcp = async () => {
-    const result = await run(() =>
-      call<McpResult>("install_browser_mcp", {
-        request: { servers: ["all"], chromeMode: "auto-connect", browserUrl, backup: true },
-      }),
-    );
-    if (!result) return;
-    setMcp(result);
-    showNotice("Browser MCP", result.message, result.status);
-  };
-
-  const removeBrowserMcp = async () => {
-    const result = await run(() =>
-      call<McpResult>("remove_browser_mcp", {
-        request: { servers: ["all"], backup: true },
-      }),
-    );
-    if (!result) return;
-    setMcp(result);
-    showNotice("Browser MCP", result.message, result.status);
-  };
-
-  const setMcpEnabled = async (name: string, enabled: boolean) => {
-    const result = await run(() =>
-      call<McpResult>("set_mcp_enabled", {
-        request: { name, enabled, backup: true },
-      }),
-    );
-    if (!result) return;
-    setMcp(result);
-    showNotice("MCP 开关", result.message, result.status);
   };
 
   const installEntrypoints = async () => {
@@ -439,7 +374,6 @@ export function App() {
       }
       await refreshOverview(true);
       await refreshSettings(true);
-      await refreshMcp(true);
     })();
   }, []);
 
@@ -464,10 +398,6 @@ export function App() {
       resetSettings,
       syncProvidersNow: () => providerAction("sync_providers_now"),
       repairProviderPaths: () => providerAction("repair_provider_paths"),
-      installBrowserMcp,
-      removeBrowserMcp,
-      setMcpEnabled,
-      refreshMcp,
       openExternalUrl,
       refreshLogs,
       refreshDiagnostics,
@@ -477,8 +407,7 @@ export function App() {
       checkHealth: async () => {
         await refreshOverview(true);
         await refreshWatcher(true);
-        await refreshMcp(true);
-        showNotice("检查完成", "已刷新 Codex 应用、入口、Watcher 和 Browser MCP 状态。", "ok");
+        showNotice("检查完成", "已刷新 Codex 应用、入口和 Watcher 状态。", "ok");
       },
       installWatcher: () => watcherAction("install_watcher"),
       uninstallWatcher: () => watcherAction("uninstall_watcher"),
@@ -486,7 +415,7 @@ export function App() {
       disableWatcher: () => watcherAction("disable_watcher"),
       toggleTheme: () => setTheme((current) => (current === "dark" ? "light" : "dark")),
     }),
-    [route, launchForm, settingsForm, removeOwnedData, update, logs, diagnostics, theme, browserUrl],
+    [route, launchForm, settingsForm, removeOwnedData, update, logs, diagnostics, theme],
   );
 
   return (
@@ -534,14 +463,11 @@ export function App() {
         </header>
         {busy ? <div className="busy">正在处理...</div> : null}
         <section className="screen">
-          {route === "overview" ? <OverviewScreen overview={overview} mcp={mcp} actions={actions} /> : null}
+          {route === "overview" ? <OverviewScreen overview={overview} actions={actions} /> : null}
           {route === "enhance" ? <EnhanceScreen form={settingsForm} onFormChange={setSettingsForm} actions={actions} /> : null}
           {route === "userScripts" ? <UserScriptsScreen settings={settings} actions={actions} /> : null}
           {route === "providerSync" ? (
             <ProviderSyncScreen settings={settings} form={settingsForm} result={providerResult} onFormChange={setSettingsForm} actions={actions} />
-          ) : null}
-          {route === "browserMcp" ? (
-            <BrowserMcpScreen mcp={mcp} browserUrl={browserUrl} onBrowserUrlChange={setBrowserUrl} actions={actions} />
           ) : null}
           {route === "maintenance" ? (
             <MaintenanceScreen
@@ -579,10 +505,6 @@ type Actions = {
   resetSettings: () => Promise<void>;
   syncProvidersNow: () => Promise<void>;
   repairProviderPaths: () => Promise<void>;
-  installBrowserMcp: () => Promise<void>;
-  removeBrowserMcp: () => Promise<void>;
-  setMcpEnabled: (name: string, enabled: boolean) => Promise<void>;
-  refreshMcp: () => Promise<void>;
   openExternalUrl: (url: string) => Promise<void>;
   refreshLogs: () => Promise<void>;
   refreshDiagnostics: () => Promise<void>;
@@ -597,8 +519,8 @@ type Actions = {
   checkHealth: () => Promise<void>;
 };
 
-function OverviewScreen({ overview, mcp, actions }: { overview: OverviewResult | null; mcp: McpResult | null; actions: Actions }) {
-  const health = healthItems(overview, mcp);
+function OverviewScreen({ overview, actions }: { overview: OverviewResult | null; actions: Actions }) {
+  const health = healthItems(overview);
   return (
     <>
       <Panel className="hero-panel">
@@ -607,7 +529,7 @@ function OverviewScreen({ overview, mcp, actions }: { overview: OverviewResult |
             <div>
               <div className="eyebrow">Codex++ 桌面状态</div>
               <h2>{health.every((item) => item.ok) ? "运行环境看起来正常" : "有项目需要处理"}</h2>
-              <p>桌面版只管理启动、增强、Provider History、Browser MCP、维护和诊断，不接管上游代理或远端推荐默认项。</p>
+              <p>桌面版只管理启动、增强、Provider History、维护和诊断，不接管上游代理或远端推荐默认项。</p>
             </div>
             <Toolbar>
               <Button onClick={() => void actions.checkHealth()}>
@@ -778,67 +700,6 @@ function ProviderSyncScreen({
               "这些动作不保证 encrypted_content 能跨账号或跨 provider 续聊。",
             ]}
           />
-        </CardContent>
-      </Panel>
-    </>
-  );
-}
-
-function BrowserMcpScreen({
-  mcp,
-  browserUrl,
-  onBrowserUrlChange,
-  actions,
-}: {
-  mcp: McpResult | null;
-  browserUrl: string;
-  onBrowserUrlChange: (value: string) => void;
-  actions: Actions;
-}) {
-  return (
-    <>
-      <Panel>
-        <CardHead title="Browser MCP" detail={mcp?.configPath ?? "~/.codex/config.toml"} />
-        <CardContent>
-          <div className="mcp-actions">
-            <Field label="Browser URL">
-              <Input value={browserUrl} onChange={(event) => onBrowserUrlChange(event.currentTarget.value)} />
-            </Field>
-            <Toolbar>
-              <Button onClick={() => void actions.installBrowserMcp()}>安装浏览器 MCP</Button>
-              <Button onClick={() => void actions.refreshMcp()} variant="outline">
-                <RefreshCw className="h-4 w-4" />
-                刷新
-              </Button>
-              <Button onClick={() => void actions.removeBrowserMcp()} variant="secondary">移除浏览器 MCP</Button>
-            </Toolbar>
-          </div>
-          {mcp?.backupPath ? <div className="path-line compact-path">备份：{mcp.backupPath}</div> : null}
-          <div className="hint-line">
-            <ShieldCheck className="h-4 w-4" />
-            <span>状态读取不会写配置；安装、移除和开关会备份后写入 `config.toml`。</span>
-          </div>
-        </CardContent>
-      </Panel>
-      <Panel>
-        <CardHead title="服务器" detail={mcp ? `${mcp.servers.length} 个浏览器 MCP 条目` : "尚未读取"} />
-        <CardContent>
-          <div className="mcp-list">
-            {(mcp?.servers ?? []).map((server) => (
-              <div className="mcp-row" key={server.name}>
-                <div>
-                  <strong>{server.name}</strong>
-                  <span>{server.command ? `${server.command} ${server.args.join(" ")}` : "未安装"}</span>
-                </div>
-                <Metric label="模式" value={server.mode} />
-                <Metric label="类型" value={server.serverType || "-"} />
-                <Badge status={server.installed ? (server.enabled ? "ok" : "disabled") : "missing"} />
-                <Button disabled={!server.installed} onClick={() => void actions.setMcpEnabled(server.name, !server.enabled)} variant="outline">
-                  {server.enabled ? "禁用" : "启用"}
-                </Button>
-              </div>
-            ))}
-          </div>
         </CardContent>
       </Panel>
     </>
@@ -1191,7 +1052,6 @@ function routeSubtitle(route: Route) {
     enhance: "脚本增强开关",
     userScripts: "内置和用户自定义脚本清单",
     providerSync: "历史会话可见性和路径修复",
-    browserMcp: "浏览器 MCP 安装、开关和状态",
     maintenance: "入口安装、修复、Watcher 与手动启动",
     settings: "主题、增强和 Provider 同步设置",
     logs: "最近状态文件内容",
@@ -1223,8 +1083,7 @@ function statusClass(status: string) {
   return "warn";
 }
 
-function healthItems(overview: OverviewResult | null, mcp: McpResult | null) {
-  const installedMcp = (mcp?.servers ?? []).filter((server) => server.installed).length;
+function healthItems(overview: OverviewResult | null) {
   return [
     {
       title: "Codex 应用",
@@ -1243,12 +1102,6 @@ function healthItems(overview: OverviewResult | null, mcp: McpResult | null) {
       status: overview?.management_shortcut.status ?? "not_checked",
       ok: overview?.management_shortcut.status === "installed",
       detail: overview?.management_shortcut.path || "缺少管理工具快捷方式时可在安装维护页修复。",
-    },
-    {
-      title: "Browser MCP",
-      status: installedMcp ? "ok" : "not_checked",
-      ok: installedMcp > 0,
-      detail: installedMcp ? `已安装 ${installedMcp} 个浏览器 MCP 条目。` : "未安装浏览器 MCP；需要时在 Browser MCP 页显式安装。",
     },
   ];
 }

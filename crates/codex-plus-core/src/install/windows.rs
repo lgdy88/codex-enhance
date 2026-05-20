@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use super::{
-    InstallOptions, MANAGER_BINARY, MANAGER_NAME, SILENT_BINARY, SILENT_NAME,
-    install_root_or_default, option_or_current_exe,
+    InstallOptions, LEGACY_MOJIBAKE_MANAGER_NAME, MANAGER_BINARY, MANAGER_NAME, SILENT_BINARY,
+    SILENT_NAME, install_root_or_default, option_or_current_exe,
 };
 
 const UNINSTALL_SUBKEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\CodexPlusPlus";
@@ -55,6 +55,7 @@ pub fn install_shortcuts(options: &InstallOptions) -> anyhow::Result<()> {
     let plan = build_windows_entrypoint_plan(options);
     let install_root = PathBuf::from(&plan.install_root);
     std::fs::create_dir_all(&install_root)?;
+    remove_legacy_mojibake_manager_shortcuts(&install_root);
     create_entrypoint_shortcut(
         PathBuf::from(&plan.silent_shortcut),
         PathBuf::from(&plan.launcher_path),
@@ -76,6 +77,9 @@ pub fn uninstall_shortcuts(options: &InstallOptions) -> anyhow::Result<()> {
     let plan = build_windows_entrypoint_plan(options);
     let _ = std::fs::remove_file(&plan.silent_shortcut);
     let _ = std::fs::remove_file(&plan.manager_shortcut);
+    let _ = std::fs::remove_file(
+        PathBuf::from(&plan.install_root).join(format!("{LEGACY_MOJIBAKE_MANAGER_NAME}.lnk")),
+    );
     let _ = crate::windows_integration::delete_current_user_key(LEGACY_UNINSTALL_SUBKEY);
     let _ = crate::windows_integration::delete_current_user_key(UNINSTALL_SUBKEY);
     Ok(())
@@ -107,6 +111,11 @@ fn create_entrypoint_shortcut(
         icon: Some(icon),
         show_minimized: false,
     })
+}
+
+#[cfg(windows)]
+fn remove_legacy_mojibake_manager_shortcuts(install_root: &Path) {
+    let _ = std::fs::remove_file(install_root.join(format!("{LEGACY_MOJIBAKE_MANAGER_NAME}.lnk")));
 }
 
 #[cfg(windows)]

@@ -78,6 +78,8 @@ fn release_workflow_builds_unified_desktop_installers() {
     assert!(workflow.contains("Build silent launcher"));
     assert!(workflow.contains("Package Windows installer"));
     assert!(workflow.contains("makensis"));
+    assert!(workflow.contains("/INPUTCHARSET"));
+    assert!(workflow.contains("UTF8"));
     assert!(workflow.contains("dist/windows/app/codex-plus-plus.exe"));
     assert!(workflow.contains("CodexPlusPlus-*-windows-x64-setup.exe"));
     assert!(workflow.contains("Package macOS installer"));
@@ -91,7 +93,7 @@ fn manager_launch_button_spawns_silent_launcher_binary() {
         std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/commands.rs"))
             .expect("read manager commands.rs");
 
-    assert!(commands_rs.contains("SILENT_BINARY"));
+    assert!(commands_rs.contains("resolve_silent_launcher"));
     assert!(commands_rs.contains("std::process::Command::new"));
     assert!(!commands_rs.contains("launch_and_inject_with_hooks(options"));
 }
