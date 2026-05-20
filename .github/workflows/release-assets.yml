@@ -3,6 +3,15 @@ name: Release assets
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag to build assets for, for example v1.0.10
+        required: true
+        type: string
+
+env:
+  RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
 
 permissions:
   contents: write
@@ -17,7 +26,7 @@ jobs:
       - name: Checkout release tag
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -64,7 +73,7 @@ jobs:
       - name: Upload assets to release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.release.tag_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
           files: |
             dist/*
             CodexPlusPlus.zip
@@ -82,7 +91,7 @@ jobs:
       - name: Checkout release tag
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -112,7 +121,7 @@ jobs:
         shell: pwsh
         run: |
           choco install nsis -y --no-progress
-          $version = "${{ github.event.release.tag_name }}" -replace '^v', ''
+          $version = "${{ env.RELEASE_TAG }}" -replace '^v', ''
           New-Item -ItemType Directory -Force -Path dist/windows/app | Out-Null
           $launcher = "target/release/codex-plus-plus.exe"
           $managerCandidates = @(
@@ -124,14 +133,23 @@ jobs:
           if (!$manager) { throw "Missing manager binary" }
           Copy-Item -LiteralPath $launcher -Destination dist/windows/app/codex-plus-plus.exe -Force
           Copy-Item -LiteralPath $manager -Destination dist/windows/app/codex-plus-plus-manager.exe -Force
-          makensis "/DVERSION=$version" scripts/installer/windows/CodexPlusPlus.nsi
+          $makensisCommand = Get-Command makensis.exe -ErrorAction SilentlyContinue
+          $makensisCandidates = @(
+            $makensisCommand.Source,
+            "${env:ProgramFiles(x86)}\NSIS\makensis.exe",
+            "${env:ProgramFiles}\NSIS\makensis.exe",
+            "C:\ProgramData\chocolatey\bin\makensis.exe"
+          ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+          $makensis = $makensisCandidates | Select-Object -First 1
+          if (!$makensis) { throw "Missing makensis.exe after NSIS install" }
+          & $makensis "/DVERSION=$version" "scripts/installer/windows/CodexPlusPlus.nsi"
 
       - name: Package macOS installer
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          scripts/installer/macos/package-dmg.sh "$VERSION"
+          VERSION="${RELEASE_TAG#v}"
+          bash scripts/installer/macos/package-dmg.sh "$VERSION"
 
       - name: Collect desktop artifacts
         shell: bash
@@ -157,5 +175,5 @@ jobs:
       - name: Upload desktop assets to release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.release.tag_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
           files: desktop-dist/*
