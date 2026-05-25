@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Release tag to build assets for, for example v1.0.15
+        description: Release tag to build assets for, for example v1.0.16
         required: true
         type: string
 
