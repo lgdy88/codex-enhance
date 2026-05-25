@@ -28,8 +28,8 @@ fn github_payload_selects_platform_installer() {
         "assets": [
             {"name": "source.zip", "browser_download_url": "https://example.test/source.zip"},
             {"name": "codex-plus-plus-manager.exe", "browser_download_url": "https://example.test/manager.exe"},
-            {"name": "CodexPlusPlus-1.0.9-windows-x64-setup.exe", "browser_download_url": "https://example.test/setup.exe"},
-            {"name": "CodexPlusPlus_1.0.9_x64.dmg", "browser_download_url": "https://example.test/app.dmg"}
+            {"name": "Dex-1.0.9-windows-x64-setup.exe", "browser_download_url": "https://example.test/setup.exe"},
+            {"name": "Dex-1.0.9-macos-universal.dmg", "browser_download_url": "https://example.test/app.dmg"}
         ]
     }))
     .unwrap();
@@ -38,12 +38,12 @@ fn github_payload_selects_platform_installer() {
     if cfg!(windows) {
         assert_eq!(
             release.asset_name.as_deref(),
-            Some("CodexPlusPlus-1.0.9-windows-x64-setup.exe")
+            Some("Dex-1.0.9-windows-x64-setup.exe")
         );
     } else if cfg!(target_os = "macos") {
         assert_eq!(
             release.asset_name.as_deref(),
-            Some("CodexPlusPlus_1.0.9_x64.dmg")
+            Some("Dex-1.0.9-macos-universal.dmg")
         );
     } else {
         assert_eq!(release.asset_name.as_deref(), None);
@@ -84,23 +84,23 @@ fn latest_release_url_builds_platform_download_asset_without_github_api() {
     if cfg!(windows) {
         assert_eq!(
             release.asset_name.as_deref(),
-            Some("CodexPlusPlus-1.0.12-windows-x64-setup.exe")
+            Some("Dex-1.0.12-windows-x64-setup.exe")
         );
         assert_eq!(
             release.asset_url.as_deref(),
             Some(
-                "https://github.com/lgdy88/codex-enhance/releases/download/v1.0.12/CodexPlusPlus-1.0.12-windows-x64-setup.exe"
+                "https://github.com/lgdy88/codex-enhance/releases/download/v1.0.12/Dex-1.0.12-windows-x64-setup.exe"
             )
         );
     } else if cfg!(target_os = "macos") {
         assert_eq!(
             release.asset_name.as_deref(),
-            Some("CodexPlusPlus-1.0.12-macos-universal.dmg")
+            Some("Dex-1.0.12-macos-universal.dmg")
         );
         assert_eq!(
             release.asset_url.as_deref(),
             Some(
-                "https://github.com/lgdy88/codex-enhance/releases/download/v1.0.12/CodexPlusPlus-1.0.12-macos-universal.dmg"
+                "https://github.com/lgdy88/codex-enhance/releases/download/v1.0.12/Dex-1.0.12-macos-universal.dmg"
             )
         );
     } else {
@@ -114,17 +114,17 @@ fn platform_download_asset_normalizes_tags() {
     let selected = platform_download_asset_for_version("1.0.12");
     if cfg!(windows) {
         let selected = selected.unwrap();
-        assert_eq!(selected.name, "CodexPlusPlus-1.0.12-windows-x64-setup.exe");
+        assert_eq!(selected.name, "Dex-1.0.12-windows-x64-setup.exe");
         assert_eq!(
             selected.browser_download_url,
-            "https://github.com/lgdy88/codex-enhance/releases/download/v1.0.12/CodexPlusPlus-1.0.12-windows-x64-setup.exe"
+            "https://github.com/lgdy88/codex-enhance/releases/download/v1.0.12/Dex-1.0.12-windows-x64-setup.exe"
         );
     } else if cfg!(target_os = "macos") {
         let selected = selected.unwrap();
-        assert_eq!(selected.name, "CodexPlusPlus-1.0.12-macos-universal.dmg");
+        assert_eq!(selected.name, "Dex-1.0.12-macos-universal.dmg");
         assert_eq!(
             selected.browser_download_url,
-            "https://github.com/lgdy88/codex-enhance/releases/download/v1.0.12/CodexPlusPlus-1.0.12-macos-universal.dmg"
+            "https://github.com/lgdy88/codex-enhance/releases/download/v1.0.12/Dex-1.0.12-macos-universal.dmg"
         );
     } else {
         assert!(selected.is_none());
@@ -135,7 +135,7 @@ fn platform_download_asset_normalizes_tags() {
 fn asset_selection_prefers_current_platform_artifacts() {
     let assets = vec![
         (
-            "CodexPlusPlus.zip".to_string(),
+            "Dex.zip".to_string(),
             "https://example.test/source.zip".to_string(),
         ),
         (
@@ -143,21 +143,21 @@ fn asset_selection_prefers_current_platform_artifacts() {
             "https://example.test/manager.exe".to_string(),
         ),
         (
-            "CodexPlusPlus-1.0.9-windows-x64-setup.exe".to_string(),
+            "Dex-1.0.9-windows-x64-setup.exe".to_string(),
             "https://example.test/setup.exe".to_string(),
         ),
         (
-            "CodexPlusPlus_1.0.9_x64.dmg".to_string(),
+            "Dex-1.0.9-macos-universal.dmg".to_string(),
             "https://example.test/app.dmg".to_string(),
         ),
     ];
 
     if cfg!(windows) {
         let selected = select_update_asset(&assets).unwrap();
-        assert_eq!(selected.name, "CodexPlusPlus-1.0.9-windows-x64-setup.exe");
+        assert_eq!(selected.name, "Dex-1.0.9-windows-x64-setup.exe");
     } else if cfg!(target_os = "macos") {
         let selected = select_update_asset(&assets).unwrap();
-        assert_eq!(selected.name, "CodexPlusPlus_1.0.9_x64.dmg");
+        assert_eq!(selected.name, "Dex-1.0.9-macos-universal.dmg");
     } else {
         assert!(select_update_asset(&assets).is_none());
     }
@@ -166,7 +166,7 @@ fn asset_selection_prefers_current_platform_artifacts() {
 #[test]
 fn asset_selection_rejects_manager_only_windows_installers() {
     let assets = vec![(
-        "Codex++ Manager_1.0.9_x64-setup.exe".to_string(),
+        "DexManager_1.0.9_x64-setup.exe".to_string(),
         "https://example.test/manager-setup.exe".to_string(),
     )];
 

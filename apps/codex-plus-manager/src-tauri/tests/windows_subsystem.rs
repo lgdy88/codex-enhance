@@ -53,7 +53,7 @@ fn windows_binaries_request_administrator_privileges() {
         .and_then(std::path::Path::parent)
         .and_then(std::path::Path::parent)
         .unwrap()
-        .join("scripts/installer/windows/CodexPlusPlus.nsi");
+        .join("scripts/installer/windows/Dex.nsi");
     let windows_installer =
         std::fs::read_to_string(&windows_installer).expect("read windows installer");
 
@@ -81,7 +81,7 @@ fn release_workflow_builds_unified_desktop_installers() {
     assert!(workflow.contains("/INPUTCHARSET"));
     assert!(workflow.contains("UTF8"));
     assert!(workflow.contains("dist/windows/app/codex-plus-plus.exe"));
-    assert!(workflow.contains("CodexPlusPlus-*-windows-x64-setup.exe"));
+    assert!(workflow.contains("Dex-*-windows-x64-setup.exe"));
     assert!(workflow.contains("Package macOS installer"));
     assert!(workflow.contains("package-dmg.sh"));
     assert!(!workflow.contains("-name '*.msi'"));

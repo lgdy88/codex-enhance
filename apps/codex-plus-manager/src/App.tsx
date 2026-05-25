@@ -27,6 +27,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import dexLogo from "./assets/dex-logo.png";
 
 type Status = "ok" | "failed" | "accepted" | "not_checked" | string;
 
@@ -431,7 +432,7 @@ export function App() {
       checkHealth: async () => {
         await refreshOverview(true);
         await refreshWatcher(true);
-        showNotice("检查完成", "已刷新 Codex 应用、入口和 Watcher 状态。", "ok");
+        showNotice("检查完成", "已刷新 Codex 应用、Dex 入口和 Watcher 状态。", "ok");
       },
       installWatcher: () => watcherAction("install_watcher"),
       uninstallWatcher: () => watcherAction("uninstall_watcher"),
@@ -446,11 +447,7 @@ export function App() {
     <div className={`shell ${theme}`}>
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark">C++</div>
-          <div>
-            <div className="brand-title">Codex++</div>
-            <div className="brand-subtitle">桌面管理器</div>
-          </div>
+          <img className="brand-logo" src={dexLogo} alt="Dex" />
         </div>
         <nav className="nav">
           {routes.map((item) => {
@@ -476,9 +473,9 @@ export function App() {
             <Button onClick={actions.toggleTheme} size="icon" title={theme === "dark" ? "切换到浅色" : "切换到深色"} variant="outline">
               {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </Button>
-            <Button onClick={() => void actions.launch()} title="启动 Codex++">
+            <Button onClick={() => void actions.launch()} title="启动 Dex">
               <Rocket className="h-4 w-4" />
-              启动 Codex++
+              启动 Dex
             </Button>
             <Button onClick={() => void actions.restart()} title="重启 Codex" variant="outline">
               <Rocket className="h-4 w-4" />
@@ -556,7 +553,7 @@ function OverviewScreen({ overview, actions }: { overview: OverviewResult | null
         <CardContent className="hero-content">
           <div className="hero-layout">
             <div>
-              <div className="eyebrow">Codex++ 桌面状态</div>
+              <div className="eyebrow">Dex 桌面状态</div>
               <h2>{health.every((item) => item.ok) ? "运行环境看起来正常" : "有项目需要处理"}</h2>
               <p>桌面版只管理启动、增强、Provider History、维护和诊断，不接管上游代理或远端推荐默认项。</p>
             </div>
@@ -620,7 +617,7 @@ function EnhanceScreen({ form, onFormChange, actions }: { form: BackendSettings;
         <label className="switch-row">
           <input checked={form.enhancementsEnabled} onChange={(event) => onFormChange({ ...form, enhancementsEnabled: event.currentTarget.checked })} type="checkbox" />
           <span>
-            <strong>启用 Codex++ 增强功能</strong>
+            <strong>启用 Dex 增强功能</strong>
             <small>关闭后会停用删除、导出、项目移动、Timeline、插件相关和注入菜单位置增强。</small>
           </span>
         </label>
@@ -693,7 +690,7 @@ function ProviderSyncScreen({
             <input checked={form.providerSyncEnabled} onChange={(event) => onFormChange({ ...form, providerSyncEnabled: event.currentTarget.checked })} type="checkbox" />
             <span>
               <strong>启动前自动同步 provider metadata</strong>
-              <small>开启后，仅在通过 Codex++ 启动 Codex 前自动同步一次历史会话的 provider 字段。</small>
+              <small>开启后，仅在通过 Dex 启动 Codex 前自动同步一次历史会话的 provider 字段。</small>
             </span>
           </label>
           <div className="metric-list">
@@ -772,7 +769,7 @@ function MaintenanceScreen({
         <CardContent>
           <label className="check-row">
             <input checked={removeOwnedData} onChange={(event) => onRemoveOwnedDataChange(event.currentTarget.checked)} type="checkbox" />
-            <span>卸载时移除 Codex++ 托管数据</span>
+            <span>卸载时移除 Dex 托管数据</span>
           </label>
           <Toolbar>
             <Button onClick={() => void actions.installEntrypoints()}>安装入口</Button>
@@ -782,7 +779,7 @@ function MaintenanceScreen({
         </CardContent>
       </Panel>
       <Panel>
-        <CardHead title="自动接管" detail="Watcher 用于保持 Codex++ 接管状态" />
+        <CardHead title="自动接管" detail="Watcher 用于保持 Dex 接管状态" />
         <CardContent>
           <Toolbar>
             <Button variant="secondary" onClick={() => void actions.installWatcher()}>安装 watcher</Button>
@@ -811,7 +808,7 @@ function MaintenanceScreen({
             </Field>
           </div>
           <Toolbar>
-            <Button onClick={() => void actions.launch()}>启动 Codex++</Button>
+            <Button onClick={() => void actions.launch()}>启动 Dex</Button>
           </Toolbar>
         </CardContent>
       </Panel>
@@ -862,7 +859,7 @@ function SettingsScreen({
             <input checked={form.providerSyncEnabled} onChange={(event) => onFormChange({ ...form, providerSyncEnabled: event.currentTarget.checked })} type="checkbox" />
             <span>
               <strong>Provider 自动同步</strong>
-              <small>通过 Codex++ 启动前自动运行 provider metadata 同步。</small>
+              <small>通过 Dex 启动前自动运行 provider metadata 同步。</small>
             </span>
           </label>
         </div>
@@ -931,10 +928,10 @@ function AboutScreen({ overview, update, actions }: { overview: OverviewResult |
   return (
     <>
       <Panel>
-        <CardHead title="关于 Codex++" detail="本地 Codex 增强、桌面管理器和安装包维护" />
+        <CardHead title="关于 Dex" detail="本地 Codex 增强、桌面管理器和安装包维护" />
         <CardContent>
           <div className="metric-list">
-            <Metric label="Codex++ 版本" value={overview?.current_version ?? update?.currentVersion ?? "-"} />
+            <Metric label="Dex 版本" value={overview?.current_version ?? update?.currentVersion ?? "-"} />
             <Metric label="Codex 版本" value={overview?.codex_version ?? "未检测到"} />
             <Metric label="项目地址" value="github.com/lgdy88/codex-enhance" />
           </div>
@@ -1154,7 +1151,7 @@ function healthItems(overview: OverviewResult | null) {
       title: "静默启动入口",
       status: overview?.silent_shortcut.status ?? "not_checked",
       ok: overview?.silent_shortcut.status === "installed",
-      detail: overview?.silent_shortcut.path || "缺少 Codex++ 静默启动快捷方式时可在安装维护页修复。",
+      detail: overview?.silent_shortcut.path || "缺少 Dex 静默启动快捷方式时可在安装维护页修复。",
     },
     {
       title: "管理工具入口",

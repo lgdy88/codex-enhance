@@ -304,6 +304,35 @@ async fn user_script_manager_scans_and_persists_legacy_inventory_shape() {
 }
 
 #[tokio::test]
+async fn user_script_manager_copies_missing_assets_from_legacy_brand_dir() {
+    let temp = tempfile::tempdir().unwrap();
+    let legacy_dir = temp.path().join("legacy/user_scripts");
+    let next_dir = temp.path().join("next/user_scripts");
+    let legacy_config = temp.path().join("legacy/user_scripts.json");
+    let next_config = temp.path().join("next/user_scripts.json");
+    std::fs::create_dir_all(&legacy_dir).unwrap();
+    std::fs::write(legacy_dir.join("legacy.js"), "window.legacy = true;").unwrap();
+    std::fs::write(legacy_dir.join("ignore.txt"), "not js").unwrap();
+    std::fs::write(
+        &legacy_config,
+        json!({"enabled": false, "scripts": {"user:legacy.js": false}}).to_string(),
+    )
+    .unwrap();
+
+    let manager = UserScriptManager::new(temp.path().join("builtin"), &next_dir, &next_config);
+    manager
+        .copy_missing_user_assets_from(&legacy_dir, &legacy_config)
+        .unwrap();
+
+    assert!(next_dir.join("legacy.js").exists());
+    assert!(!next_dir.join("ignore.txt").exists());
+    assert_eq!(
+        serde_json::from_str::<Value>(&std::fs::read_to_string(&next_config).unwrap()).unwrap(),
+        json!({"enabled": false, "scripts": {"user:legacy.js": false}})
+    );
+}
+
+#[tokio::test]
 async fn core_runtime_reload_evaluates_enabled_user_bundle_and_status_is_ok() {
     let temp = tempfile::tempdir().unwrap();
     let builtin_dir = temp.path().join("builtin");

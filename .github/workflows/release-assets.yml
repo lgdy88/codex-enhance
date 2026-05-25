@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Release tag to build assets for, for example v1.0.14
+        description: Release tag to build assets for, for example v1.0.15
         required: true
         type: string
 
@@ -78,7 +78,7 @@ jobs:
           ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
           $makensis = $makensisCandidates | Select-Object -First 1
           if (!$makensis) { throw "Missing makensis.exe after NSIS install" }
-          & $makensis "/INPUTCHARSET" "UTF8" "/DVERSION=$version" "scripts/installer/windows/CodexPlusPlus.nsi"
+          & $makensis "/INPUTCHARSET" "UTF8" "/DVERSION=$version" "scripts/installer/windows/Dex.nsi"
 
       - name: Package macOS installer
         if: runner.os == 'macOS'
@@ -92,9 +92,9 @@ jobs:
         run: |
           mkdir -p desktop-dist
           if [ "$RUNNER_OS" = "Windows" ]; then
-            cp dist/windows/CodexPlusPlus-*-windows-x64-setup.exe desktop-dist/
+            cp dist/windows/Dex-*-windows-x64-setup.exe desktop-dist/
           elif [ "$RUNNER_OS" = "macOS" ]; then
-            cp dist/macos/CodexPlusPlus-*-macos-universal.dmg desktop-dist/
+            cp dist/macos/Dex-*-macos-universal.dmg desktop-dist/
           fi
           cd desktop-dist
           if compgen -G "*" >/dev/null; then

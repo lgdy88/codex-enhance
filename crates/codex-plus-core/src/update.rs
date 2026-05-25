@@ -140,9 +140,9 @@ pub fn platform_download_asset_for_version(version: &str) -> Option<ReleaseAsset
     let tag = normalized_release_tag(version);
     let asset_version = tag.trim_start_matches(['v', 'V']);
     let name = if cfg!(windows) {
-        format!("CodexPlusPlus-{asset_version}-windows-x64-setup.exe")
+        format!("Dex-{asset_version}-windows-x64-setup.exe")
     } else if cfg!(target_os = "macos") {
-        format!("CodexPlusPlus-{asset_version}-macos-universal.dmg")
+        format!("Dex-{asset_version}-macos-universal.dmg")
     } else {
         return None;
     };
@@ -181,8 +181,7 @@ pub fn select_update_asset(assets: &[(String, String)]) -> Option<ReleaseAsset> 
 }
 
 pub async fn fetch_latest_release(api_url: &str) -> anyhow::Result<Release> {
-    let client =
-        crate::http_client::proxied_client(&format!("Codex++/{}", crate::version::VERSION))?;
+    let client = crate::http_client::proxied_client(&format!("Dex/{}", crate::version::VERSION))?;
     let response = client.get(api_url).send().await?.error_for_status()?;
     release_from_latest_release_url(response.url().as_str())
 }
@@ -208,14 +207,13 @@ pub async fn perform_update(
         .asset_url
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("没有可下载的 Release asset"))?;
-    let bytes =
-        crate::http_client::proxied_client(&format!("Codex++/{}", crate::version::VERSION))?
-            .get(url)
-            .send()
-            .await?
-            .error_for_status()?
-            .bytes()
-            .await?;
+    let bytes = crate::http_client::proxied_client(&format!("Dex/{}", crate::version::VERSION))?
+        .get(url)
+        .send()
+        .await?
+        .error_for_status()?
+        .bytes()
+        .await?;
     let installer_path = download_asset_to(release, &bytes, download_dir)?;
     launch_installer(&installer_path)?;
     Ok(UpdateInstall {
@@ -270,11 +268,11 @@ fn platform_asset_rank(name: &str) -> u8 {
 }
 
 fn is_windows_installer_asset(name: &str) -> bool {
-    name.starts_with("codexplusplus-") && name.contains("-windows-") && name.ends_with("-setup.exe")
+    name.starts_with("dex-") && name.contains("-windows-") && name.ends_with("-setup.exe")
 }
 
 fn is_macos_installer_asset(name: &str) -> bool {
-    name.contains("codex") && name.contains("plus") && name.ends_with(".dmg")
+    name.starts_with("dex-") && name.contains("-macos-") && name.ends_with(".dmg")
 }
 
 pub fn launch_installer(path: &Path) -> anyhow::Result<()> {

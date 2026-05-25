@@ -5,7 +5,7 @@ use super::{
     SILENT_NAME, install_root_or_default, option_or_current_exe,
 };
 
-const UNINSTALL_SUBKEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\CodexPlusPlus";
+const UNINSTALL_SUBKEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\Dex";
 const LEGACY_UNINSTALL_SUBKEY: &str =
     r"Software\Microsoft\Windows\CurrentVersion\Uninstall\Codex++";
 
@@ -30,21 +30,15 @@ pub fn build_windows_entrypoint_plan(options: &InstallOptions) -> WindowsEntrypo
     let manager_path = option_or_current_exe(&options.manager_path, MANAGER_BINARY);
     let icon_path = default_icon_path();
     WindowsEntrypointPlan {
-        silent_shortcut: install_root
-            .join("Codex++.lnk")
-            .to_string_lossy()
-            .to_string(),
-        manager_shortcut: install_root
-            .join("Codex++ 管理工具.lnk")
-            .to_string_lossy()
-            .to_string(),
+        silent_shortcut: install_root.join("Dex.lnk").to_string_lossy().to_string(),
+        manager_shortcut: install_root.join("Dex.lnk").to_string_lossy().to_string(),
         install_root: install_root.to_string_lossy().to_string(),
         launcher_path: launcher_path.to_string_lossy().to_string(),
         manager_path: manager_path.to_string_lossy().to_string(),
         icon_path: icon_path.to_string_lossy().to_string(),
         silent_icon_path: launcher_path.to_string_lossy().to_string(),
         manager_icon_path: manager_path.to_string_lossy().to_string(),
-        uninstall_key: "CodexPlusPlus".to_string(),
+        uninstall_key: "Dex".to_string(),
         legacy_uninstall_key: "Codex++".to_string(),
         remove_owned_data: options.remove_owned_data,
     }
@@ -57,15 +51,9 @@ pub fn install_shortcuts(options: &InstallOptions) -> anyhow::Result<()> {
     std::fs::create_dir_all(&install_root)?;
     remove_legacy_mojibake_manager_shortcuts(&install_root);
     create_entrypoint_shortcut(
-        PathBuf::from(&plan.silent_shortcut),
-        PathBuf::from(&plan.launcher_path),
-        "Launch Codex++ silently",
-        PathBuf::from(&plan.silent_icon_path),
-    )?;
-    create_entrypoint_shortcut(
         PathBuf::from(&plan.manager_shortcut),
         PathBuf::from(&plan.manager_path),
-        "Open Codex++ management tool",
+        "Open Dex",
         PathBuf::from(&plan.manager_icon_path),
     )?;
     write_uninstall_registration(&plan)?;
@@ -116,6 +104,8 @@ fn create_entrypoint_shortcut(
 #[cfg(windows)]
 fn remove_legacy_mojibake_manager_shortcuts(install_root: &Path) {
     let _ = std::fs::remove_file(install_root.join(format!("{LEGACY_MOJIBAKE_MANAGER_NAME}.lnk")));
+    let _ = std::fs::remove_file(install_root.join("Codex++.lnk"));
+    let _ = std::fs::remove_file(install_root.join("Codex++ 管理工具.lnk"));
 }
 
 #[cfg(windows)]
@@ -129,7 +119,7 @@ fn write_uninstall_registration(plan: &WindowsEntrypointPlan) -> anyhow::Result<
         .to_string_lossy()
         .to_string();
     for (name, value) in [
-        ("DisplayName", "Codex++".to_string()),
+        ("DisplayName", "Dex".to_string()),
         ("DisplayVersion", crate::version::VERSION.to_string()),
         ("Publisher", "lgdy88".to_string()),
         ("DisplayIcon", plan.manager_icon_path.clone()),

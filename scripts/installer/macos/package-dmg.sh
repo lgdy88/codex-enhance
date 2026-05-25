@@ -5,7 +5,7 @@ VERSION="${1:-0.0.0}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 DIST="$ROOT/dist/macos"
 STAGE="$DIST/stage"
-DMG="$DIST/CodexPlusPlus-${VERSION}-macos-universal.dmg"
+DMG="$DIST/Dex-${VERSION}-macos-universal.dmg"
 ICON_SOURCE="$ROOT/apps/codex-plus-manager/src-tauri/icons/icon.png"
 ICON_NAME="codex-plus-plus.icns"
 ICON_ICNS="$DIST/$ICON_NAME"
@@ -72,9 +72,9 @@ PLIST
 }
 
 prepare_icon
-create_app "Codex++" "CodexPlusPlus" "$ROOT/target/release/codex-plus-plus" "com.lgdy88.codex-enhance"
-create_app "Codex++ 管理工具" "CodexPlusPlusManager" "$ROOT/target/release/codex-plus-plus-manager" "com.lgdy88.codex-enhance.manager"
+create_app "Dex" "Dex" "$ROOT/target/release/codex-plus-plus" "com.lgdy88.codex-enhance"
+create_app "Dex Manager" "DexManager" "$ROOT/target/release/codex-plus-plus-manager" "com.lgdy88.codex-enhance.manager"
 ln -s /Applications "$STAGE/Applications"
 
-hdiutil create -volname "Codex++" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
+hdiutil create -volname "Dex" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
 echo "$DMG"

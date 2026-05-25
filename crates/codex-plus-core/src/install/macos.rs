@@ -13,11 +13,7 @@ use super::{
 pub fn build_app_bundle(options: &InstallOptions, manager: bool) -> MacosAppBundle {
     let install_root = install_root_or_default(options);
     let display_name = if manager { MANAGER_NAME } else { SILENT_NAME };
-    let executable_name = if manager {
-        "CodexPlusPlusManager"
-    } else {
-        "CodexPlusPlus"
-    };
+    let executable_name = if manager { "DexManager" } else { "Dex" };
     let binary = if manager {
         MANAGER_BINARY
     } else {
@@ -104,7 +100,7 @@ fn executable_name_from_plist(plist: &str) -> String {
         .nth(1)
         .and_then(|tail| tail.split("<string>").nth(1))
         .and_then(|tail| tail.split("</string>").next())
-        .unwrap_or("CodexPlusPlus")
+        .unwrap_or("Dex")
         .to_string()
 }
 

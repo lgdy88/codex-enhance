@@ -11,7 +11,7 @@ pub fn run() {
                 "index.html"
             };
             tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App(url.into()))
-                .title("Codex++ 管理工具")
+                .title("Dex")
                 .inner_size(960.0, 720.0)
                 .build()?;
             Ok(())
@@ -48,5 +48,5 @@ pub fn run() {
             commands::set_mcp_enabled
         ])
         .run(tauri::generate_context!())
-        .expect("failed to run Codex++ manager");
+        .expect("failed to run Dex manager");
 }

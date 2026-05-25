@@ -1,7 +1,7 @@
-# Codex++
+# Dex
 
 <p align="center">
-  <img src="docs/images/codex-plus-plus.png" alt="Codex++ icon" width="160">
+  <img src="docs/images/dex.png" alt="Dex icon" width="160">
 </p>
 
 <p align="center">
@@ -15,7 +15,7 @@
   <img alt="Tauri" src="https://img.shields.io/badge/tauri-2.x-24C8DB">
 </p>
 
-Codex++ is an external enhancement launcher and desktop manager for the Codex App. It starts Codex through a standalone launcher and injects enhancements through the Chromium DevTools Protocol. It does not modify Codex `app.asar` and does not write DLL files into the Codex installation directory.
+Dex is an external enhancement launcher and desktop manager for the Codex App. It starts Codex through a standalone launcher and injects enhancements through the Chromium DevTools Protocol. It does not modify Codex `app.asar` and does not write DLL files into the Codex installation directory.
 
 Maintainer: `lgdy88`
 Repository: [https://github.com/lgdy88/codex-enhance](https://github.com/lgdy88/codex-enhance)
@@ -49,27 +49,26 @@ Repository: [https://github.com/lgdy88/codex-enhance](https://github.com/lgdy88/
 Download the Windows installer from [Releases](https://github.com/lgdy88/codex-enhance/releases):
 
 ```text
-CodexPlusPlus-<version>-windows-x64-setup.exe
+Dex-<version>-windows-x64-setup.exe
 ```
 
 After installation, two entries are created:
 
 ```text
-Codex++.lnk
-Codex++ 管理工具.lnk
+Dex.lnk
 ```
 
-Use `Codex++.lnk` to launch Codex with Codex++ enhancements. Use `Codex++ 管理工具.lnk` to inspect status, repair entry points, manage settings, and run updates.
+Use `Dex.lnk` to open Dex Manager, then launch Codex with Dex enhancements, inspect status, repair entries, manage settings, and run updates.
 
 ### macOS
 
 Download from [Releases](https://github.com/lgdy88/codex-enhance/releases):
 
 ```text
-CodexPlusPlus-<version>-macos-universal.dmg
+Dex-<version>-macos-universal.dmg
 ```
 
-The package provides two app entries: `Codex++` and `Codex++ 管理工具`.
+The package provides `Dex` and `Dex Manager` app entries.
 
 ### Source Build
 
@@ -99,7 +98,7 @@ npm run dev
 
 ## Usage
 
-For normal use, launch Codex from the installed `Codex++` entry. The silent launcher accepts a small set of debugging options:
+For normal use, launch Codex from the installed `Dex` entry. The silent launcher accepts a small set of debugging options:
 
 ```bash
 target/release/codex-plus-plus \
@@ -111,7 +110,7 @@ target/release/codex-plus-plus \
 
 The manager provides these actions:
 
-- Launch or restart Codex++.
+- Launch or restart Dex.
 - Inspect and repair the silent launcher and manager entries.
 - Configure the Codex App path, launch arguments, enhancement toggle, and Provider auto-sync.
 - Manage user scripts.
@@ -121,7 +120,7 @@ The manager provides these actions:
 
 ## Features
 
-- Top-bar `Codex++` menu for local status and feature management.
+- Top-bar `Dex` menu for local status and feature management.
 - Plugin entry unlock for API Key mode.
 - Session delete with confirmation and undo.
 - Markdown export from local rollout data.
@@ -142,17 +141,17 @@ The native Codex session list has archive actions, but no real delete button:
 
 ![Native session list lacks delete action](docs/images/pain-no-delete-button.png)
 
-After launching through Codex++, the plugin entry is unlocked and a delete button appears on session hover:
+After launching through Dex, the plugin entry is unlocked and a delete button appears on session hover:
 
-![Codex++ unlocks plugin entry and adds delete button](docs/images/solution-plugin-and-delete.png)
+![Dex unlocks plugin entry and adds delete button](docs/images/solution-plugin-and-delete.png)
 
 The management tool checks entry points, launch state, Provider History, and logs:
 
-![Codex++ settings panel](docs/images/settings-panel.png)
+![Dex settings panel](docs/images/settings-panel.png)
 
 ## How It Works and Boundaries
 
-Codex++ launches Codex externally:
+Dex launches Codex externally:
 
 1. Starts the Codex App with `--remote-debugging-port=9229`.
 2. Starts a local helper service for health checks and local operations.
@@ -169,7 +168,7 @@ Boundaries:
 
 ## Provider History Manager
 
-When enabled, Codex++ queries project history from `~/.codex/state_5.sqlite` without filtering by the current provider. It also handles Windows path variants such as `\\?\`.
+When enabled, Dex queries project history from `~/.codex/state_5.sqlite` without filtering by the current provider. It also handles Windows path variants such as `\\?\`.
 
 Use it when:
 
@@ -198,7 +197,7 @@ This does not bypass official Computer Use account, region, rollout, or backend 
 
 ## Data and Backups
 
-Codex++ reads:
+Dex reads:
 
 ```text
 ~/.codex/state_5.sqlite
@@ -224,7 +223,7 @@ Hidden launch failure log:
 
 ## FAQ
 
-### Double-clicking Codex++ does nothing
+### Double-clicking Dex does nothing
 
 Check the log first:
 
@@ -238,9 +237,9 @@ Common causes:
 - Port 9229 is already in use.
 - The shortcut points to a missing `codex-plus-plus.exe`.
 
-### The Codex++ menu does not appear
+### The Dex menu does not appear
 
-Make sure Codex was launched from the `Codex++` shortcut instead of the original Codex entry.
+Make sure Codex was launched from the `Dex` shortcut instead of the original Codex entry.
 
 You can also check whether Codex has the CDP flag:
 
@@ -254,7 +253,7 @@ The manager can maintain Chrome DevTools MCP / Playwright MCP configuration, but
 
 ### Skills or GitHub resources fail to load
 
-Codex++ inherits existing proxy environment variables. You can also set them manually before launching the silent entry:
+Dex inherits existing proxy environment variables. You can also set them manually before launching the silent entry:
 
 ```powershell
 $env:HTTP_PROXY="http://127.0.0.1:7897"
@@ -288,12 +287,12 @@ crates/
   codex-plus-core/              Launch, injection, config, update, install, bridge
   codex-plus-data/              Session data, export, Provider Sync
 scripts/installer/
-  windows/CodexPlusPlus.nsi     Windows NSIS installer
+  windows/Dex.nsi               Windows NSIS installer
   macos/package-dmg.sh          macOS DMG packager
 ```
 
 The Windows installer is built by the release workflow and uses this filename pattern:
 
 ```text
-CodexPlusPlus-<version>-windows-x64-setup.exe
+Dex-<version>-windows-x64-setup.exe
 ```

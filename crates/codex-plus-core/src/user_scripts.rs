@@ -44,6 +44,36 @@ impl UserScriptManager {
         }
     }
 
+    pub fn copy_missing_user_assets_from(
+        &self,
+        legacy_user_dir: impl Into<PathBuf>,
+        legacy_config_path: impl Into<PathBuf>,
+    ) -> anyhow::Result<()> {
+        let legacy_user_dir = legacy_user_dir.into();
+        let legacy_config_path = legacy_config_path.into();
+        if !self.user_dir.exists() && legacy_user_dir.exists() {
+            copy_user_scripts_dir(&legacy_user_dir, &self.user_dir)?;
+        }
+        if !self.config_path.exists() && legacy_config_path.exists() {
+            if let Some(parent) = self.config_path.parent() {
+                fs::create_dir_all(parent).with_context(|| {
+                    format!(
+                        "failed to create user script config directory {}",
+                        parent.display()
+                    )
+                })?;
+            }
+            fs::copy(&legacy_config_path, &self.config_path).with_context(|| {
+                format!(
+                    "failed to copy user script config from {} to {}",
+                    legacy_config_path.display(),
+                    self.config_path.display()
+                )
+            })?;
+        }
+        Ok(())
+    }
+
     pub fn load_config(&self) -> UserScriptConfig {
         let _guard = self.config_lock.lock().unwrap();
         self.load_config_unlocked()
@@ -235,6 +265,38 @@ impl UserScriptManager {
         }
         Ok(())
     }
+}
+
+fn copy_user_scripts_dir(source: &std::path::Path, target: &std::path::Path) -> anyhow::Result<()> {
+    fs::create_dir_all(target).with_context(|| {
+        format!(
+            "failed to create user scripts directory {}",
+            target.display()
+        )
+    })?;
+    let Ok(entries) = fs::read_dir(source) else {
+        return Ok(());
+    };
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        if path.extension().and_then(|value| value.to_str()) != Some("js") {
+            continue;
+        }
+        let Some(file_name) = path.file_name() else {
+            continue;
+        };
+        let target_path = target.join(file_name);
+        if !target_path.exists() {
+            fs::copy(&path, &target_path).with_context(|| {
+                format!(
+                    "failed to copy user script from {} to {}",
+                    path.display(),
+                    target_path.display()
+                )
+            })?;
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug)]

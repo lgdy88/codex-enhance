@@ -7,9 +7,9 @@ use std::time::Duration;
 pub const WATCHER_INTERVAL_SECONDS: f64 = 3.0;
 pub const CDP_PROBE_TIMEOUT_SECONDS: f64 = 0.5;
 pub const TAKEOVER_FAILURE_BACKOFF_SECONDS: f64 = 30.0;
-pub const WATCHER_RUN_NAME: &str = "CodexPlusPlusWatcher";
+pub const WATCHER_RUN_NAME: &str = "DexWatcher";
 pub const WATCHER_RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
-pub const WATCHER_STARTUP_SHORTCUT_NAME: &str = "CodexPlusPlusWatcher.lnk";
+pub const WATCHER_STARTUP_SHORTCUT_NAME: &str = "DexWatcher.lnk";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WatcherInstallPlan {
@@ -210,7 +210,7 @@ fn create_startup_shortcut(launcher_path: &Path, arguments: &str) -> anyhow::Res
         target: launcher_path.to_path_buf(),
         arguments: arguments.to_string(),
         working_directory: launcher_path.parent().map(Path::to_path_buf),
-        description: "Codex++ watcher".to_string(),
+        description: "Dex watcher".to_string(),
         icon: None,
         show_minimized: true,
     })

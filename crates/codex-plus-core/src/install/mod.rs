@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 pub mod macos;
 pub mod windows;
 
-pub const SILENT_NAME: &str = "Codex++";
-pub const MANAGER_NAME: &str = "Codex++ 管理工具";
+pub const SILENT_NAME: &str = "Dex";
+pub const MANAGER_NAME: &str = "Dex Manager";
 pub(crate) const LEGACY_MOJIBAKE_MANAGER_NAME: &str = "Codex++ ç®¡ç†å·¥å…·";
 pub const SILENT_BINARY: &str = "codex-plus-plus";
 pub const MANAGER_BINARY: &str = "codex-plus-plus-manager";
@@ -94,11 +94,11 @@ impl ShortcutState {
 }
 
 pub fn shortcut_names() -> (&'static str, &'static str) {
-    ("Codex++.lnk", "Codex++ 管理工具.lnk")
+    ("Dex.lnk", "Dex.lnk")
 }
 
 pub fn app_bundle_names() -> (&'static str, &'static str) {
-    ("Codex++.app", "Codex++ 管理工具.app")
+    ("Dex.app", "Dex Manager.app")
 }
 
 pub fn inspect_entrypoints() -> EntryPointState {
@@ -198,7 +198,7 @@ fn platform_install(options: &InstallOptions) -> anyhow::Result<()> {
     #[cfg(not(any(windows, target_os = "macos")))]
     {
         let _ = options;
-        anyhow::bail!("当前平台暂不支持安装 Codex++ 入口")
+        anyhow::bail!("当前平台暂不支持安装 Dex 入口")
     }
 }
 
@@ -216,7 +216,7 @@ fn platform_uninstall(options: &InstallOptions) -> anyhow::Result<()> {
     #[cfg(not(any(windows, target_os = "macos")))]
     {
         let _ = options;
-        anyhow::bail!("当前平台暂不支持卸载 Codex++ 入口")
+        anyhow::bail!("当前平台暂不支持卸载 Dex 入口")
     }
 }
 
@@ -242,16 +242,18 @@ fn entrypoint_candidates(root: &Option<PathBuf>, manager: bool) -> Vec<PathBuf> 
     let Some(root) = root else {
         return Vec::new();
     };
-    let name = if manager { MANAGER_NAME } else { SILENT_NAME };
     if cfg!(windows) {
+        let name = SILENT_NAME;
         let mut candidates = vec![root.join(format!("{name}.lnk"))];
         if manager {
             candidates.push(root.join(format!("{LEGACY_MOJIBAKE_MANAGER_NAME}.lnk")));
         }
         candidates
     } else if cfg!(target_os = "macos") {
+        let name = if manager { MANAGER_NAME } else { SILENT_NAME };
         vec![root.join(format!("{name}.app"))]
     } else {
+        let name = if manager { MANAGER_NAME } else { SILENT_NAME };
         vec![root.join(format!("{name}.desktop"))]
     }
 }
@@ -301,8 +303,8 @@ mod tests {
         use super::ShortcutState;
 
         let dir = tempfile::tempdir().unwrap();
-        let missing = dir.path().join("Codex++ 管理工具.desktop");
-        let fallback = dir.path().join("Codex++ legacy.desktop");
+        let missing = dir.path().join("Dex.desktop");
+        let fallback = dir.path().join("Dex legacy.desktop");
         std::fs::write(&fallback, b"fallback").unwrap();
 
         let state = ShortcutState::from_entrypoint_candidates(vec![missing, fallback.clone()]);

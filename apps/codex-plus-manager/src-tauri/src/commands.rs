@@ -693,14 +693,33 @@ fn user_script_inventory() -> Value {
 
 fn default_user_script_manager() -> UserScriptManager {
     let config_dir = user_scripts_config_dir();
-    UserScriptManager::new(
+    let manager = UserScriptManager::new(
         builtin_user_scripts_dir(),
         config_dir.join("user_scripts"),
         config_dir.join("user_scripts.json"),
-    )
+    );
+    let legacy_config_dir = legacy_user_scripts_config_dir();
+    let _ = manager.copy_missing_user_assets_from(
+        legacy_config_dir.join("user_scripts"),
+        legacy_config_dir.join("user_scripts.json"),
+    );
+    manager
 }
 
 fn user_scripts_config_dir() -> PathBuf {
+    if cfg!(windows) {
+        if let Some(roaming) = std::env::var_os("APPDATA") {
+            return PathBuf::from(roaming).join("Dex");
+        }
+    }
+    std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| directories::BaseDirs::new().map(|dirs| dirs.home_dir().join(".config")))
+        .unwrap_or_else(|| PathBuf::from(".config"))
+        .join("Dex")
+}
+
+fn legacy_user_scripts_config_dir() -> PathBuf {
     if cfg!(windows) {
         if let Some(roaming) = std::env::var_os("APPDATA") {
             return PathBuf::from(roaming).join("Codex++");

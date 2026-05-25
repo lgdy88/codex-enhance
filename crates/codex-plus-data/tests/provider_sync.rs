@@ -280,15 +280,22 @@ fn provider_sync_skips_when_home_missing_or_lock_exists_and_prunes_backups() {
 
     fs::remove_dir_all(home.join("tmp/provider-sync.lock")).unwrap();
     let backup_root = home.join("backups_state/provider-sync");
-    for index in 0..6 {
+    for index in 0..5 {
         let backup = backup_root.join(format!("2000010100000{index}"));
         fs::create_dir_all(&backup).unwrap();
         fs::write(
             backup.join("metadata.json"),
-            json!({"managedBy": "Codex++ provider sync"}).to_string(),
+            json!({"managedBy": "Dex provider sync"}).to_string(),
         )
         .unwrap();
     }
+    let legacy_backup = backup_root.join("20000101000005");
+    fs::create_dir_all(&legacy_backup).unwrap();
+    fs::write(
+        legacy_backup.join("metadata.json"),
+        json!({"managedBy": "Codex++ provider sync"}).to_string(),
+    )
+    .unwrap();
     write_rollout(
         &home.join("sessions/rollout-new.jsonl"),
         "openai",

@@ -14,8 +14,8 @@ fn windows_entrypoint_plan_contains_silent_and_manager_entrypoints() {
 
     let plan = build_windows_entrypoint_plan(&options);
 
-    assert!(plan.silent_shortcut.ends_with("Codex++.lnk"));
-    assert!(plan.manager_shortcut.ends_with("Codex++ 管理工具.lnk"));
+    assert!(plan.silent_shortcut.ends_with("Dex.lnk"));
+    assert!(plan.manager_shortcut.ends_with("Dex.lnk"));
     assert_eq!(plan.launcher_path, "C:/Tools/codex-plus-plus.exe");
     assert_eq!(plan.manager_path, "C:/Tools/codex-plus-plus-manager.exe");
     assert_eq!(plan.silent_icon_path, "C:/Tools/codex-plus-plus.exe");
@@ -23,7 +23,7 @@ fn windows_entrypoint_plan_contains_silent_and_manager_entrypoints() {
         plan.manager_icon_path,
         "C:/Tools/codex-plus-plus-manager.exe"
     );
-    assert_eq!(plan.uninstall_key, "CodexPlusPlus");
+    assert_eq!(plan.uninstall_key, "Dex");
     assert_eq!(plan.legacy_uninstall_key, "Codex++");
 }
 
@@ -38,8 +38,8 @@ fn windows_entrypoint_plan_can_request_owned_data_removal_without_shell_script()
 
     let plan = build_windows_entrypoint_plan(&options);
 
-    assert!(plan.silent_shortcut.ends_with("Codex++.lnk"));
-    assert!(plan.manager_shortcut.ends_with("Codex++ 管理工具.lnk"));
+    assert!(plan.silent_shortcut.ends_with("Dex.lnk"));
+    assert!(plan.manager_shortcut.ends_with("Dex.lnk"));
     assert!(plan.remove_owned_data);
 }
 
@@ -47,7 +47,7 @@ fn windows_entrypoint_plan_can_request_owned_data_removal_without_shell_script()
 #[cfg(windows)]
 fn shortcut_state_requires_target_to_exist_when_validating_entrypoint() {
     let dir = tempfile::tempdir().unwrap();
-    let shortcut = dir.path().join("Codex++.lnk");
+    let shortcut = dir.path().join("Dex.lnk");
     std::fs::write(&shortcut, b"not a real shell link").unwrap();
 
     let state = ShortcutState::valid_entrypoint(shortcut.clone());
@@ -60,30 +60,26 @@ fn shortcut_state_requires_target_to_exist_when_validating_entrypoint() {
 fn macos_bundle_metadata_contains_silent_and_manager_apps() {
     let options = InstallOptions {
         install_root: Some("/Applications".into()),
-        launcher_path: Some("/opt/Codex++/codex-plus-plus".into()),
-        manager_path: Some("/opt/Codex++/codex-plus-plus-manager".into()),
+        launcher_path: Some("/opt/Dex/codex-plus-plus".into()),
+        manager_path: Some("/opt/Dex/codex-plus-plus-manager".into()),
         remove_owned_data: false,
     };
 
     let silent = build_macos_app_bundle(&options, false);
     let manager = build_macos_app_bundle(&options, true);
 
-    assert!(silent.app_path.ends_with("Codex++.app"));
-    assert!(manager.app_path.ends_with("Codex++ 管理工具.app"));
-    assert!(silent.info_plist.contains("<string>Codex++</string>"));
-    assert!(
-        manager
-            .info_plist
-            .contains("<string>Codex++ 管理工具</string>")
-    );
+    assert!(silent.app_path.ends_with("Dex.app"));
+    assert!(manager.app_path.ends_with("Dex Manager.app"));
+    assert!(silent.info_plist.contains("<string>Dex</string>"));
+    assert!(manager.info_plist.contains("<string>Dex Manager</string>"));
     assert!(silent.launch_script.contains("codex-plus-plus"));
     assert!(manager.launch_script.contains("codex-plus-plus-manager"));
 }
 
 #[test]
 fn installer_exports_expected_two_entrypoint_names() {
-    assert_eq!(shortcut_names(), ("Codex++.lnk", "Codex++ 管理工具.lnk"));
-    assert_eq!(app_bundle_names(), ("Codex++.app", "Codex++ 管理工具.app"));
+    assert_eq!(shortcut_names(), ("Dex.lnk", "Dex.lnk"));
+    assert_eq!(app_bundle_names(), ("Dex.app", "Dex Manager.app"));
 }
 
 #[test]
