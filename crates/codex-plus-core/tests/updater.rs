@@ -1,7 +1,8 @@
 use codex_plus_core::update::{
     Release, download_asset_to, is_newer_version, parse_latest_release_tag_url, parse_version_tag,
     platform_download_asset_for_version, release_from_github_payload,
-    release_from_latest_release_url, safe_asset_name, select_update_asset,
+    release_from_latest_metadata_payload, release_from_latest_release_url, safe_asset_name,
+    select_update_asset,
 };
 use serde_json::json;
 
@@ -106,6 +107,42 @@ fn latest_release_url_builds_platform_download_asset_without_github_api() {
     } else {
         assert_eq!(release.asset_name.as_deref(), None);
         assert_eq!(release.asset_url.as_deref(), None);
+    }
+}
+
+#[test]
+fn latest_metadata_payload_selects_platform_asset() {
+    let release = release_from_latest_metadata_payload(&json!({
+        "version": "v1.0.17",
+        "url": "https://github.com/lgdy88/codex-enhance/releases/tag/v1.0.17",
+        "body": "fixes",
+        "assets": [
+            {"name": "CodexPlusPlus-1.0.17-windows-x64-setup.exe", "url": "https://example.test/legacy.exe"},
+            {"name": "Dex-1.0.17-windows-x64-setup.exe", "url": "https://example.test/setup.exe"},
+            {"name": "Dex-1.0.17-macos-universal.dmg", "url": "https://example.test/app.dmg"},
+            {"name": "latest.json", "url": "https://example.test/latest.json"}
+        ]
+    }))
+    .unwrap();
+
+    assert_eq!(release.version, "v1.0.17");
+    assert_eq!(release.body, "fixes");
+    if cfg!(windows) {
+        assert_eq!(
+            release.asset_name.as_deref(),
+            Some("Dex-1.0.17-windows-x64-setup.exe")
+        );
+        assert_eq!(
+            release.asset_url.as_deref(),
+            Some("https://example.test/setup.exe")
+        );
+    } else if cfg!(target_os = "macos") {
+        assert_eq!(
+            release.asset_name.as_deref(),
+            Some("Dex-1.0.17-macos-universal.dmg")
+        );
+    } else {
+        assert_eq!(release.asset_name.as_deref(), None);
     }
 }
 

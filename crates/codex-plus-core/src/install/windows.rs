@@ -36,8 +36,8 @@ pub fn build_windows_entrypoint_plan(options: &InstallOptions) -> WindowsEntrypo
         launcher_path: launcher_path.to_string_lossy().to_string(),
         manager_path: manager_path.to_string_lossy().to_string(),
         icon_path: icon_path.to_string_lossy().to_string(),
-        silent_icon_path: launcher_path.to_string_lossy().to_string(),
-        manager_icon_path: manager_path.to_string_lossy().to_string(),
+        silent_icon_path: icon_path.to_string_lossy().to_string(),
+        manager_icon_path: icon_path.to_string_lossy().to_string(),
         uninstall_key: "Dex".to_string(),
         legacy_uninstall_key: "Codex++".to_string(),
         remove_owned_data: options.remove_owned_data,
@@ -136,8 +136,8 @@ fn default_icon_path() -> PathBuf {
     std::env::current_exe()
         .ok()
         .and_then(|path| path.parent().map(Path::to_path_buf))
-        .map(|path| path.join("codex-plus-plus.ico"))
-        .unwrap_or_else(|| PathBuf::from("codex-plus-plus.ico"))
+        .map(|path| path.join("Dex.ico"))
+        .unwrap_or_else(|| PathBuf::from("Dex.ico"))
 }
 
 #[allow(dead_code)]

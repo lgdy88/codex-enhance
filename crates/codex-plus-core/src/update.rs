@@ -6,6 +6,8 @@ use serde_json::Value;
 pub const DEFAULT_REPOSITORY: &str = "lgdy88/codex-enhance";
 pub const DEFAULT_LATEST_RELEASE_URL: &str =
     "https://github.com/lgdy88/codex-enhance/releases/latest";
+pub const DEFAULT_LATEST_METADATA_URL: &str =
+    "https://github.com/lgdy88/codex-enhance/releases/latest/download/latest.json";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReleaseAsset {
@@ -103,6 +105,43 @@ pub fn release_from_github_payload(payload: &Value) -> anyhow::Result<Release> {
     })
 }
 
+pub fn release_from_latest_metadata_payload(payload: &Value) -> anyhow::Result<Release> {
+    let version = payload
+        .get("version")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow::anyhow!("latest.json missing version"))?
+        .to_string();
+    parse_version_tag(&version)?;
+    let assets = payload
+        .get("assets")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|asset| {
+            Some((
+                asset.get("name")?.as_str()?.to_string(),
+                asset.get("url")?.as_str()?.to_string(),
+            ))
+        })
+        .collect::<Vec<_>>();
+    let selected = select_update_asset(&assets);
+    Ok(Release {
+        version,
+        url: payload
+            .get("url")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        body: payload
+            .get("body")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        asset_name: selected.as_ref().map(|asset| asset.name.clone()),
+        asset_url: selected.map(|asset| asset.browser_download_url),
+    })
+}
+
 pub fn parse_latest_release_tag_url(value: &str) -> anyhow::Result<String> {
     let path = value
         .split('#')
@@ -186,8 +225,34 @@ pub async fn fetch_latest_release(api_url: &str) -> anyhow::Result<Release> {
     release_from_latest_release_url(response.url().as_str())
 }
 
+pub async fn fetch_latest_metadata(metadata_url: &str) -> anyhow::Result<Release> {
+    let user_agent = format!("Dex/{}", crate::version::VERSION);
+    let response = crate::http_client::proxied_client(&user_agent)?
+        .get(metadata_url)
+        .header(reqwest::header::ACCEPT, "application/json")
+        .send()
+        .await
+        .map_err(|error| anyhow::anyhow!("请求 latest.json 失败（{metadata_url}）：{error}"))?
+        .error_for_status()
+        .map_err(|error| anyhow::anyhow!("读取 latest.json 失败（{metadata_url}）：{error}"))?;
+    let payload = response
+        .json::<Value>()
+        .await
+        .map_err(|error| anyhow::anyhow!("解析 latest.json 失败（{metadata_url}）：{error}"))?;
+    release_from_latest_metadata_payload(&payload)
+}
+
 pub async fn check_for_update(current_version: &str) -> anyhow::Result<UpdateCheck> {
-    let release = fetch_latest_release(DEFAULT_LATEST_RELEASE_URL).await?;
+    let release = match fetch_latest_metadata(DEFAULT_LATEST_METADATA_URL).await {
+        Ok(release) => release,
+        Err(metadata_error) => fetch_latest_release(DEFAULT_LATEST_RELEASE_URL)
+            .await
+            .map_err(|release_error| {
+                anyhow::anyhow!(
+                    "读取 latest.json 和 GitHub Release 均失败；latest.json：{metadata_error}；Release：{release_error}"
+                )
+            })?,
+    };
     let update_available = is_newer_version(&release.version, current_version)?;
     Ok(UpdateCheck {
         current_version: current_version.to_string(),
@@ -207,13 +272,7 @@ pub async fn perform_update(
         .asset_url
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("没有可下载的 Release asset"))?;
-    let bytes = crate::http_client::proxied_client(&format!("Dex/{}", crate::version::VERSION))?
-        .get(url)
-        .send()
-        .await?
-        .error_for_status()?
-        .bytes()
-        .await?;
+    let bytes = download_update_bytes(url).await?;
     let installer_path = download_asset_to(release, &bytes, download_dir)?;
     launch_installer(&installer_path)?;
     Ok(UpdateInstall {
@@ -221,6 +280,40 @@ pub async fn perform_update(
         installer_path,
         launched: true,
     })
+}
+
+async fn download_update_bytes(url: &str) -> anyhow::Result<Vec<u8>> {
+    let user_agent = format!("Dex/{}", crate::version::VERSION);
+    let proxied = crate::http_client::proxied_client(&user_agent)?;
+    match download_update_bytes_with(&proxied, url).await {
+        Ok(bytes) => Ok(bytes),
+        Err(proxied_error) => {
+            let direct = crate::http_client::direct_client(&user_agent)?;
+            download_update_bytes_with(&direct, url).await.map_err(|direct_error| {
+                anyhow::anyhow!(
+                    "下载安装包失败（{url}）。已尝试自动代理和直连；自动代理：{proxied_error}；直连：{direct_error}"
+                )
+            })
+        }
+    }
+}
+
+async fn download_update_bytes_with(
+    client: &reqwest::Client,
+    url: &str,
+) -> anyhow::Result<Vec<u8>> {
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|error| anyhow::anyhow!("发送请求失败：{error}"))?
+        .error_for_status()
+        .map_err(|error| anyhow::anyhow!("服务端返回错误状态：{error}"))?;
+    response
+        .bytes()
+        .await
+        .map(|bytes| bytes.to_vec())
+        .map_err(|error| anyhow::anyhow!("读取安装包内容失败：{error}"))
 }
 
 pub fn download_asset_to(

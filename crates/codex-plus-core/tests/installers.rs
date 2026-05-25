@@ -18,11 +18,9 @@ fn windows_entrypoint_plan_contains_silent_and_manager_entrypoints() {
     assert!(plan.manager_shortcut.ends_with("Dex.lnk"));
     assert_eq!(plan.launcher_path, "C:/Tools/codex-plus-plus.exe");
     assert_eq!(plan.manager_path, "C:/Tools/codex-plus-plus-manager.exe");
-    assert_eq!(plan.silent_icon_path, "C:/Tools/codex-plus-plus.exe");
-    assert_eq!(
-        plan.manager_icon_path,
-        "C:/Tools/codex-plus-plus-manager.exe"
-    );
+    assert!(plan.icon_path.ends_with("Dex.ico"));
+    assert!(plan.silent_icon_path.ends_with("Dex.ico"));
+    assert!(plan.manager_icon_path.ends_with("Dex.ico"));
     assert_eq!(plan.uninstall_key, "Dex");
     assert_eq!(plan.legacy_uninstall_key, "Codex++");
 }

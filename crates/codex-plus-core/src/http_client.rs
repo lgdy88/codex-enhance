@@ -4,6 +4,13 @@ pub fn proxied_client(user_agent: &str) -> anyhow::Result<reqwest::Client> {
     proxied_client_with(user_agent, crate::proxy::detect_local_proxy)
 }
 
+pub fn direct_client(user_agent: &str) -> anyhow::Result<reqwest::Client> {
+    Ok(reqwest::Client::builder()
+        .user_agent(user_agent)
+        .no_proxy()
+        .build()?)
+}
+
 pub fn proxied_client_with(
     user_agent: &str,
     detect_proxy: impl FnOnce() -> Option<String>,

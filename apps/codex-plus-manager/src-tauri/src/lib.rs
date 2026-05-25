@@ -10,10 +10,14 @@ pub fn run() {
             } else {
                 "index.html"
             };
-            tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App(url.into()))
-                .title("Dex")
-                .inner_size(960.0, 720.0)
-                .build()?;
+            let mut window =
+                tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App(url.into()))
+                    .title("Dex")
+                    .inner_size(960.0, 720.0);
+            if let Some(icon) = app.default_window_icon().cloned() {
+                window = window.icon(icon)?;
+            }
+            window.build()?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

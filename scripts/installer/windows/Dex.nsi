@@ -35,6 +35,7 @@ Section "Install"
 
   File "${ROOT}\dist\windows\app\codex-plus-plus.exe"
   File "${ROOT}\dist\windows\app\codex-plus-plus-manager.exe"
+  File /oname=Dex.ico "${ROOT}\apps\codex-plus-manager\src-tauri\icons\icon.ico"
 
   Delete "$DESKTOP\Codex++ ç®¡ç†å·¥å…·.lnk"
   Delete "$SMPROGRAMS\Codex++\Codex++ ç®¡ç†å·¥å…·.lnk"
@@ -42,17 +43,17 @@ Section "Install"
   Delete "$DESKTOP\Codex++.lnk"
   Delete "$DESKTOP\Codex++ 管理工具.lnk"
 
-  CreateShortcut "$DESKTOP\Dex.lnk" "$INSTDIR\codex-plus-plus-manager.exe" "" "$INSTDIR\codex-plus-plus-manager.exe"
+  CreateShortcut "$DESKTOP\Dex.lnk" "$INSTDIR\codex-plus-plus-manager.exe" "" "$INSTDIR\Dex.ico"
   CreateDirectory "$SMPROGRAMS\Dex"
-  CreateShortcut "$SMPROGRAMS\Dex\Dex.lnk" "$INSTDIR\codex-plus-plus-manager.exe" "" "$INSTDIR\codex-plus-plus-manager.exe"
-  CreateShortcut "$SMPROGRAMS\Dex\卸载 Dex.lnk" "$INSTDIR\uninstall.exe" "" "$INSTDIR\codex-plus-plus-manager.exe"
+  CreateShortcut "$SMPROGRAMS\Dex\Dex.lnk" "$INSTDIR\codex-plus-plus-manager.exe" "" "$INSTDIR\Dex.ico"
+  CreateShortcut "$SMPROGRAMS\Dex\卸载 Dex.lnk" "$INSTDIR\uninstall.exe" "" "$INSTDIR\Dex.ico"
 
   WriteUninstaller "$INSTDIR\uninstall.exe"
   WriteRegStr HKCU "Software\Dex" "InstallDir" "$INSTDIR"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Dex" "DisplayName" "Dex"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Dex" "DisplayVersion" "${VERSION}"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Dex" "Publisher" "lgdy88"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Dex" "DisplayIcon" "$INSTDIR\codex-plus-plus-manager.exe"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Dex" "DisplayIcon" "$INSTDIR\Dex.ico"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Dex" "InstallLocation" "$INSTDIR"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Dex" "UninstallString" "$INSTDIR\uninstall.exe"
 SectionEnd
@@ -79,6 +80,7 @@ Section "Uninstall"
 
   Delete "$INSTDIR\codex-plus-plus.exe"
   Delete "$INSTDIR\codex-plus-plus-manager.exe"
+  Delete "$INSTDIR\Dex.ico"
   Delete "$INSTDIR\uninstall.exe"
   RMDir "$INSTDIR"
 
