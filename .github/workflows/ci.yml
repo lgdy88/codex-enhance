@@ -31,9 +31,6 @@ jobs:
       - name: Rust fmt
         run: cargo fmt --all -- --check
 
-      - name: Rust tests
-        run: cargo test --workspace
-
       - name: Install manager dependencies
         working-directory: apps/codex-plus-manager
         run: npm install
@@ -45,6 +42,9 @@ jobs:
       - name: Build manager frontend
         working-directory: apps/codex-plus-manager
         run: npm run vite:build
+
+      - name: Rust tests
+        run: cargo test --workspace
 
       - name: Check whitespace
         run: git diff --check
