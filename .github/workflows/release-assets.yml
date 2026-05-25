@@ -93,8 +93,16 @@ jobs:
           mkdir -p desktop-dist
           if [ "$RUNNER_OS" = "Windows" ]; then
             cp dist/windows/Dex-*-windows-x64-setup.exe desktop-dist/
+            for asset in desktop-dist/Dex-*-windows-x64-setup.exe; do
+              version="${asset#desktop-dist/Dex-}"
+              cp "$asset" "desktop-dist/CodexPlusPlus-${version}"
+            done
           elif [ "$RUNNER_OS" = "macOS" ]; then
             cp dist/macos/Dex-*-macos-universal.dmg desktop-dist/
+            for asset in desktop-dist/Dex-*-macos-universal.dmg; do
+              version="${asset#desktop-dist/Dex-}"
+              cp "$asset" "desktop-dist/CodexPlusPlus-${version}"
+            done
           fi
           cd desktop-dist
           if compgen -G "*" >/dev/null; then
