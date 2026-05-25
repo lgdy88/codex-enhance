@@ -24,6 +24,7 @@ pub fn run() {
             commands::restart_codex_plus,
             commands::load_settings,
             commands::save_settings,
+            commands::delete_user_script,
             commands::sync_providers_now,
             commands::repair_provider_paths,
             commands::open_external_url,

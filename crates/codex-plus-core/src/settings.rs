@@ -6,6 +6,10 @@ use serde_json::{Map, Value};
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BackendSettings {
+    #[serde(rename = "codexAppPath", default)]
+    pub codex_app_path: String,
+    #[serde(rename = "codexExtraArgs", default)]
+    pub codex_extra_args: Vec<String>,
     #[serde(rename = "providerSyncEnabled", default)]
     pub provider_sync_enabled: bool,
     #[serde(rename = "enhancementsEnabled", default = "default_true")]
@@ -15,6 +19,8 @@ pub struct BackendSettings {
 impl Default for BackendSettings {
     fn default() -> Self {
         Self {
+            codex_app_path: String::new(),
+            codex_extra_args: Vec::new(),
             provider_sync_enabled: false,
             enhancements_enabled: true,
         }
@@ -23,6 +29,14 @@ impl Default for BackendSettings {
 
 pub fn default_true() -> bool {
     true
+}
+
+pub fn normalize_codex_extra_args(args: &[String]) -> Vec<String> {
+    args.iter()
+        .map(|arg| arg.trim())
+        .filter(|arg| !arg.is_empty())
+        .map(ToString::to_string)
+        .collect()
 }
 
 #[derive(Debug, Clone)]
@@ -57,7 +71,10 @@ impl SettingsStore {
     }
 
     pub fn save(&self, settings: &BackendSettings) -> anyhow::Result<()> {
-        let bytes = serde_json::to_vec_pretty(settings)?;
+        let mut settings = settings.clone();
+        settings.codex_app_path = settings.codex_app_path.trim().to_string();
+        settings.codex_extra_args = normalize_codex_extra_args(&settings.codex_extra_args);
+        let bytes = serde_json::to_vec_pretty(&settings)?;
         atomic_write(&self.path, &bytes)
     }
 
@@ -94,6 +111,26 @@ impl SettingsStore {
 }
 
 fn merge_known_setting_fields(target: &mut Map<String, Value>, source: &Map<String, Value>) {
+    if let Some(value) = source.get("codexAppPath").and_then(Value::as_str) {
+        target.insert(
+            "codexAppPath".to_string(),
+            Value::String(value.trim().to_string()),
+        );
+    }
+    if let Some(values) = source.get("codexExtraArgs").and_then(Value::as_array) {
+        target.insert(
+            "codexExtraArgs".to_string(),
+            Value::Array(
+                values
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(|value| Value::String(value.to_string()))
+                    .collect(),
+            ),
+        );
+    }
     if let Some(value) = source.get("providerSyncEnabled").and_then(Value::as_bool) {
         target.insert("providerSyncEnabled".to_string(), Value::Bool(value));
     }
@@ -157,8 +194,10 @@ mod tests {
     }
 
     #[test]
-    fn settings_default_matches_python_behavior() {
+    fn settings_default_matches_legacy_behavior() {
         let settings = BackendSettings::default();
+        assert_eq!(settings.codex_app_path, "");
+        assert!(settings.codex_extra_args.is_empty());
         assert!(!settings.provider_sync_enabled);
         assert!(settings.enhancements_enabled);
     }
@@ -237,6 +276,28 @@ mod tests {
         assert!(saved.get("legacyEndpoint").is_none());
         assert!(saved.get("legacySecret").is_none());
         assert!(saved.get("legacyEnvName").is_none());
+    }
+
+    #[test]
+    fn settings_store_update_trims_codex_path_and_extra_args() {
+        let dir = temp_dir();
+        let store = SettingsStore::new(dir.join("settings.json"));
+
+        let updated = store
+            .update(json!({
+                "codexAppPath": "  C:/Codex/app/Codex.exe  ",
+                "codexExtraArgs": [" --force_high_performance_gpu ", "", 9, "--enable-features=UseOzonePlatform"]
+            }))
+            .unwrap();
+
+        assert_eq!(updated.codex_app_path, "C:/Codex/app/Codex.exe");
+        assert_eq!(
+            updated.codex_extra_args,
+            vec![
+                "--force_high_performance_gpu".to_string(),
+                "--enable-features=UseOzonePlatform".to_string()
+            ]
+        );
     }
 
     #[test]

@@ -11,7 +11,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 
-use crate::settings::{BackendSettings, SettingsStore};
+use crate::settings::{BackendSettings, SettingsStore, normalize_codex_extra_args};
 use crate::status::{LaunchStatus, StatusStore};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,6 +62,7 @@ impl CodexLaunch {
 #[derive(Debug, Clone)]
 pub struct LaunchOptions {
     pub app_dir: Option<PathBuf>,
+    pub codex_extra_args: Vec<String>,
     pub debug_port: u16,
     pub helper_port: u16,
     pub status_store: StatusStore,
@@ -71,6 +72,7 @@ impl Default for LaunchOptions {
     fn default() -> Self {
         Self {
             app_dir: None,
+            codex_extra_args: Vec::new(),
             debug_port: 9229,
             helper_port: 57321,
             status_store: StatusStore::default(),
@@ -114,13 +116,22 @@ impl LaunchHandle {
 
 #[async_trait(?Send)]
 pub trait LaunchHooks: Send + Sync {
-    fn resolve_app_dir(&self, app_dir: Option<&Path>) -> anyhow::Result<PathBuf>;
+    fn resolve_app_dir(
+        &self,
+        app_dir: Option<&Path>,
+        settings: &BackendSettings,
+    ) -> anyhow::Result<PathBuf>;
     fn select_debug_port(&self, requested: u16) -> u16;
     fn select_helper_port(&self, requested: u16) -> u16;
     async fn load_settings(&self) -> anyhow::Result<BackendSettings>;
     async fn run_provider_sync(&self) -> anyhow::Result<()>;
     async fn start_helper(&self, helper_port: u16) -> anyhow::Result<()>;
-    async fn launch_codex(&self, app_dir: &Path, debug_port: u16) -> anyhow::Result<CodexLaunch>;
+    async fn launch_codex(
+        &self,
+        app_dir: &Path,
+        debug_port: u16,
+        extra_args: &[String],
+    ) -> anyhow::Result<CodexLaunch>;
     async fn bridge_context(
         &self,
         _debug_port: u16,
@@ -165,10 +176,12 @@ where
     H: IntoLaunchHooks,
 {
     let hooks = hooks.into_launch_hooks();
-    let app_dir = hooks.resolve_app_dir(options.app_dir.as_deref())?;
     let debug_port = hooks.select_debug_port(options.debug_port);
     let helper_port = hooks.select_helper_port(options.helper_port);
     let settings = hooks.load_settings().await?;
+    let app_dir = hooks.resolve_app_dir(options.app_dir.as_deref(), &settings)?;
+    let mut codex_extra_args = settings.codex_extra_args.clone();
+    codex_extra_args.extend(options.codex_extra_args.clone());
     let status_store = options.status_store.clone();
     let mut helper_started = false;
     let mut launched = None;
@@ -183,7 +196,9 @@ where
             helper_started = true;
         }
 
-        let launch = hooks.launch_codex(&app_dir, debug_port).await?;
+        let launch = hooks
+            .launch_codex(&app_dir, debug_port, &codex_extra_args)
+            .await?;
         launched = Some(launch.clone());
 
         if settings.enhancements_enabled {
@@ -266,9 +281,16 @@ impl DefaultLaunchHooks {
 
 #[async_trait(?Send)]
 impl LaunchHooks for DefaultLaunchHooks {
-    fn resolve_app_dir(&self, app_dir: Option<&Path>) -> anyhow::Result<PathBuf> {
-        crate::app_paths::resolve_codex_app_dir(app_dir)
-            .ok_or_else(|| anyhow::anyhow!("Codex App directory not found"))
+    fn resolve_app_dir(
+        &self,
+        app_dir: Option<&Path>,
+        settings: &BackendSettings,
+    ) -> anyhow::Result<PathBuf> {
+        crate::app_paths::resolve_codex_app_dir_with_saved(
+            app_dir,
+            Some(settings.codex_app_path.as_str()),
+        )
+        .ok_or_else(|| anyhow::anyhow!("Codex App directory not found"))
     }
 
     fn select_debug_port(&self, requested: u16) -> u16 {
@@ -320,9 +342,14 @@ impl LaunchHooks for DefaultLaunchHooks {
         Ok(())
     }
 
-    async fn launch_codex(&self, app_dir: &Path, debug_port: u16) -> anyhow::Result<CodexLaunch> {
+    async fn launch_codex(
+        &self,
+        app_dir: &Path,
+        debug_port: u16,
+        extra_args: &[String],
+    ) -> anyhow::Result<CodexLaunch> {
         if cfg!(windows) {
-            if let Some(activation) = build_packaged_activation(app_dir, debug_port) {
+            if let Some(activation) = build_packaged_activation(app_dir, debug_port, extra_args) {
                 let CodexLaunch::PackagedActivation {
                     app_user_model_id,
                     arguments,
@@ -356,7 +383,7 @@ impl LaunchHooks for DefaultLaunchHooks {
             } else {
                 MacosCleanupPolicy::QuitIfNotPreviouslyRunning
             };
-            let command = build_macos_open_command(app_dir, debug_port);
+            let command = build_macos_open_command(app_dir, debug_port, extra_args);
             let executable = command
                 .first()
                 .ok_or_else(|| anyhow::anyhow!("macOS open command is empty"))?;
@@ -375,7 +402,7 @@ impl LaunchHooks for DefaultLaunchHooks {
             });
         }
 
-        let command = build_codex_command(app_dir, debug_port);
+        let command = build_codex_command(app_dir, debug_port, extra_args);
         let executable = command
             .first()
             .ok_or_else(|| anyhow::anyhow!("Codex command is empty"))?;
@@ -588,27 +615,33 @@ fn sanitize_diagnostic_event(event: &str) -> String {
     }
 }
 
-pub fn build_codex_arguments(debug_port: u16) -> Vec<String> {
-    vec![
+pub fn build_codex_arguments(debug_port: u16, extra_args: &[String]) -> Vec<String> {
+    let mut args = vec![
         format!("--remote-debugging-port={debug_port}"),
         format!("--remote-allow-origins=http://127.0.0.1:{debug_port}"),
-    ]
+    ];
+    args.extend(normalize_codex_extra_args(extra_args));
+    args
 }
 
-pub fn build_codex_command(app_dir: &Path, debug_port: u16) -> Vec<String> {
+pub fn build_codex_command(app_dir: &Path, debug_port: u16, extra_args: &[String]) -> Vec<String> {
     let mut command = vec![
         crate::app_paths::build_codex_executable(app_dir)
             .to_string_lossy()
             .to_string(),
     ];
-    command.extend(build_codex_arguments(debug_port));
+    command.extend(build_codex_arguments(debug_port, extra_args));
     command
 }
 
-pub fn build_packaged_activation(app_dir: &Path, debug_port: u16) -> Option<CodexLaunch> {
+pub fn build_packaged_activation(
+    app_dir: &Path,
+    debug_port: u16,
+    extra_args: &[String],
+) -> Option<CodexLaunch> {
     Some(CodexLaunch::PackagedActivation {
         app_user_model_id: crate::app_paths::packaged_app_user_model_id(app_dir)?,
-        arguments: command_line_arguments(&build_codex_arguments(debug_port)),
+        arguments: command_line_arguments(&build_codex_arguments(debug_port, extra_args)),
         process_id: None,
     })
 }
@@ -676,7 +709,11 @@ async fn try_inject(debug_port: u16, helper_port: u16) -> anyhow::Result<()> {
     .await
 }
 
-pub fn build_macos_open_command(app_dir: &Path, debug_port: u16) -> Vec<String> {
+pub fn build_macos_open_command(
+    app_dir: &Path,
+    debug_port: u16,
+    extra_args: &[String],
+) -> Vec<String> {
     let mut command = vec![
         "open".to_string(),
         "-W".to_string(),
@@ -684,7 +721,7 @@ pub fn build_macos_open_command(app_dir: &Path, debug_port: u16) -> Vec<String> 
         app_dir.to_string_lossy().to_string(),
         "--args".to_string(),
     ];
-    command.extend(build_codex_arguments(debug_port));
+    command.extend(build_codex_arguments(debug_port, extra_args));
     command
 }
 

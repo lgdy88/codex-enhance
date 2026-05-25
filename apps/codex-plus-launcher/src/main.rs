@@ -100,6 +100,14 @@ where
                     }
                 }
             }
+            "--codex-arg" => {
+                if let Some(value) = iter.next() {
+                    let value = value.as_ref().trim();
+                    if !value.is_empty() {
+                        options.codex_extra_args.push(value.to_string());
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -111,8 +119,9 @@ impl LaunchHooks for LauncherHooks {
     fn resolve_app_dir(
         &self,
         app_dir: Option<&std::path::Path>,
+        settings: &codex_plus_core::settings::BackendSettings,
     ) -> anyhow::Result<std::path::PathBuf> {
-        self.core.resolve_app_dir(app_dir)
+        self.core.resolve_app_dir(app_dir, settings)
     }
 
     fn select_debug_port(&self, requested: u16) -> u16 {
@@ -142,8 +151,11 @@ impl LaunchHooks for LauncherHooks {
         &self,
         app_dir: &Path,
         debug_port: u16,
+        extra_args: &[String],
     ) -> anyhow::Result<codex_plus_core::launcher::CodexLaunch> {
-        self.core.launch_codex(app_dir, debug_port).await
+        self.core
+            .launch_codex(app_dir, debug_port, extra_args)
+            .await
     }
 
     async fn bridge_context(&self, debug_port: u16) -> anyhow::Result<Option<BridgeContext>> {
@@ -310,6 +322,11 @@ impl BridgeRuntimeService for LauncherRuntimeService {
 
     async fn set_user_script_enabled(&self, key: String, enabled: bool) -> anyhow::Result<Value> {
         self.user_scripts.set_script_enabled(&key, enabled)?;
+        self.user_scripts.inventory()
+    }
+
+    async fn delete_user_script(&self, key: String) -> anyhow::Result<Value> {
+        self.user_scripts.delete_user_script(&key)?;
         self.user_scripts.inventory()
     }
 

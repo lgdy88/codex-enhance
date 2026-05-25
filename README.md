@@ -11,10 +11,11 @@
 <p align="center">
   <img alt="Release" src="https://img.shields.io/github/v/release/lgdy88/codex-enhance">
   <img alt="License" src="https://img.shields.io/github/license/lgdy88/codex-enhance">
-  <img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-blue">
+  <img alt="Rust" src="https://img.shields.io/badge/rust-1.85%2B-orange">
+  <img alt="Tauri" src="https://img.shields.io/badge/tauri-2.x-24C8DB">
 </p>
 
-Codex++ 是面向 Codex App 的外部增强启动器。它通过外部 launcher 启动 Codex，并使用 Chromium DevTools Protocol 注入增强脚本；不修改 Codex App 的 `app.asar`，也不向 Codex 安装目录写入 DLL。
+Codex++ 是面向 Codex App 的外部增强启动器和桌面管理工具。它通过独立 launcher 启动 Codex，并使用 Chromium DevTools Protocol 注入增强脚本；不修改 Codex App 的 `app.asar`，也不向 Codex 安装目录写入 DLL。
 
 维护者：`lgdy88`
 项目地址：[https://github.com/lgdy88/codex-enhance](https://github.com/lgdy88/codex-enhance)
@@ -27,6 +28,8 @@ Codex++ 是面向 Codex App 的外部增强启动器。它通过外部 launcher 
 - [功能](#功能)
 - [界面预览](#界面预览)
 - [工作方式与风险边界](#工作方式与风险边界)
+- [Provider History Manager](#provider-history-manager)
+- [Browser MCP](#browser-mcp)
 - [数据与备份](#数据与备份)
 - [常见问题](#常见问题)
 - [开发](#开发)
@@ -37,11 +40,11 @@ Codex++ 是面向 Codex App 的外部增强启动器。它通过外部 launcher 
 - 需要在 API Key 模式下恢复插件入口的可见性。
 - 需要删除、导出或移动本地会话。
 - 切换 `model_provider` 后，希望旧会话仍能在原项目下可见。
-- 需要通过 CLI 管理 Chrome DevTools MCP / Playwright MCP 配置。
+- 需要通过桌面管理工具管理 Chrome DevTools MCP / Playwright MCP 配置。
 
 ## 安装
 
-### Windows 推荐方式
+### Windows
 
 从 [Releases](https://github.com/lgdy88/codex-enhance/releases) 下载 Windows 安装包：
 
@@ -68,52 +71,53 @@ CodexPlusPlus-<version>-macos-universal.dmg
 
 安装后会提供 `Codex++` 和 `Codex++ 管理工具` 两个应用入口。
 
-### 源码安装
+### 源码运行
 
-源码安装主要用于开发或调试：
+源码运行用于开发或调试。当前仓库已经迁移为 Rust/Tauri-only，不再提供 Python 包、`setup.bat` 或 `pytest` 入口。
 
 ```bash
-python -m pip install -e .
-python -m codex_session_delete setup
+cd apps/codex-plus-manager
+npm install
+npm run build
+
+cd ../..
+cargo build --release
 ```
 
-Windows 也可以双击项目根目录的 `setup.bat` 创建虚拟环境并安装源码版本。公开使用优先选择 Release 安装包。
+构建后可直接运行静默启动器：
+
+```bash
+target/release/codex-plus-plus
+```
+
+也可以运行桌面管理工具：
+
+```bash
+cd apps/codex-plus-manager
+npm run dev
+```
 
 ## 使用
 
-直接启动：
+常规使用优先从安装包生成的 `Codex++` 启动。静默启动器支持少量调试参数：
 
 ```bash
-python -m codex_session_delete launch
-```
-
-手动指定 Codex 应用路径：
-
-```bash
-python -m codex_session_delete launch \
-  --app-dir "C:/Program Files/WindowsApps/OpenAI.Codex_xxx/app" \
+target/release/codex-plus-plus \
+  --app-path "C:/Program Files/WindowsApps/OpenAI.Codex_xxx/app" \
   --debug-port 9229 \
-  --helper-port 57321
+  --helper-port 57321 \
+  --codex-arg "--some-codex-flag"
 ```
 
-检查和更新：
+管理工具提供这些入口：
 
-```bash
-python -m codex_session_delete check-update
-python -m codex_session_delete update
-```
-
-卸载源码安装入口：
-
-```bash
-python -m codex_session_delete remove
-```
-
-同时删除 Codex++ 自己的日志和备份数据：
-
-```bash
-python -m codex_session_delete remove --remove-data
-```
+- 启动或重启 Codex++。
+- 检查并修复静默启动入口和管理工具入口。
+- 配置 Codex App 路径、启动参数、增强开关和 Provider 自动同步。
+- 管理用户脚本。
+- 执行 Provider History 路径修复和 metadata 收敛。
+- 安装、移除或启用浏览器 MCP 配置。
+- 查看日志、诊断信息和 GitHub Release 更新。
 
 ## 功能
 
@@ -124,8 +128,9 @@ python -m codex_session_delete remove --remove-data
 - 会话项目移动：把会话移动到普通对话或其他本地项目。
 - 对话 Timeline：在对话右侧显示用户提问时间线，支持快速跳转。
 - Provider History Manager：通过本地 SQLite bridge 处理跨 provider 历史可见性。
-- Browser MCP CLI：写入 Chrome DevTools MCP 和 Playwright MCP 配置；桌面管理工具不提供 MCP 选择入口。
+- Browser MCP 管理：写入 Chrome DevTools MCP 和 Playwright MCP 配置。
 - Windows 入口安装/修复、可选 watcher、GitHub Release 更新。
+- 用户脚本管理：独立扫描、开关、删除并在启动时注入。
 
 ## 界面预览
 
@@ -151,14 +156,14 @@ Codex++ 使用外部启动方式运行 Codex：
 
 1. 启动 Codex App，并附加 `--remote-debugging-port=9229`。
 2. 启动本地 helper 服务，用于健康检查和本地操作。
-3. 通过 CDP 注入 `renderer-inject.js`。
+3. 通过 CDP 注入 `assets/inject/renderer-inject.js`。
 4. 渲染端通过私有 CDP bridge 调用本地服务。
 
 边界说明：
 
 - 不修改 Codex App 原始安装文件。
 - 不绕过官方账号、地区、灰度或后端权限限制。
-- Browser MCP CLI 只写入本机 Codex 配置，不读取或展示 token、DSN、完整命令参数。
+- Browser MCP 管理只写入本机 Codex 配置，不读取或展示 token、DSN、完整命令参数。
 - 删除、路径修复、provider metadata 收敛等写操作会先备份相关本地数据。
 - 可选 watcher 默认只记录状态；只有设置 `CODEX_PLUS_ALLOW_FORCE_TAKEOVER=1` 后才会尝试接管原生启动。
 
@@ -174,35 +179,19 @@ Codex++ 使用外部启动方式运行 Codex：
 
 路径修复只处理等价路径格式，例如 `\\?\D:\...` / `D:/...` 到 `D:\...`。它不切换 provider，也不移动会话所属项目。
 
-手动执行路径修复：
-
-```bash
-python -m codex_session_delete provider-repair-paths
-```
-
 兼容模式的“收敛到当前 provider”会先备份，再把历史 metadata 收敛到当前 `model_provider`。这只保证列表可见，不保证跨账号或跨 provider 的 `encrypted_content` 能续聊。
 
 ## Browser MCP
 
-Browser MCP 保留为命令行能力；桌面管理工具不再提供当前项目的 MCP 选择入口。
-
-安装、查看、移除浏览器 MCP：
-
-```bash
-python -m codex_session_delete mcp-install all
-python -m codex_session_delete mcp-status
-python -m codex_session_delete mcp-remove all
-```
-
-管理的条目：
+Browser MCP 在桌面管理工具中维护。它管理这些条目：
 
 - `chrome-devtools`：使用 `chrome-devtools-mcp@latest`，用于查看 Chrome 页面、Console、Network、DOM 和性能信息。
 - `playwright`：使用 `@playwright/mcp@latest --browser=chrome --caps=devtools`，用于浏览器自动化和页面状态采集。
 
-如果 Chrome 不支持默认 `--autoConnect`，可以指定远程调试端口：
+如果 Chrome 不支持默认 `--autoConnect`，可以在管理工具中切换到 `browser-url` 模式并填写远程调试端点，例如：
 
-```bash
-python -m codex_session_delete mcp-install chrome-devtools --chrome-mode browser-url --browser-url http://127.0.0.1:9222
+```text
+http://127.0.0.1:9222
 ```
 
 这不会绕过官方 Computer Use 的账号、地区、灰度或后端限制。
@@ -261,53 +250,46 @@ Provider History Manager 路径修复和 metadata 收敛备份目录：
 
 ### Chrome Computer Use 连接异常
 
-修复本机 Chrome 扩展和 Codex Native Host 连接：
-
-```bash
-python -m codex_session_delete chrome-repair
-```
-
-该命令不会伪造官方后端，也不会绕过账号、地区或功能灰度限制。执行后请重启 Chrome 和 Codex。
+管理工具可以维护 Chrome DevTools MCP / Playwright MCP 配置，但不会伪造官方后端，也不会绕过账号、地区或功能灰度限制。修改 MCP 配置后请重启 Codex 或新开会话。
 
 ### 技能或 GitHub 资源加载失败
 
-Codex++ 启动时会继承现有代理环境变量。也可以手动指定：
+Codex++ 启动时会继承现有代理环境变量。也可以手动设置后再启动静默入口：
 
 ```powershell
 $env:HTTP_PROXY="http://127.0.0.1:7897"
 $env:HTTPS_PROXY="http://127.0.0.1:7897"
-python -m codex_session_delete launch
+target/release/codex-plus-plus
 ```
 
 ## 开发
 
-安装测试依赖：
-
-```bash
-python -m pip install -e .[test]
-```
-
 常用检查：
 
 ```bash
-python -m pytest -q
-node --check codex_session_delete/inject/renderer-inject.js
-python scripts/disposable_cdp_smoke.py
-```
+cargo fmt --all -- --check
+cargo test --workspace
 
-修改注入脚本时先改 `codex_session_delete/inject_src/*.js`，再生成单文件产物：
-
-```bash
-python scripts/build_renderer_inject.py
-```
-
-桌面管理器相关命令：
-
-```bash
 cd apps/codex-plus-manager
 npm install
 npm run check
-npm run build
+npm run vite:build
+```
+
+项目结构：
+
+```text
+apps/
+  codex-plus-launcher/          静默启动入口
+  codex-plus-manager/           Tauri 管理工具
+assets/inject/
+  renderer-inject.js            注入到 Codex 渲染端的增强脚本
+crates/
+  codex-plus-core/              启动、注入、配置、更新、安装、桥接等核心逻辑
+  codex-plus-data/              会话数据、导出、Provider 同步
+scripts/installer/
+  windows/CodexPlusPlus.nsi     Windows NSIS 安装包
+  macos/package-dmg.sh          macOS DMG 打包
 ```
 
 Windows 安装包由 release workflow 构建，产物命名为：

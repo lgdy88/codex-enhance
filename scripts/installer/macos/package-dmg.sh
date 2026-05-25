@@ -74,6 +74,7 @@ PLIST
 prepare_icon
 create_app "Codex++" "CodexPlusPlus" "$ROOT/target/release/codex-plus-plus" "com.lgdy88.codex-enhance"
 create_app "Codex++ 管理工具" "CodexPlusPlusManager" "$ROOT/target/release/codex-plus-plus-manager" "com.lgdy88.codex-enhance.manager"
+ln -s /Applications "$STAGE/Applications"
 
 hdiutil create -volname "Codex++" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
 echo "$DMG"

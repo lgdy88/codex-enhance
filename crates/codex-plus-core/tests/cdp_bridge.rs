@@ -74,7 +74,7 @@ fn cdp_target_deserializes_websocket_field() {
 }
 
 #[test]
-fn runtime_evaluate_params_matches_python_flags() {
+fn runtime_evaluate_params_matches_legacy_flags() {
     let params = bridge::runtime_evaluate_params("1 + 1");
 
     assert_eq!(params["expression"], "1 + 1");

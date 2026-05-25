@@ -15,6 +15,7 @@ import {
   ScrollText,
   Settings,
   Sun,
+  Trash2,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
@@ -61,6 +62,8 @@ type OverviewResult = CommandResult<{
 }>;
 
 type BackendSettings = {
+  codexAppPath: string;
+  codexExtraArgs: string[];
   providerSyncEnabled: boolean;
   enhancementsEnabled: boolean;
 };
@@ -153,6 +156,8 @@ const routes: Array<{ id: Route; label: string; icon: LucideIcon }> = [
 ];
 
 const defaultSettings: BackendSettings = {
+  codexAppPath: "",
+  codexExtraArgs: [],
   providerSyncEnabled: false,
   enhancementsEnabled: true,
 };
@@ -202,7 +207,12 @@ export function App() {
     const result = await run(() => call<SettingsResult>("load_settings"));
     if (!result) return;
     setSettings(result);
-    setSettingsForm(normalizeSettings(result.settings));
+    const normalized = normalizeSettings(result.settings);
+    setSettingsForm(normalized);
+    setLaunchForm((current) => ({
+      ...current,
+      appPath: current.appPath || normalized.codexAppPath,
+    }));
     if (!silent) showNotice("设置已加载", result.message, result.status);
   };
 
@@ -258,6 +268,7 @@ export function App() {
       call<CommandResult<Record<string, unknown>>>(command, {
         request: {
           appPath: launchForm.appPath,
+          extraArgs: settingsForm.codexExtraArgs,
           debugPort: numberOrDefault(launchForm.debugPort, 9229),
           helperPort: numberOrDefault(launchForm.helperPort, 57321),
         },
@@ -268,7 +279,9 @@ export function App() {
     const result = await run(() => call<SettingsResult>("save_settings", { settings: settingsForm }));
     if (!result) return;
     setSettings(result);
-    setSettingsForm(normalizeSettings(result.settings));
+    const normalized = normalizeSettings(result.settings);
+    setSettingsForm(normalized);
+    setLaunchForm((current) => ({ ...current, appPath: normalized.codexAppPath }));
     showNotice("设置保存", result.message, result.status);
   };
 
@@ -276,7 +289,9 @@ export function App() {
     const result = await run(() => call<SettingsResult>("reset_settings"));
     if (!result) return;
     setSettings(result);
-    setSettingsForm(normalizeSettings(result.settings));
+    const normalized = normalizeSettings(result.settings);
+    setSettingsForm(normalized);
+    setLaunchForm((current) => ({ ...current, appPath: normalized.codexAppPath }));
     showNotice("设置重置", result.message, result.status);
   };
 
@@ -286,6 +301,14 @@ export function App() {
     setSettings(result);
     setSettingsForm(normalizeSettings(result.settings));
     showNotice("后端修复", result.message, result.status);
+  };
+
+  const deleteUserScript = async (key: string) => {
+    const result = await run(() => call<SettingsResult>("delete_user_script", { request: { key } }));
+    if (!result) return;
+    setSettings(result);
+    setSettingsForm(normalizeSettings(result.settings));
+    showNotice("用户脚本", result.message, result.status);
   };
 
   const providerAction = async (command: "sync_providers_now" | "repair_provider_paths") => {
@@ -396,6 +419,7 @@ export function App() {
       performUpdate,
       saveSettings,
       resetSettings,
+      deleteUserScript,
       syncProvidersNow: () => providerAction("sync_providers_now"),
       repairProviderPaths: () => providerAction("repair_provider_paths"),
       openExternalUrl,
@@ -507,6 +531,7 @@ type Actions = {
   performUpdate: () => Promise<void>;
   saveSettings: () => Promise<void>;
   resetSettings: () => Promise<void>;
+  deleteUserScript: (key: string) => Promise<void>;
   syncProvidersNow: () => Promise<void>;
   repairProviderPaths: () => Promise<void>;
   openExternalUrl: (url: string) => Promise<void>;
@@ -528,14 +553,14 @@ function OverviewScreen({ overview, actions }: { overview: OverviewResult | null
   return (
     <>
       <Panel className="hero-panel">
-        <CardContent>
+        <CardContent className="hero-content">
           <div className="hero-layout">
             <div>
               <div className="eyebrow">Codex++ 桌面状态</div>
               <h2>{health.every((item) => item.ok) ? "运行环境看起来正常" : "有项目需要处理"}</h2>
               <p>桌面版只管理启动、增强、Provider History、维护和诊断，不接管上游代理或远端推荐默认项。</p>
             </div>
-            <Toolbar>
+            <div className="hero-actions">
               <Button onClick={() => void actions.checkHealth()}>
                 <RefreshCw className="h-4 w-4" />
                 检查
@@ -545,7 +570,7 @@ function OverviewScreen({ overview, actions }: { overview: OverviewResult | null
                 修复入口
               </Button>
               <Button variant="secondary" onClick={() => void actions.repairBackend()}>修复后端</Button>
-            </Toolbar>
+            </div>
           </div>
         </CardContent>
       </Panel>
@@ -638,7 +663,7 @@ function UserScriptsScreen({ settings, actions }: { settings: SettingsResult | n
         <CardHead title="脚本列表" detail="插件内可启用、禁用和重新加载；管理工具用于集中查看" />
         <CardContent>
           <div className="table">
-            {scripts.length ? scripts.map((script) => <ScriptRow key={script.key} script={script} />) : <div className="empty">未发现用户脚本。</div>}
+            {scripts.length ? scripts.map((script) => <ScriptRow actions={actions} key={script.key} script={script} />) : <div className="empty">未发现用户脚本。</div>}
           </div>
         </CardContent>
       </Panel>
@@ -723,6 +748,7 @@ function MaintenanceScreen({
   onRemoveOwnedDataChange: (value: boolean) => void;
   actions: Actions;
 }) {
+  const savedCodexAppPath = overview?.codex_app.path ?? "";
   return (
     <>
       <Panel>
@@ -767,10 +793,14 @@ function MaintenanceScreen({
         </CardContent>
       </Panel>
       <Panel>
-        <CardHead title="手动启动" detail="留空应用路径时使用自动探测" />
+        <CardHead title="手动启动" detail="留空应用路径时使用已保存路径；没有保存路径时使用自动探测" />
         <CardContent>
           <Field label="应用路径覆盖">
-            <Input value={launchForm.appPath} onChange={(event) => onLaunchFormChange({ ...launchForm, appPath: event.currentTarget.value })} />
+            <Input
+              placeholder={savedCodexAppPath || "例如 C:\\Program Files\\WindowsApps\\OpenAI.Codex...\\app"}
+              value={launchForm.appPath}
+              onChange={(event) => onLaunchFormChange({ ...launchForm, appPath: event.currentTarget.value })}
+            />
           </Field>
           <div className="form-row">
             <Field label="Debug 端口">
@@ -814,6 +844,13 @@ function SettingsScreen({
           <Button variant="secondary" onClick={actions.toggleTheme}>切换主题</Button>
         </div>
         <div className="setting-grid">
+          <Field label="默认 Codex 应用路径">
+            <Input
+              placeholder="Codex.exe、Codex.app、app 目录或解包目录"
+              value={form.codexAppPath}
+              onChange={(event) => onFormChange({ ...form, codexAppPath: event.currentTarget.value })}
+            />
+          </Field>
           <label className="switch-row">
             <input checked={form.enhancementsEnabled} onChange={(event) => onFormChange({ ...form, enhancementsEnabled: event.currentTarget.checked })} type="checkbox" />
             <span>
@@ -829,6 +866,16 @@ function SettingsScreen({
             </span>
           </label>
         </div>
+        <Field label="Codex 额外启动参数">
+          <Textarea
+            className="launch-args-input"
+            placeholder="--force_high_performance_gpu"
+            spellCheck={false}
+            value={codexExtraArgsToInput(form.codexExtraArgs)}
+            onChange={(event) => onFormChange({ ...form, codexExtraArgs: inputToCodexExtraArgs(event.currentTarget.value) })}
+          />
+        </Field>
+        <p className="field-hint">每行一个参数，追加到默认 CDP 参数后；不需要填写 open 或 --args。</p>
         <Toolbar>
           <Button onClick={() => void actions.saveSettings()}>保存设置</Button>
           <Button variant="secondary" onClick={() => void actions.resetSettings()}>重置设置</Button>
@@ -1035,13 +1082,21 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ScriptRow({ script }: { script: NonNullable<UserScriptInventory["scripts"]>[number] }) {
+function ScriptRow({ script, actions }: { script: NonNullable<UserScriptInventory["scripts"]>[number]; actions: Actions }) {
+  const canDelete = script.key.startsWith("user:");
   return (
     <div className="table-row">
       <span>{script.name}</span>
       <span>{script.source}</span>
       <span>{script.enabled ? "启用" : "关闭"}</span>
       <span>{script.status}</span>
+      <span>
+        {canDelete ? (
+          <Button onClick={() => void actions.deleteUserScript(script.key)} size="icon" title="删除脚本" variant="outline">
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        ) : null}
+      </span>
     </div>
   );
 }
@@ -1112,9 +1167,19 @@ function healthItems(overview: OverviewResult | null) {
 
 function normalizeSettings(settings: Partial<BackendSettings>): BackendSettings {
   return {
+    codexAppPath: settings.codexAppPath ?? defaultSettings.codexAppPath,
+    codexExtraArgs: Array.isArray(settings.codexExtraArgs) ? settings.codexExtraArgs : defaultSettings.codexExtraArgs,
     providerSyncEnabled: settings.providerSyncEnabled ?? defaultSettings.providerSyncEnabled,
     enhancementsEnabled: settings.enhancementsEnabled ?? defaultSettings.enhancementsEnabled,
   };
+}
+
+function codexExtraArgsToInput(args: string[] | undefined) {
+  return (args ?? []).join("\n");
+}
+
+function inputToCodexExtraArgs(value: string) {
+  return value === "" ? [] : value.split(/\r?\n/);
 }
 
 function numberOrDefault(value: string, fallback: number) {

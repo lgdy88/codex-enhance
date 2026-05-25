@@ -57,6 +57,8 @@ pub struct SettingsPayload {
 pub struct LaunchRequest {
     #[serde(default)]
     pub app_path: String,
+    #[serde(default)]
+    pub extra_args: Vec<String>,
     #[serde(default = "default_debug_port")]
     pub debug_port: u16,
     #[serde(default = "default_helper_port")]
@@ -225,7 +227,8 @@ fn spawn_codex_plus_launch(request: LaunchRequest, accepted_message: &str) -> Co
         json!({
             "debug_port": debug_port,
             "helper_port": helper_port,
-            "app_path": request.app_path.trim()
+            "app_path": request.app_path.trim(),
+            "extra_args": request.extra_args
         }),
     );
     match spawn_silent_launcher(&request) {
@@ -252,6 +255,9 @@ fn spawn_silent_launcher(request: &LaunchRequest) -> anyhow::Result<()> {
     let mut command = std::process::Command::new(&launcher);
     if !request.app_path.trim().is_empty() {
         command.arg("--app-path").arg(request.app_path.trim());
+    }
+    for arg in codex_plus_core::settings::normalize_codex_extra_args(&request.extra_args) {
+        command.arg("--codex-arg").arg(arg);
     }
     command
         .arg("--debug-port")
@@ -282,6 +288,29 @@ pub fn save_settings(settings: BackendSettings) -> CommandResult<SettingsPayload
             &format!("保存设置失败：{error}"),
             SettingsPayload {
                 settings,
+                settings_path: codex_plus_core::paths::default_settings_path()
+                    .to_string_lossy()
+                    .to_string(),
+                user_scripts: user_script_inventory(),
+            },
+        ),
+    }
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserScriptKeyRequest {
+    pub key: String,
+}
+
+#[tauri::command]
+pub fn delete_user_script(request: UserScriptKeyRequest) -> CommandResult<SettingsPayload> {
+    match default_user_script_manager().delete_user_script(&request.key) {
+        Ok(_) => settings_payload("用户脚本已删除。", "删除脚本后重新读取设置失败"),
+        Err(error) => failed(
+            &format!("删除用户脚本失败：{error}"),
+            SettingsPayload {
+                settings: SettingsStore::default().load().unwrap_or_default(),
                 settings_path: codex_plus_core::paths::default_settings_path()
                     .to_string_lossy()
                     .to_string(),
@@ -741,8 +770,12 @@ fn load_overview_payload() -> (
     install::EntryPointState,
     Option<LaunchStatus>,
 ) {
+    let settings = SettingsStore::default().load().unwrap_or_default();
     (
-        codex_plus_core::app_paths::resolve_codex_app_dir(None),
+        codex_plus_core::app_paths::resolve_codex_app_dir_with_saved(
+            None,
+            Some(settings.codex_app_path.as_str()),
+        ),
         install::inspect_entrypoints(),
         StatusStore::default().load_latest().unwrap_or(None),
     )

@@ -27,6 +27,7 @@ async fn bridge_routes_cover_all_current_paths() {
             "/user-scripts/set-script-enabled",
             json!({"key": "user:a.js", "enabled": false}),
         ),
+        ("/user-scripts/delete", json!({"key": "user:a.js"})),
         ("/user-scripts/reload", json!({})),
         ("/devtools/open", json!({})),
         ("/manager/open", json!({})),
@@ -65,7 +66,7 @@ async fn bridge_routes_cover_all_current_paths() {
 }
 
 #[tokio::test]
-async fn unknown_bridge_path_matches_python_shape_with_empty_session_id() {
+async fn unknown_bridge_path_matches_legacy_shape_with_empty_session_id() {
     let result = handle_bridge_request(
         test_context(),
         "/missing",
@@ -117,12 +118,19 @@ async fn runtime_routes_keep_user_script_inventory_shape() {
         json!({"key": "user:a.js", "enabled": false}),
     )
     .await;
+    let deleted = handle_bridge_request(
+        ctx.clone(),
+        "/user-scripts/delete",
+        json!({"key": "user:a.js"}),
+    )
+    .await;
     let reloaded = handle_bridge_request(ctx, "/user-scripts/reload", json!({})).await;
 
     assert_eq!(listed["enabled"], true);
     assert_eq!(listed["scripts"][0]["key"], "builtin:demo.js");
     assert_eq!(global["enabled"], false);
     assert_eq!(script["scripts"][1]["enabled"], false);
+    assert_eq!(deleted["scripts"][1]["enabled"], true);
     assert_eq!(reloaded["reloaded"], true);
     assert_eq!(reloaded["scripts"][0]["key"], "builtin:demo.js");
 }
@@ -242,7 +250,7 @@ async fn bridge_context_core_with_data_uses_injected_data_service() {
 }
 
 #[tokio::test]
-async fn user_script_manager_scans_and_persists_python_inventory_shape() {
+async fn user_script_manager_scans_and_persists_legacy_inventory_shape() {
     let temp = tempfile::tempdir().unwrap();
     let builtin_dir = temp.path().join("builtin");
     let user_dir = temp.path().join("user");
@@ -281,13 +289,18 @@ async fn user_script_manager_scans_and_persists_python_inventory_shape() {
     assert_eq!(disabled["enabled"], false);
     assert_eq!(disabled["scripts"][0]["status"], "disabled");
     assert_eq!(script_disabled["scripts"][1]["enabled"], false);
+    let deleted = manager.delete_user_script("user:a.js").unwrap();
+    assert!(!user_dir.join("a.js").exists());
+    assert_eq!(deleted.scripts.get("user:a.js"), None);
     assert_eq!(
         serde_json::from_str::<Value>(
             &std::fs::read_to_string(temp.path().join("user_scripts.json")).unwrap()
         )
         .unwrap(),
-        json!({"enabled": false, "scripts": {"user:a.js": false}})
+        json!({"enabled": false, "scripts": {}})
     );
+    assert!(manager.delete_user_script("builtin:demo.js").is_err());
+    assert!(manager.delete_user_script("user:../escape.js").is_err());
 }
 
 #[tokio::test]
@@ -433,6 +446,7 @@ async fn launch_lifecycle_uses_hook_supplied_bridge_context_for_injection() {
     launch_and_inject_with_hooks(
         LaunchOptions {
             app_dir: Some(app_dir),
+            codex_extra_args: Vec::new(),
             debug_port: 9229,
             helper_port: 57321,
             status_store: StatusStore::new(temp.path().join("latest-status.json")),
@@ -515,6 +529,12 @@ impl BridgeRuntimeService for FakeRuntime {
     async fn set_user_script_enabled(&self, key: String, enabled: bool) -> anyhow::Result<Value> {
         assert_eq!(key, "user:a.js");
         *self.script_enabled.lock().unwrap() = enabled;
+        Ok(self.inventory(false))
+    }
+
+    async fn delete_user_script(&self, key: String) -> anyhow::Result<Value> {
+        assert_eq!(key, "user:a.js");
+        *self.script_enabled.lock().unwrap() = true;
         Ok(self.inventory(false))
     }
 
@@ -656,6 +676,7 @@ impl LaunchHooks for ContextHooks {
     fn resolve_app_dir(
         &self,
         app_dir: Option<&std::path::Path>,
+        _settings: &BackendSettings,
     ) -> anyhow::Result<std::path::PathBuf> {
         app_dir
             .map(std::path::Path::to_path_buf)
@@ -686,6 +707,7 @@ impl LaunchHooks for ContextHooks {
         &self,
         _app_dir: &std::path::Path,
         _debug_port: u16,
+        _extra_args: &[String],
     ) -> anyhow::Result<CodexLaunch> {
         Ok(CodexLaunch::Process {
             command: vec!["codex".to_string()],

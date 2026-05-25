@@ -4,8 +4,8 @@ use std::sync::{Arc, Mutex};
 
 use codex_plus_core::app_paths::{
     build_codex_executable, codex_app_version, find_latest_codex_app_dir,
-    find_latest_codex_app_dir_from_roots, find_macos_codex_app, packaged_app_user_model_id,
-    user_data_candidates_from,
+    find_latest_codex_app_dir_from_roots, find_macos_codex_app, normalize_codex_app_path,
+    packaged_app_user_model_id, resolve_codex_app_dir_with_saved, user_data_candidates_from,
 };
 use codex_plus_core::launcher::{
     CodexLaunch, DefaultLaunchHooks, LaunchHooks, LaunchOptions, MacosCleanupPolicy,
@@ -115,19 +115,64 @@ fn app_paths_build_macos_bundle_executable() {
 }
 
 #[test]
+fn app_paths_normalizes_executable_and_saved_path() {
+    let temp = tempfile::tempdir().unwrap();
+    let portable = temp.path().join("portable");
+    let app = portable.join("app");
+    std::fs::create_dir_all(&app).unwrap();
+    std::fs::write(app.join("Codex.exe"), "").unwrap();
+
+    assert_eq!(
+        normalize_codex_app_path(&app.join("Codex.exe")).as_deref(),
+        Some(app.as_path())
+    );
+    assert_eq!(
+        normalize_codex_app_path(&portable).as_deref(),
+        Some(app.as_path())
+    );
+    assert_eq!(
+        resolve_codex_app_dir_with_saved(None, Some(&portable.to_string_lossy())).as_deref(),
+        Some(app.as_path())
+    );
+}
+
+#[test]
 fn launcher_builds_debug_arguments_and_commands() {
     let app_dir = PathBuf::from(r"C:\Codex\app");
 
     assert_eq!(
-        build_codex_arguments(9229),
+        build_codex_arguments(9229, &[]),
         vec![
             "--remote-debugging-port=9229".to_string(),
             "--remote-allow-origins=http://127.0.0.1:9229".to_string(),
         ]
     );
-    let command = build_codex_command(&app_dir, 9229);
+    let command = build_codex_command(&app_dir, 9229, &[]);
     assert_eq!(command[1], "--remote-debugging-port=9229");
     assert_eq!(command[2], "--remote-allow-origins=http://127.0.0.1:9229");
+}
+
+#[test]
+fn launcher_appends_extra_codex_arguments_after_debug_arguments() {
+    let app_dir = PathBuf::from(r"C:\Codex\app");
+    let extra_args = vec![
+        "--force_high_performance_gpu".to_string(),
+        "  ".to_string(),
+        "--enable-features=UseOzonePlatform".to_string(),
+    ];
+
+    assert_eq!(
+        build_codex_arguments(9229, &extra_args),
+        vec![
+            "--remote-debugging-port=9229".to_string(),
+            "--remote-allow-origins=http://127.0.0.1:9229".to_string(),
+            "--force_high_performance_gpu".to_string(),
+            "--enable-features=UseOzonePlatform".to_string(),
+        ]
+    );
+    let command = build_codex_command(&app_dir, 9229, &extra_args);
+    assert_eq!(command[3], "--force_high_performance_gpu");
+    assert_eq!(command[4], "--enable-features=UseOzonePlatform");
 }
 
 #[test]
@@ -141,11 +186,30 @@ fn launcher_constructs_windows_packaged_activation_without_real_app() {
         "OpenAI.Codex_2p2nqsd0c76g0!App"
     );
     assert_eq!(
-        build_packaged_activation(&app_dir, 9229).unwrap(),
+        build_packaged_activation(&app_dir, 9229, &[]).unwrap(),
         CodexLaunch::PackagedActivation {
             app_user_model_id: "OpenAI.Codex_2p2nqsd0c76g0!App".to_string(),
             arguments: "--remote-debugging-port=9229 --remote-allow-origins=http://127.0.0.1:9229"
                 .to_string(),
+            process_id: None,
+        }
+    );
+}
+
+#[test]
+fn launcher_packaged_activation_appends_extra_codex_arguments() {
+    let app_dir = PathBuf::from("WindowsApps")
+        .join("OpenAI.Codex_26.506.2212.0_x64__2p2nqsd0c76g0")
+        .join("app");
+    let extra_args = vec!["--force_high_performance_gpu".to_string()];
+
+    assert_eq!(
+        build_packaged_activation(&app_dir, 9229, &extra_args).unwrap(),
+        CodexLaunch::PackagedActivation {
+            app_user_model_id: "OpenAI.Codex_2p2nqsd0c76g0!App".to_string(),
+            arguments:
+                "--remote-debugging-port=9229 --remote-allow-origins=http://127.0.0.1:9229 --force_high_performance_gpu"
+                    .to_string(),
             process_id: None,
         }
     );
@@ -173,13 +237,32 @@ fn launcher_windows_packaged_process_management_uses_native_api() {
 
 #[test]
 fn launcher_macos_open_command_waits_for_app_exit() {
-    let command = build_macos_open_command(Path::new("/Applications/Codex.app"), 9229);
+    let command = build_macos_open_command(Path::new("/Applications/Codex.app"), 9229, &[]);
 
     assert_eq!(command[0], "open");
     assert!(command.contains(&"-W".to_string()));
     assert!(command.contains(&"-a".to_string()));
     assert!(command.contains(&"--args".to_string()));
     assert!(command.contains(&"--remote-debugging-port=9229".to_string()));
+}
+
+#[test]
+fn launcher_macos_open_command_appends_extra_codex_arguments_after_args() {
+    let extra_args = vec!["--force_high_performance_gpu".to_string()];
+    let command = build_macos_open_command(Path::new("/Applications/Codex.app"), 9229, &extra_args);
+    let args_index = command
+        .iter()
+        .position(|part| part == "--args")
+        .expect("macOS command should contain --args");
+
+    assert_eq!(
+        &command[args_index + 1..],
+        &[
+            "--remote-debugging-port=9229".to_string(),
+            "--remote-allow-origins=http://127.0.0.1:9229".to_string(),
+            "--force_high_performance_gpu".to_string(),
+        ]
+    );
 }
 
 #[test]
@@ -335,6 +418,7 @@ async fn launch_lifecycle_runs_sync_before_launch_writes_success_and_shutdowns_o
     let handle = launch_and_inject_with_hooks(
         LaunchOptions {
             app_dir: Some(app_dir.clone()),
+            codex_extra_args: Vec::new(),
             debug_port: 9229,
             helper_port: 57321,
             status_store,
@@ -387,6 +471,7 @@ async fn launch_lifecycle_skips_helper_and_injection_when_enhancements_disabled(
     let handle = launch_and_inject_with_hooks(
         LaunchOptions {
             app_dir: Some(app_dir),
+            codex_extra_args: Vec::new(),
             debug_port: 9229,
             helper_port: 57321,
             status_store,
@@ -411,6 +496,40 @@ async fn launch_lifecycle_skips_helper_and_injection_when_enhancements_disabled(
 }
 
 #[tokio::test]
+async fn launch_lifecycle_passes_configured_extra_args_to_codex_launch() {
+    let temp = tempfile::tempdir().unwrap();
+    let app_dir = temp.path().join("Codex.app");
+    std::fs::create_dir_all(&app_dir).unwrap();
+    let status_store = StatusStore::new(temp.path().join("latest-status.json"));
+    let events = Arc::new(Mutex::new(Vec::<String>::new()));
+    let hooks = FakeHooks::new(events.clone()).with_settings(BackendSettings {
+        codex_extra_args: vec!["--force_high_performance_gpu".to_string()],
+        ..BackendSettings::default()
+    });
+
+    let handle = launch_and_inject_with_hooks(
+        LaunchOptions {
+            app_dir: Some(app_dir),
+            codex_extra_args: Vec::new(),
+            debug_port: 9229,
+            helper_port: 57321,
+            status_store,
+        },
+        &hooks,
+    )
+    .await
+    .unwrap();
+    handle.wait_for_codex_exit().await.unwrap();
+
+    assert!(
+        events
+            .lock()
+            .unwrap()
+            .contains(&"launch:9229:--force_high_performance_gpu".to_string())
+    );
+}
+
+#[tokio::test]
 async fn launch_lifecycle_writes_failure_and_cleans_helper_when_injection_fails() {
     let temp = tempfile::tempdir().unwrap();
     let app_dir = temp.path().join("Codex.app");
@@ -422,6 +541,7 @@ async fn launch_lifecycle_writes_failure_and_cleans_helper_when_injection_fails(
     let error = launch_and_inject_with_hooks(
         LaunchOptions {
             app_dir: Some(app_dir),
+            codex_extra_args: Vec::new(),
             debug_port: 9229,
             helper_port: 57321,
             status_store: status_store.clone(),
@@ -463,6 +583,7 @@ async fn launch_lifecycle_cleans_helper_when_launch_fails_after_helper_started()
     let error = launch_and_inject_with_hooks(
         LaunchOptions {
             app_dir: Some(app_dir),
+            codex_extra_args: Vec::new(),
             debug_port: 9229,
             helper_port: 57321,
             status_store: status_store.clone(),
@@ -509,6 +630,7 @@ async fn launch_lifecycle_cleans_helper_and_codex_when_status_save_fails() {
     let error = launch_and_inject_with_hooks(
         LaunchOptions {
             app_dir: Some(app_dir),
+            codex_extra_args: Vec::new(),
             debug_port: 9229,
             helper_port: 57321,
             status_store,
@@ -553,6 +675,7 @@ async fn launch_lifecycle_terminates_packaged_process_id_when_injection_fails() 
     let error = launch_and_inject_with_hooks(
         LaunchOptions {
             app_dir: Some(app_dir),
+            codex_extra_args: Vec::new(),
             debug_port: 9229,
             helper_port: 57321,
             status_store,
@@ -694,7 +817,11 @@ fn temp_env_remove(key: &str) {
 
 #[async_trait::async_trait(?Send)]
 impl LaunchHooks for FakeHooks {
-    fn resolve_app_dir(&self, app_dir: Option<&Path>) -> anyhow::Result<PathBuf> {
+    fn resolve_app_dir(
+        &self,
+        app_dir: Option<&Path>,
+        _settings: &BackendSettings,
+    ) -> anyhow::Result<PathBuf> {
         app_dir
             .map(Path::to_path_buf)
             .ok_or_else(|| anyhow::anyhow!("missing app dir"))
@@ -728,9 +855,18 @@ impl LaunchHooks for FakeHooks {
         Ok(())
     }
 
-    async fn launch_codex(&self, app_dir: &Path, debug_port: u16) -> anyhow::Result<CodexLaunch> {
+    async fn launch_codex(
+        &self,
+        app_dir: &Path,
+        debug_port: u16,
+        extra_args: &[String],
+    ) -> anyhow::Result<CodexLaunch> {
         assert!(app_dir.ends_with("Codex.app"));
-        self.event(format!("launch:{debug_port}"));
+        if extra_args.is_empty() {
+            self.event(format!("launch:{debug_port}"));
+        } else {
+            self.event(format!("launch:{debug_port}:{}", extra_args.join(",")));
+        }
         if let Some(message) = &self.launch_error {
             anyhow::bail!(message.clone());
         }

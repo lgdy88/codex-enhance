@@ -302,23 +302,34 @@ body {
 }
 
 .hero-panel {
-  overflow: hidden;
+  overflow: visible;
   background:
     linear-gradient(135deg, hsl(172 54% 20% / 0.38), transparent 42%),
     hsl(var(--card));
 }
 
+.hero-content {
+  padding: 16px;
+}
+
 .hero-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(260px, 1fr) minmax(260px, auto);
   gap: 16px;
   align-items: center;
 }
 
+.hero-layout > div:first-child {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
 .hero-layout h2 {
-  margin: 4px 0 6px;
+  margin: 0;
   font-size: 22px;
   line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .hero-layout p,
@@ -327,6 +338,24 @@ body {
 .health-item span {
   color: hsl(var(--muted-foreground));
   line-height: 1.45;
+}
+
+.hero-layout p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.hero-actions button {
+  flex: 0 0 auto;
 }
 
 .eyebrow {
@@ -439,6 +468,14 @@ body {
   align-items: center;
   border-bottom: 1px solid hsl(var(--border));
   padding: 7px 0;
+}
+
+.table-row {
+  grid-template-columns: minmax(130px, 1fr) 90px 72px minmax(90px, 0.7fr) 44px;
+}
+
+.table-row button {
+  justify-self: end;
 }
 
 .health-grid,
@@ -599,6 +636,19 @@ body {
 .check-row span {
   color: hsl(var(--foreground));
   font-weight: 600;
+}
+
+.field-hint {
+  margin: -4px 0 12px;
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.launch-args-input {
+  min-height: 88px;
+  font-family: Consolas, "SFMono-Regular", monospace;
+  font-size: 12px;
 }
 
 .form-row {
@@ -775,6 +825,10 @@ body {
   .setting-grid,
   .hero-layout {
     grid-template-columns: 1fr;
+  }
+
+  .hero-actions {
+    justify-content: flex-start;
   }
 
   .health-item {
