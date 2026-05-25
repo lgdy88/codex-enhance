@@ -44,6 +44,7 @@ fn windows_entrypoint_plan_can_request_owned_data_removal_without_shell_script()
 }
 
 #[test]
+#[cfg(windows)]
 fn shortcut_state_requires_target_to_exist_when_validating_entrypoint() {
     let dir = tempfile::tempdir().unwrap();
     let shortcut = dir.path().join("Codex++.lnk");
