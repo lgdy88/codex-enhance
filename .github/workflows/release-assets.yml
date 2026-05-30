@@ -45,40 +45,36 @@ jobs:
         working-directory: apps/codex-plus-manager
         run: npm install
 
-      - name: Build desktop app
-        working-directory: apps/codex-plus-manager
-        run: npm run build
+      - name: Install WiX Toolset
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install wixtoolset -y --no-progress
 
       - name: Build silent launcher
         run: cargo build --release -p codex-plus-launcher
 
-      - name: Package Windows installer
+      - name: Stage Windows launcher sidecar
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          choco install nsis -y --no-progress
-          $version = "${{ env.RELEASE_TAG }}" -replace '^v', ''
-          New-Item -ItemType Directory -Force -Path dist/windows/app | Out-Null
+          $sidecarDir = "apps/codex-plus-manager/src-tauri/binaries"
+          $sidecar = "$sidecarDir/codex-plus-plus-x86_64-pc-windows-msvc.exe"
           $launcher = "target/release/codex-plus-plus.exe"
-          $managerCandidates = @(
-            "target/release/codex-plus-plus-manager.exe",
-            "apps/codex-plus-manager/src-tauri/target/release/codex-plus-plus-manager.exe"
-          )
-          $manager = $managerCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
           if (!(Test-Path -LiteralPath $launcher)) { throw "Missing silent launcher: $launcher" }
-          if (!$manager) { throw "Missing manager binary" }
-          Copy-Item -LiteralPath $launcher -Destination dist/windows/app/codex-plus-plus.exe -Force
-          Copy-Item -LiteralPath $manager -Destination dist/windows/app/codex-plus-plus-manager.exe -Force
-          $makensisCommand = Get-Command makensis.exe -ErrorAction SilentlyContinue
-          $makensisCandidates = @(
-            $makensisCommand.Source,
-            "${env:ProgramFiles(x86)}\NSIS\makensis.exe",
-            "${env:ProgramFiles}\NSIS\makensis.exe",
-            "C:\ProgramData\chocolatey\bin\makensis.exe"
-          ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
-          $makensis = $makensisCandidates | Select-Object -First 1
-          if (!$makensis) { throw "Missing makensis.exe after NSIS install" }
-          & $makensis "/INPUTCHARSET" "UTF8" "/DVERSION=$version" "scripts/installer/windows/Dex.nsi"
+          New-Item -ItemType Directory -Force -Path $sidecarDir | Out-Null
+          Copy-Item -LiteralPath $launcher -Destination $sidecar -Force
+
+      - name: Build Windows MSI
+        if: runner.os == 'Windows'
+        working-directory: apps/codex-plus-manager
+        run: npm run build
+
+      - name: Build macOS desktop binaries
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          npm run --prefix apps/codex-plus-manager vite:build
+          cargo build --release -p codex-plus-manager
 
       - name: Package macOS installer
         if: runner.os == 'macOS'
@@ -92,11 +88,24 @@ jobs:
         run: |
           mkdir -p desktop-dist
           if [ "$RUNNER_OS" = "Windows" ]; then
-            cp dist/windows/Dex-*-windows-x64-setup.exe desktop-dist/
-            for asset in desktop-dist/Dex-*-windows-x64-setup.exe; do
-              version="${asset#desktop-dist/Dex-}"
-              cp "$asset" "desktop-dist/CodexPlusPlus-${version}"
+            VERSION="${RELEASE_TAG#v}"
+            msi=""
+            for candidate in \
+              apps/codex-plus-manager/src-tauri/target/release/bundle/msi/*.msi \
+              target/release/bundle/msi/*.msi
+            do
+              if [ -f "$candidate" ]; then
+                msi="$candidate"
+                break
+              fi
             done
+            if [ -z "$msi" ]; then
+              echo "No Windows MSI artifact found"
+              find apps/codex-plus-manager/src-tauri/target target -path '*/bundle/msi/*' -type f 2>/dev/null || true
+              exit 1
+            fi
+            cp "$msi" "desktop-dist/Dex-${VERSION}-windows-x64.msi"
+            cp "$msi" "desktop-dist/CodexPlusPlus-${VERSION}-windows-x64.msi"
           elif [ "$RUNNER_OS" = "macOS" ]; then
             cp dist/macos/Dex-*-macos-universal.dmg desktop-dist/
             for asset in desktop-dist/Dex-*-macos-universal.dmg; do

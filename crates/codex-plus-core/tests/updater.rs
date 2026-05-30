@@ -29,7 +29,7 @@ fn github_payload_selects_platform_installer() {
         "assets": [
             {"name": "source.zip", "browser_download_url": "https://example.test/source.zip"},
             {"name": "codex-plus-plus-manager.exe", "browser_download_url": "https://example.test/manager.exe"},
-            {"name": "Dex-1.0.9-windows-x64-setup.exe", "browser_download_url": "https://example.test/setup.exe"},
+            {"name": "Dex-1.0.9-windows-x64.msi", "browser_download_url": "https://example.test/setup.msi"},
             {"name": "Dex-1.0.9-macos-universal.dmg", "browser_download_url": "https://example.test/app.dmg"}
         ]
     }))
@@ -39,7 +39,7 @@ fn github_payload_selects_platform_installer() {
     if cfg!(windows) {
         assert_eq!(
             release.asset_name.as_deref(),
-            Some("Dex-1.0.9-windows-x64-setup.exe")
+            Some("Dex-1.0.9-windows-x64.msi")
         );
     } else if cfg!(target_os = "macos") {
         assert_eq!(
@@ -85,12 +85,12 @@ fn latest_release_url_builds_platform_download_asset_without_github_api() {
     if cfg!(windows) {
         assert_eq!(
             release.asset_name.as_deref(),
-            Some("Dex-1.0.12-windows-x64-setup.exe")
+            Some("Dex-1.0.12-windows-x64.msi")
         );
         assert_eq!(
             release.asset_url.as_deref(),
             Some(
-                "https://github.com/lgdy88/codex-enhance/releases/download/v1.0.12/Dex-1.0.12-windows-x64-setup.exe"
+                "https://github.com/lgdy88/codex-enhance/releases/download/v1.0.12/Dex-1.0.12-windows-x64.msi"
             )
         );
     } else if cfg!(target_os = "macos") {
@@ -117,8 +117,8 @@ fn latest_metadata_payload_selects_platform_asset() {
         "url": "https://github.com/lgdy88/codex-enhance/releases/tag/v1.0.17",
         "body": "fixes",
         "assets": [
-            {"name": "CodexPlusPlus-1.0.17-windows-x64-setup.exe", "url": "https://example.test/legacy.exe"},
-            {"name": "Dex-1.0.17-windows-x64-setup.exe", "url": "https://example.test/setup.exe"},
+            {"name": "CodexPlusPlus-1.0.17-windows-x64.msi", "url": "https://example.test/legacy.msi"},
+            {"name": "Dex-1.0.17-windows-x64.msi", "url": "https://example.test/setup.msi"},
             {"name": "Dex-1.0.17-macos-universal.dmg", "url": "https://example.test/app.dmg"},
             {"name": "latest.json", "url": "https://example.test/latest.json"}
         ]
@@ -130,11 +130,11 @@ fn latest_metadata_payload_selects_platform_asset() {
     if cfg!(windows) {
         assert_eq!(
             release.asset_name.as_deref(),
-            Some("Dex-1.0.17-windows-x64-setup.exe")
+            Some("Dex-1.0.17-windows-x64.msi")
         );
         assert_eq!(
             release.asset_url.as_deref(),
-            Some("https://example.test/setup.exe")
+            Some("https://example.test/setup.msi")
         );
     } else if cfg!(target_os = "macos") {
         assert_eq!(
@@ -151,10 +151,10 @@ fn platform_download_asset_normalizes_tags() {
     let selected = platform_download_asset_for_version("1.0.12");
     if cfg!(windows) {
         let selected = selected.unwrap();
-        assert_eq!(selected.name, "Dex-1.0.12-windows-x64-setup.exe");
+        assert_eq!(selected.name, "Dex-1.0.12-windows-x64.msi");
         assert_eq!(
             selected.browser_download_url,
-            "https://github.com/lgdy88/codex-enhance/releases/download/v1.0.12/Dex-1.0.12-windows-x64-setup.exe"
+            "https://github.com/lgdy88/codex-enhance/releases/download/v1.0.12/Dex-1.0.12-windows-x64.msi"
         );
     } else if cfg!(target_os = "macos") {
         let selected = selected.unwrap();
@@ -180,8 +180,8 @@ fn asset_selection_prefers_current_platform_artifacts() {
             "https://example.test/manager.exe".to_string(),
         ),
         (
-            "Dex-1.0.9-windows-x64-setup.exe".to_string(),
-            "https://example.test/setup.exe".to_string(),
+            "Dex-1.0.9-windows-x64.msi".to_string(),
+            "https://example.test/setup.msi".to_string(),
         ),
         (
             "Dex-1.0.9-macos-universal.dmg".to_string(),
@@ -191,7 +191,7 @@ fn asset_selection_prefers_current_platform_artifacts() {
 
     if cfg!(windows) {
         let selected = select_update_asset(&assets).unwrap();
-        assert_eq!(selected.name, "Dex-1.0.9-windows-x64-setup.exe");
+        assert_eq!(selected.name, "Dex-1.0.9-windows-x64.msi");
     } else if cfg!(target_os = "macos") {
         let selected = select_update_asset(&assets).unwrap();
         assert_eq!(selected.name, "Dex-1.0.9-macos-universal.dmg");
@@ -203,8 +203,8 @@ fn asset_selection_prefers_current_platform_artifacts() {
 #[test]
 fn asset_selection_rejects_manager_only_windows_installers() {
     let assets = vec![(
-        "DexManager_1.0.9_x64-setup.exe".to_string(),
-        "https://example.test/manager-setup.exe".to_string(),
+        "DexManager_1.0.9_x64.msi".to_string(),
+        "https://example.test/manager-setup.msi".to_string(),
     )];
 
     assert!(select_update_asset(&assets).is_none());

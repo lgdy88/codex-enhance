@@ -49,10 +49,12 @@ Repository: [https://github.com/lgdy88/codex-enhance](https://github.com/lgdy88/
 Download the Windows installer from [Releases](https://github.com/lgdy88/codex-enhance/releases):
 
 ```text
-Dex-<version>-windows-x64-setup.exe
+Dex-<version>-windows-x64.msi
 ```
 
-After installation, two entries are created:
+The MSI uses a per-user install and does not require administrator privileges. It installs to `%LocalAppData%\Programs\Dex` by default. Unsigned builds may trigger SmartScreen, so verify the asset against `SHA256SUMS-windows-latest` on the Release.
+
+After installation, this entry is created:
 
 ```text
 Dex.lnk
@@ -287,12 +289,13 @@ crates/
   codex-plus-core/              Launch, injection, config, update, install, bridge
   codex-plus-data/              Session data, export, Provider Sync
 scripts/installer/
-  windows/Dex.nsi               Windows NSIS installer
   macos/package-dmg.sh          macOS DMG packager
+apps/codex-plus-manager/src-tauri/wix/
+  per-user-main.wxs             Windows Tauri WiX/MSI per-user template
 ```
 
 The Windows installer is built by the release workflow and uses this filename pattern:
 
 ```text
-Dex-<version>-windows-x64-setup.exe
+Dex-<version>-windows-x64.msi
 ```

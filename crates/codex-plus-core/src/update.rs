@@ -179,7 +179,7 @@ pub fn platform_download_asset_for_version(version: &str) -> Option<ReleaseAsset
     let tag = normalized_release_tag(version);
     let asset_version = tag.trim_start_matches(['v', 'V']);
     let name = if cfg!(windows) {
-        format!("Dex-{asset_version}-windows-x64-setup.exe")
+        format!("Dex-{asset_version}-windows-x64.msi")
     } else if cfg!(target_os = "macos") {
         format!("Dex-{asset_version}-macos-universal.dmg")
     } else {
@@ -361,7 +361,7 @@ fn platform_asset_rank(name: &str) -> u8 {
 }
 
 fn is_windows_installer_asset(name: &str) -> bool {
-    name.starts_with("dex-") && name.contains("-windows-") && name.ends_with("-setup.exe")
+    name.starts_with("dex-") && name.contains("-windows-") && name.ends_with(".msi")
 }
 
 fn is_macos_installer_asset(name: &str) -> bool {
@@ -372,7 +372,18 @@ pub fn launch_installer(path: &Path) -> anyhow::Result<()> {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        std::process::Command::new(path)
+        let mut command = if path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("msi"))
+        {
+            let mut command = std::process::Command::new("msiexec.exe");
+            command.arg("/i").arg(path);
+            command
+        } else {
+            std::process::Command::new(path)
+        };
+        command
             .creation_flags(crate::windows_integration::CREATE_NO_WINDOW)
             .spawn()
             .map(|_| ())
