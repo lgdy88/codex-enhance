@@ -7,6 +7,10 @@ use codex_plus_core::app_paths::{
     find_latest_codex_app_dir_from_roots, find_macos_codex_app, normalize_codex_app_path,
     packaged_app_user_model_id, resolve_codex_app_dir_with_saved, user_data_candidates_from,
 };
+#[cfg(windows)]
+use codex_plus_core::app_paths::{
+    select_windows_codex_app_dir_from_appx_package, select_windows_codex_app_dir_from_process_paths,
+};
 use codex_plus_core::launcher::{
     CodexLaunch, DefaultLaunchHooks, LaunchHooks, LaunchOptions, MacosCleanupPolicy,
     build_codex_arguments, build_codex_command, build_macos_cleanup_command,
@@ -54,6 +58,94 @@ fn app_paths_find_latest_windows_package_checks_roots_before_fallback() {
     let latest = find_latest_codex_app_dir_from_roots(&[root]).unwrap();
 
     assert!(latest.ends_with("OpenAI.Codex_26.513.3673.0_x64__abc/app"));
+}
+
+#[test]
+fn app_paths_normalizes_running_windows_packaged_executable() {
+    let executable = PathBuf::from(r"C:\Program Files\WindowsApps")
+        .join("OpenAI.Codex_26.527.3686.0_x64__2p2nqsd0c76g0")
+        .join("app")
+        .join("Codex.exe");
+    let nested_executable = PathBuf::from(r"C:\Program Files\WindowsApps")
+        .join("OpenAI.Codex_26.527.3686.0_x64__2p2nqsd0c76g0")
+        .join("app")
+        .join("resources")
+        .join("codex.exe");
+
+    let app_dir = normalize_codex_app_path(&executable).unwrap();
+    let nested_app_dir = normalize_codex_app_path(&nested_executable).unwrap();
+
+    assert!(
+        app_dir
+            .ends_with(PathBuf::from("OpenAI.Codex_26.527.3686.0_x64__2p2nqsd0c76g0").join("app"))
+    );
+    assert_eq!(nested_app_dir, app_dir);
+    assert_eq!(
+        codex_app_version(&app_dir).as_deref(),
+        Some("26.527.3686.0")
+    );
+    assert_eq!(
+        packaged_app_user_model_id(&app_dir).as_deref(),
+        Some("OpenAI.Codex_2p2nqsd0c76g0!App")
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn app_paths_selects_running_windows_store_codex_process() {
+    let older = PathBuf::from(r"C:\Program Files\WindowsApps")
+        .join("OpenAI.Codex_26.100.0.0_x64__2p2nqsd0c76g0")
+        .join("app")
+        .join("Codex.exe");
+    let latest = PathBuf::from(r"C:\Program Files\WindowsApps")
+        .join("OpenAI.Codex_26.527.3686.0_x64__2p2nqsd0c76g0")
+        .join("app")
+        .join("resources")
+        .join("codex.exe");
+    let non_packaged = PathBuf::from(r"C:\Users\me\AppData\Local\OpenAI\Codex\bin\abc\codex.exe");
+
+    let selected =
+        select_windows_codex_app_dir_from_process_paths([older, non_packaged, latest]).unwrap();
+
+    assert!(
+        selected
+            .ends_with(PathBuf::from("OpenAI.Codex_26.527.3686.0_x64__2p2nqsd0c76g0").join("app"))
+    );
+    assert_eq!(
+        codex_app_version(&selected).as_deref(),
+        Some("26.527.3686.0")
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn app_paths_selects_windows_appx_package_without_directory_scan() {
+    let selected = select_windows_codex_app_dir_from_appx_package(
+        r"C:\Program Files\WindowsApps\OpenAI.Codex_26.527.3686.0_x64__2p2nqsd0c76g0",
+        Some("OpenAI.Codex_2p2nqsd0c76g0"),
+    )
+    .unwrap();
+
+    assert!(
+        selected
+            .ends_with(PathBuf::from("OpenAI.Codex_26.527.3686.0_x64__2p2nqsd0c76g0").join("app"))
+    );
+    assert_eq!(
+        codex_app_version(&selected).as_deref(),
+        Some("26.527.3686.0")
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn app_paths_rejects_non_codex_appx_package() {
+    assert!(
+        select_windows_codex_app_dir_from_appx_package(
+            r"C:\Program Files\WindowsApps\Other.App_1.0.0.0_x64__abc",
+            Some("Other.App_abc"),
+        )
+        .is_none()
+    );
 }
 
 #[test]
