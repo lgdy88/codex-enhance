@@ -105,13 +105,8 @@ jobs:
               exit 1
             fi
             cp "$msi" "desktop-dist/Dex-${VERSION}-windows-x64.msi"
-            cp "$msi" "desktop-dist/CodexPlusPlus-${VERSION}-windows-x64.msi"
           elif [ "$RUNNER_OS" = "macOS" ]; then
             cp dist/macos/Dex-*-macos-universal.dmg desktop-dist/
-            for asset in desktop-dist/Dex-*-macos-universal.dmg; do
-              version="${asset#desktop-dist/Dex-}"
-              cp "$asset" "desktop-dist/CodexPlusPlus-${version}"
-            done
           fi
           cd desktop-dist
           if compgen -G "*" >/dev/null; then
@@ -162,6 +157,7 @@ jobs:
           const assets = (release.assets || [])
             .map((asset) => asset.name)
             .filter((name) => name !== "latest.json")
+            .filter((name) => !name.startsWith("CodexPlusPlus-"))
             .map((name) => ({ name, url: `${baseUrl}/${encodeURIComponent(name)}` }));
           const payload = {
             version: `v${version}`,

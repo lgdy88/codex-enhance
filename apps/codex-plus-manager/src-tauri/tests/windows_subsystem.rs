@@ -93,9 +93,11 @@ fn release_workflow_builds_unified_desktop_installers() {
     assert!(workflow.contains("codex-plus-plus-x86_64-pc-windows-msvc.exe"));
     assert!(workflow.contains("bundle/msi/*.msi"));
     assert!(workflow.contains("Dex-${VERSION}-windows-x64.msi"));
-    assert!(workflow.contains("CodexPlusPlus-${VERSION}-windows-x64.msi"));
     assert!(workflow.contains("Package macOS installer"));
     assert!(workflow.contains("package-dmg.sh"));
+    assert!(!workflow.contains("CodexPlusPlus-${VERSION}-windows-x64.msi"));
+    assert!(!workflow.contains("CodexPlusPlus-${version}"));
+    assert!(workflow.contains("!name.startsWith(\"CodexPlusPlus-\")"));
     assert!(!workflow.to_ascii_lowercase().contains("makensis"));
     assert!(!workflow.to_ascii_lowercase().contains("choco install nsis"));
     assert!(!workflow.to_ascii_lowercase().contains("dex.nsi"));
