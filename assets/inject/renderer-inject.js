@@ -907,8 +907,6 @@
   let codexModelCatalog = { status: "checking", model: "", default_model: "", model_provider: "", provider_name: "", models: [], sources: [], responses_api: { status: "unknown", endpoint: "", message: "" } };
   let codexModelCatalogLoadedAt = 0;
   let codexModelCatalogPromise = null;
-  const codexPlusModelListRequestIds = new Set();
-
   function codexPlusModelUnlockEnabled() {
     return !!codexPlusSettings().modelWhitelistUnlock;
   }
@@ -1197,45 +1195,6 @@
       }
     }
     return changed;
-  }
-
-  function patchMcpModelResponseData(data) {
-    if (data?.type !== "mcp-response") return false;
-    const message = data.message || data.response;
-    const requestId = message?.id != null ? String(message.id) : "";
-    if (codexPlusModelListRequestIds.size > 0 && !codexPlusModelListRequestIds.has(requestId)) return false;
-    codexPlusModelListRequestIds.delete(requestId);
-    return patchModelContainer(data) || patchModelContainer(message) || patchModelContainer(message?.result) || patchModelContainer(message?.result?.data);
-  }
-
-  function patchAppServerModelMessages() {
-    if (window.__codexPlusModelMessagePatchInstalled) return;
-    window.__codexPlusModelMessagePatchInstalled = true;
-    const originalDispatchEvent = window.dispatchEvent;
-    window.dispatchEvent = function patchedCodexPlusDispatchEvent(event) {
-      try {
-        const detail = event?.detail;
-        const request = detail?.request;
-        if (event?.type === "codex-message-from-view" && detail?.type === "mcp-request" && request?.method === "model/list") {
-          request.params = { ...(request.params || {}), includeHidden: true };
-          if (request.id != null) codexPlusModelListRequestIds.add(String(request.id));
-        }
-        if (event?.type === "message") patchMcpModelResponseData(event.data);
-      } catch (error) {
-        window.__codexPlusModelPatchFailures = window.__codexPlusModelPatchFailures || [];
-        window.__codexPlusModelPatchFailures.push(String(error?.stack || error));
-      }
-      return originalDispatchEvent.call(this, event);
-    };
-
-    window.addEventListener("message", (event) => {
-      try {
-        patchMcpModelResponseData(event?.data);
-      } catch (error) {
-        window.__codexPlusModelPatchFailures = window.__codexPlusModelPatchFailures || [];
-        window.__codexPlusModelPatchFailures.push(String(error?.stack || error));
-      }
-    }, true);
   }
 
   function selectCodexPlusTab(tab) {
@@ -1685,7 +1644,6 @@
 
   function patchCodexModelWhitelist() {
     if (!codexPlusModelUnlockEnabled()) return;
-    patchAppServerModelMessages();
     if (!codexPlusModelNames().length) {
       loadCodexModelCatalog();
       return;

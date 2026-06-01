@@ -29,7 +29,6 @@ Repository: [https://github.com/lgdy88/codex-enhance](https://github.com/lgdy88/
 - [Screenshots](#screenshots)
 - [How It Works and Boundaries](#how-it-works-and-boundaries)
 - [Provider History Manager](#provider-history-manager)
-- [Browser MCP](#browser-mcp)
 - [Data and Backups](#data-and-backups)
 - [FAQ](#faq)
 - [Development](#development)
@@ -40,7 +39,6 @@ Repository: [https://github.com/lgdy88/codex-enhance](https://github.com/lgdy88/
 - Restore plugin-entry visibility in API Key mode.
 - Delete, export, or move local sessions.
 - Keep historical conversations visible after switching `model_provider`.
-- Manage Chrome DevTools MCP / Playwright MCP configuration from the desktop manager.
 
 ## Install
 
@@ -117,7 +115,6 @@ The manager provides these actions:
 - Configure the Codex App path, launch arguments, enhancement toggle, and Provider auto-sync.
 - Manage user scripts.
 - Run Provider History path repair and metadata convergence.
-- Install, remove, or enable browser MCP configuration.
 - View logs, diagnostics, and GitHub Release updates.
 
 ## Features
@@ -129,7 +126,6 @@ The manager provides these actions:
 - Session project move for local conversations.
 - Conversation Timeline for user-message navigation.
 - Provider History Manager backed by local SQLite visibility repair.
-- Browser MCP management for Chrome DevTools MCP and Playwright MCP.
 - Windows entry setup/repair, optional watcher, and GitHub Release updates.
 - User script management with scanning, toggles, deletion, and startup injection.
 
@@ -164,7 +160,6 @@ Boundaries:
 
 - It does not modify original Codex App files.
 - It does not bypass official account, region, rollout, or backend permissions.
-- Browser MCP management only writes local Codex config and does not display tokens, DSNs, or full command arguments.
 - Delete, path repair, and provider metadata convergence back up related local data before writing.
 - The optional watcher only logs by default; it attempts native-launch takeover only when `CODEX_PLUS_ALLOW_FORCE_TAKEOVER=1` is set.
 
@@ -181,21 +176,6 @@ Use it when:
 Path repair only normalizes equivalent path formats, such as `\\?\D:\...` / `D:/...` to `D:\...`. It does not switch providers or move conversations between projects.
 
 Compatibility mode's "converge to current provider" action backs up first, then converges historical metadata to the current `model_provider`. This only guarantees list visibility; it does not guarantee that cross-account or cross-provider `encrypted_content` can resume.
-
-## Browser MCP
-
-Browser MCP is managed from the desktop manager. It maintains these entries:
-
-- `chrome-devtools`: uses `chrome-devtools-mcp@latest` for Chrome pages, console, network, DOM, and performance debugging.
-- `playwright`: uses `@playwright/mcp@latest --browser=chrome --caps=devtools` for browser automation and page-state capture.
-
-If Chrome does not support default `--autoConnect`, switch to `browser-url` mode in the manager and provide a remote debugging endpoint, for example:
-
-```text
-http://127.0.0.1:9222
-```
-
-This does not bypass official Computer Use account, region, rollout, or backend restrictions.
 
 ## Data and Backups
 
@@ -248,10 +228,6 @@ You can also check whether Codex has the CDP flag:
 ```text
 --remote-debugging-port=9229
 ```
-
-### Chrome Computer Use connection is broken
-
-The manager can maintain Chrome DevTools MCP / Playwright MCP configuration, but it does not emulate the official backend and does not bypass account, region, or rollout gating. Restart Codex or open a new session after changing MCP configuration.
 
 ### Skills or GitHub resources fail to load
 

@@ -90,37 +90,6 @@ pub struct WatcherPayload {
     pub disabled_flag: String,
 }
 
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct McpInstallRequest {
-    #[serde(default = "default_mcp_servers")]
-    pub servers: Vec<String>,
-    #[serde(default = "default_chrome_mode")]
-    pub chrome_mode: String,
-    #[serde(default = "default_browser_url")]
-    pub browser_url: String,
-    #[serde(default = "default_true_bool")]
-    pub backup: bool,
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct McpRemoveRequest {
-    #[serde(default = "default_mcp_servers")]
-    pub servers: Vec<String>,
-    #[serde(default = "default_true_bool")]
-    pub backup: bool,
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct McpEnabledRequest {
-    pub name: String,
-    pub enabled: bool,
-    #[serde(default = "default_true_bool")]
-    pub backup: bool,
-}
-
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StartupPayload {
@@ -576,69 +545,6 @@ pub fn reset_settings() -> CommandResult<SettingsPayload> {
     }
 }
 
-#[tauri::command]
-pub fn load_mcp_status() -> codex_plus_core::mcp_config::McpConfigResult {
-    codex_plus_core::mcp_config::load_browser_mcp_status(None)
-}
-
-#[tauri::command]
-pub fn install_browser_mcp(
-    request: McpInstallRequest,
-) -> codex_plus_core::mcp_config::McpConfigResult {
-    match codex_plus_core::mcp_config::install_browser_mcp_servers(
-        &request.servers,
-        chrome_mode_from_request(&request.chrome_mode),
-        &request.browser_url,
-        None,
-        request.backup,
-    ) {
-        Ok(result) => result,
-        Err(error) => mcp_failure(&format!("安装浏览器 MCP 失败：{error}")),
-    }
-}
-
-#[tauri::command]
-pub fn remove_browser_mcp(
-    request: McpRemoveRequest,
-) -> codex_plus_core::mcp_config::McpConfigResult {
-    match codex_plus_core::mcp_config::remove_browser_mcp_servers(
-        &request.servers,
-        None,
-        request.backup,
-    ) {
-        Ok(result) => result,
-        Err(error) => mcp_failure(&format!("移除浏览器 MCP 失败：{error}")),
-    }
-}
-
-#[tauri::command]
-pub fn set_mcp_enabled(request: McpEnabledRequest) -> codex_plus_core::mcp_config::McpConfigResult {
-    match codex_plus_core::mcp_config::set_mcp_server_enabled(
-        &request.name,
-        request.enabled,
-        None,
-        request.backup,
-    ) {
-        Ok(result) => result,
-        Err(error) => mcp_failure(&format!("更新 MCP 开关失败：{error}")),
-    }
-}
-
-fn chrome_mode_from_request(value: &str) -> codex_plus_core::mcp_config::ChromeMode {
-    match value {
-        "browser-url" => codex_plus_core::mcp_config::ChromeMode::BrowserUrl,
-        "default" => codex_plus_core::mcp_config::ChromeMode::Default,
-        _ => codex_plus_core::mcp_config::ChromeMode::AutoConnect,
-    }
-}
-
-fn mcp_failure(message: &str) -> codex_plus_core::mcp_config::McpConfigResult {
-    let mut payload = codex_plus_core::mcp_config::load_browser_mcp_status(None);
-    payload.status = "failed".to_string();
-    payload.message = message.to_string();
-    payload
-}
-
 fn open_url(url: &str) -> anyhow::Result<()> {
     #[cfg(windows)]
     {
@@ -875,22 +781,6 @@ fn default_helper_port() -> u16 {
 
 fn default_log_lines() -> usize {
     200
-}
-
-fn default_true_bool() -> bool {
-    true
-}
-
-fn default_mcp_servers() -> Vec<String> {
-    vec!["all".to_string()]
-}
-
-fn default_chrome_mode() -> String {
-    "auto-connect".to_string()
-}
-
-fn default_browser_url() -> String {
-    "http://127.0.0.1:9222".to_string()
 }
 
 #[cfg(test)]

@@ -45,11 +45,7 @@ pub fn run() {
             commands::disable_watcher,
             commands::read_latest_logs,
             commands::copy_diagnostics,
-            commands::reset_settings,
-            commands::load_mcp_status,
-            commands::install_browser_mcp,
-            commands::remove_browser_mcp,
-            commands::set_mcp_enabled
+            commands::reset_settings
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Dex manager");
