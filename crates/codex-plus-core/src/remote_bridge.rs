@@ -29,6 +29,15 @@ pub struct RemoteBridgeStatus {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct RemoteAppServerState {
+    pid: u32,
+    started_at_ms: u64,
+    listen_url: String,
+    log_path: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct RemoteBridgeState {
     pid: u32,
     started_at_ms: u64,
@@ -94,6 +103,7 @@ impl RemoteBridgeController {
             anyhow::bail!("未找到飞书桥接脚本：{}", self.script_path.to_string_lossy());
         }
         validate_launch_config(config)?;
+        ensure_app_server_running(config, &self.log_path)?;
         if let Some(parent) = self.log_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -144,6 +154,7 @@ impl RemoteBridgeController {
 
     pub fn stop(&self) -> anyhow::Result<RemoteBridgeStatus> {
         let Some(state) = self.read_state()? else {
+            stop_managed_app_server(&self.log_path)?;
             return Ok(self.stopped_status("飞书桥接尚未启动。".to_string(), None));
         };
         if process_running(state.pid) {
@@ -154,6 +165,7 @@ impl RemoteBridgeController {
             )?;
         }
         let _ = std::fs::remove_file(&self.status_path);
+        stop_managed_app_server(&self.log_path)?;
         Ok(self.stopped_status(
             format!("飞书桥接已请求停止：{}", state.pid),
             Some(state.started_at_ms),
@@ -281,6 +293,14 @@ fn default_bridge_script_path() -> PathBuf {
     crate::paths::default_app_state_dir().join("feishu-bridge.mjs")
 }
 
+fn default_app_server_status_path() -> PathBuf {
+    crate::paths::default_app_state_dir().join("remote-app-server-status.json")
+}
+
+fn default_app_server_log_path() -> PathBuf {
+    crate::paths::default_app_state_dir().join("remote-app-server.log")
+}
+
 fn default_bridge_workdir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
@@ -310,6 +330,119 @@ fn append_log_line(path: &Path, message: &str) -> std::io::Result<()> {
     }
     let mut file = OpenOptions::new().create(true).append(true).open(path)?;
     writeln!(file, "[{}] {message}", now_ms())
+}
+
+fn ensure_app_server_running(
+    config: &RemoteControlConfig,
+    bridge_log_path: &Path,
+) -> anyhow::Result<()> {
+    let listen_url = format!("ws://{}:{}", config.bind_host, config.app_server_port);
+    let status_path = default_app_server_status_path();
+    if let Ok(Some(state)) = read_app_server_state(&status_path) {
+        if state.listen_url == listen_url && process_running(state.pid) {
+            return Ok(());
+        }
+    }
+    if tcp_port_listening(config.app_server_port) {
+        return Ok(());
+    }
+    let log_path = default_app_server_log_path();
+    append_log_line(
+        bridge_log_path,
+        &format!("starting codex app-server {listen_url}"),
+    )?;
+    if let Some(parent) = log_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let stdout = log_file(&log_path)?;
+    let stderr = log_file(&log_path)?;
+    let mut command = Command::new("codex");
+    command
+        .args(["app-server", "--listen", &listen_url])
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(stdout))
+        .stderr(Stdio::from(stderr));
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(crate::windows_create_no_window());
+    }
+    let child = command
+        .spawn()
+        .with_context(|| format!("无法启动 Codex app-server：{listen_url}"))?;
+    let state = RemoteAppServerState {
+        pid: child.id(),
+        started_at_ms: now_ms(),
+        listen_url,
+        log_path: log_path.to_string_lossy().to_string(),
+    };
+    write_app_server_state(&status_path, &state)?;
+    wait_for_app_server(config.app_server_port, bridge_log_path)
+}
+
+fn stop_managed_app_server(bridge_log_path: &Path) -> anyhow::Result<()> {
+    let status_path = default_app_server_status_path();
+    let Some(state) = read_app_server_state(&status_path)? else {
+        return Ok(());
+    };
+    if process_running(state.pid) {
+        kill_process(state.pid)?;
+        append_log_line(
+            bridge_log_path,
+            &format!("stop requested for codex app-server pid {}", state.pid),
+        )?;
+    }
+    let _ = std::fs::remove_file(status_path);
+    Ok(())
+}
+
+fn read_app_server_state(path: &Path) -> anyhow::Result<Option<RemoteAppServerState>> {
+    let contents = match std::fs::read_to_string(path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    Ok(serde_json::from_str(&contents).ok())
+}
+
+fn write_app_server_state(path: &Path, state: &RemoteAppServerState) -> anyhow::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let bytes = serde_json::to_vec_pretty(state)?;
+    atomic_write(path, &bytes)
+}
+
+fn wait_for_app_server(port: u16, bridge_log_path: &Path) -> anyhow::Result<()> {
+    let mut last_error = None;
+    for _ in 0..40 {
+        if tcp_port_listening(port) {
+            append_log_line(
+                bridge_log_path,
+                &format!("codex app-server ready on {port}"),
+            )?;
+            return Ok(());
+        }
+        if let Err(error) = try_connect_port(port) {
+            last_error = Some(error);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    }
+    Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Codex app-server 未监听端口 {port}")))
+}
+
+fn tcp_port_listening(port: u16) -> bool {
+    try_connect_port(port).is_ok()
+}
+
+fn try_connect_port(port: u16) -> anyhow::Result<()> {
+    let addr = format!("127.0.0.1:{port}");
+    let stream = std::net::TcpStream::connect_timeout(
+        &addr.parse()?,
+        std::time::Duration::from_millis(220),
+    )?;
+    drop(stream);
+    Ok(())
 }
 
 fn node_command() -> &'static str {

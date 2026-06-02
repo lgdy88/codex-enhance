@@ -1,4 +1,4 @@
-import { Moon, RefreshCw, Rocket, Sun } from "lucide-react";
+import { CircleArrowUp, Moon, RefreshCw, Rocket, Sun } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import dexLogo from "./assets/dex-logo.png";
@@ -446,6 +446,18 @@ export function App() {
       <aside className="sidebar">
         <div className="brand">
           <img className="brand-logo" src={dexLogo} alt="Dex" />
+          <Button
+            aria-label="检查更新"
+            className="brand-update-button"
+            disabled={busy}
+            onClick={() => void actions.checkUpdate()}
+            size="icon"
+            title="检查更新"
+            type="button"
+            variant="ghost"
+          >
+            <CircleArrowUp className="h-5 w-5" aria-hidden="true" />
+          </Button>
         </div>
         <nav className="nav">
           {routes.map((item) => {

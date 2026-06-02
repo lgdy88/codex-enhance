@@ -42,6 +42,8 @@ import type {
   WatcherResult,
 } from "@/types";
 
+const PROJECTLESS_VALUE = "__codex_projectless__";
+
 export function OverviewScreen({ overview, actions }: { overview: OverviewResult | null; actions: Actions }) {
   const health = healthItems(overview);
   return (
@@ -254,8 +256,14 @@ export function RemoteControlScreen({
   const dependencyChecks = dependencies?.checks ?? [];
   const bridgeEnv = status?.commands.feishuBridgeEnv ?? [];
   const projects = inventory?.inventory.projects ?? [];
-  const projectThreads = (inventory?.inventory.threads ?? []).filter((thread) => !form.workspacePath || thread.cwd === form.workspacePath);
-  const selectProject = (cwd: string) => {
+  const selectedProjectValue = form.workspacePath ? form.workspacePath : projects.some((project) => !project.cwd && project.name === form.workspaceName) ? PROJECTLESS_VALUE : "";
+  const isProjectlessSelected = selectedProjectValue === PROJECTLESS_VALUE;
+  const projectThreads = (inventory?.inventory.threads ?? []).filter((thread) => {
+    if (isProjectlessSelected) return !thread.cwd;
+    return !form.workspacePath || thread.cwd === form.workspacePath;
+  });
+  const selectProject = (value: string) => {
+    const cwd = value === PROJECTLESS_VALUE ? "" : value;
     const project = projects.find((item) => item.cwd === cwd);
     const nextThread = (inventory?.inventory.threads ?? []).find((thread) => thread.cwd === cwd);
     onFormChange({
@@ -336,10 +344,10 @@ export function RemoteControlScreen({
           </label>
           <div className="setting-grid">
             <Field label="选择项目">
-              <select value={form.workspacePath} onChange={(event) => selectProject(event.currentTarget.value)}>
+              <select value={selectedProjectValue} onChange={(event) => selectProject(event.currentTarget.value)}>
                 <option value="">手动输入或选择项目</option>
                 {projects.map((project) => (
-                  <option key={project.cwd} value={project.cwd}>
+                  <option key={project.cwd || PROJECTLESS_VALUE} value={project.cwd || PROJECTLESS_VALUE}>
                     {project.name} ({project.threadCount})
                   </option>
                 ))}

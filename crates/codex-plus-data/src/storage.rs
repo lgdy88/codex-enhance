@@ -3,7 +3,7 @@ use codex_plus_core::models::{DeleteResult, DeleteStatus, SessionRef};
 use rusqlite::types::{ToSqlOutput, Value as SqlValue, ValueRef};
 use rusqlite::{Connection, ToSql};
 use serde_json::{Map, Value, json};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -51,6 +51,13 @@ pub struct CodexRemoteInventory {
 
 #[derive(Debug, Clone)]
 struct OwnedSqlValue(SqlValue);
+
+#[derive(Debug, Clone, Default)]
+struct CodexWorkspaceState {
+    workspace_roots: Vec<String>,
+    workspace_labels: HashMap<String, String>,
+    projectless_thread_ids: HashSet<String>,
+}
 
 impl ToSql for OwnedSqlValue {
     fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
@@ -190,8 +197,14 @@ impl SQLiteStorageAdapter {
                     threads: Vec::new(),
                 });
             }
-            let threads = list_codex_threads(&db, max_threads)?;
-            let projects = summarize_projects(&threads);
+            let workspace_state = load_codex_workspace_state(&default_codex_global_state_path());
+            let mut threads = list_codex_threads(&db, max_threads)?;
+            normalize_projectless_threads(&mut threads, &workspace_state.projectless_thread_ids);
+            let projects = if workspace_state.workspace_roots.is_empty() {
+                summarize_projects(&threads)
+            } else {
+                summarize_codex_projects(&threads, &workspace_state)
+            };
             Ok(CodexRemoteInventory {
                 status: "ok".to_string(),
                 message: format!(
@@ -698,6 +711,52 @@ fn summarize_projects(threads: &[CodexThreadSummary]) -> Vec<CodexProjectSummary
     projects
 }
 
+fn summarize_codex_projects(
+    threads: &[CodexThreadSummary],
+    workspace_state: &CodexWorkspaceState,
+) -> Vec<CodexProjectSummary> {
+    let mut projects = Vec::new();
+    for cwd in &workspace_state.workspace_roots {
+        let thread_count = threads
+            .iter()
+            .filter(|thread| same_cwd(&thread.cwd, cwd))
+            .count();
+        let latest_updated_at_ms = threads
+            .iter()
+            .filter(|thread| same_cwd(&thread.cwd, cwd))
+            .filter_map(|thread| thread.updated_at_ms)
+            .max();
+        projects.push(CodexProjectSummary {
+            name: workspace_state
+                .workspace_labels
+                .get(&normalize_cwd_key(cwd))
+                .cloned()
+                .unwrap_or_else(|| project_name_from_cwd(cwd)),
+            cwd: cwd.clone(),
+            thread_count,
+            latest_updated_at_ms,
+        });
+    }
+    let projectless_count = threads
+        .iter()
+        .filter(|thread| thread.cwd.trim().is_empty())
+        .count();
+    if projectless_count > 0 || !workspace_state.projectless_thread_ids.is_empty() {
+        let latest_updated_at_ms = threads
+            .iter()
+            .filter(|thread| thread.cwd.trim().is_empty())
+            .filter_map(|thread| thread.updated_at_ms)
+            .max();
+        projects.push(CodexProjectSummary {
+            name: "无项目对话".to_string(),
+            cwd: String::new(),
+            thread_count: projectless_count,
+            latest_updated_at_ms,
+        });
+    }
+    projects
+}
+
 fn newest_timestamp(left: Option<i64>, right: Option<i64>) -> Option<i64> {
     match (left, right) {
         (Some(left), Some(right)) => Some(left.max(right)),
@@ -714,6 +773,93 @@ fn project_name_from_cwd(cwd: &str) -> String {
         .filter(|name| !name.is_empty())
         .map(ToString::to_string)
         .unwrap_or_else(|| cwd.to_string())
+}
+
+fn default_codex_global_state_path() -> PathBuf {
+    directories::BaseDirs::new()
+        .map(|dirs| {
+            dirs.home_dir()
+                .join(".codex")
+                .join(".codex-global-state.json")
+        })
+        .unwrap_or_else(|| PathBuf::from(".codex").join(".codex-global-state.json"))
+}
+
+fn load_codex_workspace_state(path: &Path) -> CodexWorkspaceState {
+    let contents = match fs::read_to_string(path) {
+        Ok(contents) => contents,
+        Err(_) => return CodexWorkspaceState::default(),
+    };
+    let value: Value = match serde_json::from_str(&contents) {
+        Ok(value) => value,
+        Err(_) => return CodexWorkspaceState::default(),
+    };
+    let mut roots = string_array(value.get("project-order"));
+    for root in string_array(value.get("electron-saved-workspace-roots")) {
+        push_unique_cwd(&mut roots, root);
+    }
+    let labels = value
+        .get("electron-workspace-root-labels")
+        .and_then(Value::as_object)
+        .map(|labels| {
+            labels
+                .iter()
+                .filter_map(|(cwd, label)| {
+                    label
+                        .as_str()
+                        .map(|label| (normalize_cwd_key(cwd), label.to_string()))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    CodexWorkspaceState {
+        workspace_roots: roots,
+        workspace_labels: labels,
+        projectless_thread_ids: string_array(value.get("projectless-thread-ids"))
+            .into_iter()
+            .collect(),
+    }
+}
+
+fn normalize_projectless_threads(
+    threads: &mut [CodexThreadSummary],
+    projectless_thread_ids: &HashSet<String>,
+) {
+    for thread in threads {
+        if projectless_thread_ids.contains(thread.id.as_str()) {
+            thread.cwd.clear();
+        }
+    }
+}
+
+fn string_array(value: Option<&Value>) -> Vec<String> {
+    value
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .filter(|value| !value.trim().is_empty())
+                .map(ToString::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn push_unique_cwd(values: &mut Vec<String>, value: String) {
+    let key = normalize_cwd_key(&value);
+    if values.iter().any(|item| normalize_cwd_key(item) == key) {
+        return;
+    }
+    values.push(value);
+}
+
+fn same_cwd(left: &str, right: &str) -> bool {
+    normalize_cwd_key(left) == normalize_cwd_key(right)
+}
+
+fn normalize_cwd_key(value: &str) -> String {
+    value.trim().replace('\\', "/").to_lowercase()
 }
 
 fn select_dicts(db: &Connection, sql: &str, params: &[&dyn ToSql]) -> anyhow::Result<Vec<Value>> {
@@ -1066,5 +1212,88 @@ fn json_to_sql_value(value: &Value) -> SqlValue {
         }
         Value::String(value) => SqlValue::Text(value.clone()),
         other => SqlValue::Text(other.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn codex_projects_follow_saved_workspace_order() {
+        let threads = vec![
+            thread("1", "D:\\temp\\files-mentioned-by-the-user-png", 1),
+            thread("2", "D:\\Skye\\codex-enhance", 5),
+            thread("3", "D:\\Skye\\Meta", 10),
+        ];
+        let state = CodexWorkspaceState {
+            workspace_roots: vec![
+                "D:\\Skye\\Meta".to_string(),
+                "D:\\Skye\\codex-enhance".to_string(),
+            ],
+            workspace_labels: HashMap::new(),
+            projectless_thread_ids: HashSet::new(),
+        };
+
+        let projects = summarize_codex_projects(&threads, &state);
+
+        assert_eq!(
+            projects
+                .iter()
+                .map(|project| project.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Meta", "codex-enhance"]
+        );
+    }
+
+    #[test]
+    fn workspace_labels_override_path_names() {
+        let mut labels = HashMap::new();
+        labels.insert(
+            normalize_cwd_key("D:\\APP\\clawd-on-desk"),
+            "桌宠".to_string(),
+        );
+        let state = CodexWorkspaceState {
+            workspace_roots: vec!["D:\\APP\\clawd-on-desk".to_string()],
+            workspace_labels: labels,
+            projectless_thread_ids: HashSet::new(),
+        };
+
+        let projects = summarize_codex_projects(&[], &state);
+
+        assert_eq!(projects[0].name, "桌宠");
+    }
+
+    #[test]
+    fn projectless_threads_are_grouped_as_empty_cwd() {
+        let mut threads = vec![
+            thread("projectless", "D:\\ghost", 1),
+            thread("normal", "D:\\Skye\\Meta", 2),
+        ];
+        let state = CodexWorkspaceState {
+            workspace_roots: vec!["D:\\Skye\\Meta".to_string()],
+            workspace_labels: HashMap::new(),
+            projectless_thread_ids: HashSet::from(["projectless".to_string()]),
+        };
+
+        normalize_projectless_threads(&mut threads, &state.projectless_thread_ids);
+        let projects = summarize_codex_projects(&threads, &state);
+
+        assert!(
+            projects
+                .iter()
+                .any(|project| project.name == "无项目对话" && project.cwd.is_empty())
+        );
+    }
+
+    fn thread(id: &str, cwd: &str, updated_at_ms: i64) -> CodexThreadSummary {
+        CodexThreadSummary {
+            id: id.to_string(),
+            title: id.to_string(),
+            cwd: cwd.to_string(),
+            archived: false,
+            rollout_path: None,
+            updated_at_ms: Some(updated_at_ms),
+        }
     }
 }

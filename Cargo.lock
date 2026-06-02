@@ -378,6 +378,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "codex-plus-core",
+ "directories",
  "rusqlite",
  "serde",
  "serde_json",

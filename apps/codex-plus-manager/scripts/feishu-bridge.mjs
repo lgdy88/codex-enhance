@@ -51,17 +51,13 @@ const inventory = readJson(inventoryPath, { projects: [], threads: [] });
 let state = readJson(statePath, { bindings: {} });
 let processedIds = new Set(Array.isArray(state.processedMessageIds) ? state.processedMessageIds : []);
 seedInitialBinding(state, config);
-const codex = new CodexAppClient(appServerUrl(config), config);
 const WebSocketImpl = wsModule?.WebSocket || globalThis.WebSocket;
-const larkRuntime = larkSdk ? createSdkRuntime(larkSdk, config) : createCliRuntime(config);
+let codex = null;
+let larkRuntime = null;
 const activeChildren = [];
 
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
-
-log("feishu bridge starting", "runtime", larkRuntime.name, "projects", inventory.projects?.length || 0, "threads", inventory.threads?.length || 0);
-await larkRuntime.start();
-log("feishu bridge connected", larkRuntime.name);
 
 async function handleMessageEvent(data) {
   const message = data?.message || {};
@@ -375,13 +371,12 @@ class CodexAppClient {
   async runTurn(turn) {
     await this.connect();
     const threadId = await this.ensureThread(turn);
-    const started = await this.request("turn/start", {
+    const started = await this.request("turn/start", withCwd(turn.workspacePath, {
       threadId,
-      cwd: turn.workspacePath,
       input: textInput(turn.prompt),
       approvalPolicy: this.config.approvalPolicy,
       sandboxPolicy: sandboxPolicy(this.config.sandbox),
-    });
+    }));
     const turnId = started?.turn?.id;
     if (!turnId) return "Codex 已收到请求，但没有返回 turn id。";
     return await this.waitForTurn(turnId);
@@ -409,24 +404,22 @@ class CodexAppClient {
 
   async ensureThread(turn) {
     if (turn.threadId) {
-      await this.request("thread/resume", {
+      await this.request("thread/resume", withCwd(turn.workspacePath, {
         threadId: turn.threadId,
-        cwd: turn.workspacePath,
         approvalPolicy: this.config.approvalPolicy,
         sandbox: this.config.sandbox,
         persistExtendedHistory: true,
-      });
+      }));
       return turn.threadId;
     }
-    const started = await this.request("thread/start", {
-      cwd: turn.workspacePath,
+    const started = await this.request("thread/start", withCwd(turn.workspacePath, {
       approvalPolicy: this.config.approvalPolicy,
       sandbox: this.config.sandbox,
       ephemeral: false,
       experimentalRawEvents: false,
       persistExtendedHistory: true,
       sessionStartSource: "startup",
-    });
+    }));
     const threadId = started?.thread?.id;
     if (!threadId) throw new Error("thread/start did not return a thread id");
     if (turn.threadName) {
@@ -515,6 +508,11 @@ class CodexAppClient {
 
 function textInput(text) {
   return [{ type: "text", text }];
+}
+
+function withCwd(cwd, params) {
+  const trimmed = String(cwd || "").trim();
+  return trimmed ? { ...params, cwd: trimmed } : params;
 }
 
 function sandboxPolicy(value) {
@@ -722,6 +720,9 @@ function appServerUrl(remoteConfig) {
 function assertSafeConfig(remoteConfig) {
   if (!remoteConfig.enabled) throw new Error("remote bridge is disabled");
   if (!remoteConfig.larkAppId || !remoteConfig.larkAppSecret) throw new Error("missing Lark App ID/App Secret");
+  if (!remoteConfig.feishuChatId && !remoteConfig.feishuUserId && !remoteConfig.autoBindP2p) {
+    throw new Error("missing Feishu route; bind chat/user or enable first private-chat auto bind");
+  }
   if (remoteConfig.bindHost !== "127.0.0.1" && remoteConfig.bindHost !== "::1") {
     throw new Error("Codex app-server must stay on loopback");
   }
@@ -778,8 +779,15 @@ function parseArgs(values) {
 
 function shutdown() {
   log("feishu bridge stopping");
-  larkRuntime.stop?.();
+  larkRuntime?.stop?.();
   for (const child of activeChildren) child.kill("SIGTERM");
   runLog.end();
   process.exit(0);
 }
+
+codex = new CodexAppClient(appServerUrl(config), config);
+larkRuntime = larkSdk ? createSdkRuntime(larkSdk, config) : createCliRuntime(config);
+
+log("feishu bridge starting", "runtime", larkRuntime.name, "projects", inventory.projects?.length || 0, "threads", inventory.threads?.length || 0);
+await larkRuntime.start();
+log("feishu bridge connected", larkRuntime.name);
