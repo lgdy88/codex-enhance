@@ -164,7 +164,7 @@ function createSdkRuntime(Lark, remoteConfig) {
       await handleMessageEvent(data);
     },
     "card.action.trigger": async (data) => {
-      await handleCardAction(data);
+      return await handleCardAction(data);
     },
   });
   const wsClient = new Lark.WSClient({

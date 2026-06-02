@@ -10,6 +10,7 @@ import { defaultRemoteControl, remoteConfigToForm, remoteFormToConfig } from "@/
 import { defaultSettings, normalizeSettings } from "@/lib/settings";
 import {
   checkRemoteDependencies as checkRemoteDependenciesCommand,
+  checkUpdate as checkUpdateCommand,
   copyDiagnostics as copyDiagnosticsCommand,
   deleteUserScript as deleteUserScriptCommand,
   handleRemoteBotMessage,
@@ -27,6 +28,7 @@ import {
   repairBackend as repairBackendCommand,
   repairShortcuts as repairShortcutsCommand,
   resetBackendSettings,
+  performUpdate as performUpdateCommand,
   saveRemoteControl as saveRemoteControlCommand,
   runProviderAction,
   runWatcherAction,
@@ -70,6 +72,7 @@ import type {
   SettingsResult,
   Status,
   Theme,
+  UpdateRelease,
   UpdateResult,
   WatcherResult,
 } from "@/types";
@@ -88,6 +91,7 @@ export function App() {
   const [watcher, setWatcher] = useState<WatcherResult | null>(null);
   const [update, setUpdate] = useState<UpdateResult | null>(null);
   const [updateHandle, setUpdateHandle] = useState<Update | null>(null);
+  const [updateRelease, setUpdateRelease] = useState<UpdateRelease | null>(null);
   const [remoteControl, setRemoteControl] = useState<RemoteControlResult | null>(null);
   const [remoteDependencies, setRemoteDependencies] = useState<RemoteDependencyResult | null>(null);
   const [remoteInventory, setRemoteInventory] = useState<RemoteInventoryResult | null>(null);
@@ -340,25 +344,52 @@ export function App() {
     showNotice("Watcher 操作", result.message, result.status);
   };
 
-  const checkUpdate = async (silent = false) => {
+  const checkUpdate = async (silent = false, autoInstall = false) => {
     const checkResult = await run(checkForUpdate);
-    if (!checkResult) return;
-    setUpdate(checkResult.result);
-    setUpdateHandle(checkResult.update);
-    if (shouldShowUpdateNotice(checkResult.result, silent)) {
-      showNotice("GitHub Release 检查", checkResult.result.message, checkResult.result.status);
+    let nextUpdate = checkResult?.result ?? null;
+    let nextHandle = checkResult?.update ?? null;
+    let nextRelease: UpdateRelease | null = null;
+
+    if (!nextUpdate || nextUpdate.status === "failed") {
+      const fallback = await run(checkUpdateCommand);
+      if (!fallback) return;
+      nextUpdate = fallback;
+      nextHandle = null;
+      nextRelease = updateReleaseFromResult(fallback);
+    }
+
+    setUpdate(nextUpdate);
+    setUpdateHandle(nextHandle);
+    setUpdateRelease(nextRelease);
+    if (shouldShowUpdateNotice(nextUpdate, silent)) {
+      showNotice("GitHub Release 检查", nextUpdate.message, nextUpdate.status);
+    }
+    if (autoInstall && nextUpdate.updateAvailable) {
+      await installCheckedUpdate(nextHandle, nextRelease);
     }
   };
 
-  const performUpdate = async () => {
-    if (!updateHandle) {
+  const installCheckedUpdate = async (handle: Update | null, release: UpdateRelease | null) => {
+    if (!handle && !release) {
+      showNotice("更新安装", "请先检查更新并确认有可安装版本。", "not_checked");
+      return;
+    }
+    if (release) {
+      setUpdate((current) => (current ? { ...current, status: "ok", message: "正在下载并启动安装包。", progress: current.progress ?? 0 } : current));
+      const result = await run(() => performUpdateCommand(release));
+      if (!result) return;
+      setUpdate(result);
+      showNotice("更新安装", result.message, result.status);
+      return;
+    }
+    if (!handle) {
       showNotice("更新安装", "请先检查更新并确认有可安装版本。", "not_checked");
       return;
     }
     let downloaded = 0;
     let total = 0;
     const result = await run(() =>
-      installUpdate(updateHandle, (event) => {
+      installUpdate(handle, (event) => {
         if (event.event === "Started") {
           total = event.total;
           downloaded = 0;
@@ -372,6 +403,10 @@ export function App() {
     if (!result) return;
     setUpdate(result);
     showNotice("更新安装", result.message, result.status);
+  };
+
+  const performUpdate = async () => {
+    await installCheckedUpdate(updateHandle, updateRelease);
   };
 
   const copyText = async (text: string, message: string) => {
@@ -393,9 +428,9 @@ export function App() {
       const startup = await run(startupOptions);
       if (startup?.showUpdate) {
         setRoute("about");
-        void checkUpdate(false);
+        void checkUpdate(false, false);
       } else {
-        void checkUpdate(true);
+        void checkUpdate(true, false);
       }
       await refreshOverview(true);
       await refreshSettings(true);
@@ -418,7 +453,7 @@ export function App() {
       installEntrypoints,
       uninstallEntrypoints,
       repairShortcuts,
-      checkUpdate,
+      checkUpdate: () => checkUpdate(false, true),
       performUpdate,
       saveSettings,
       resetSettings,
@@ -569,4 +604,18 @@ function shouldShowUpdateNotice(result: UpdateResult, silent: boolean): boolean 
   if (result.updateAvailable) return true;
   if (silent) return false;
   return true;
+}
+
+function updateReleaseFromResult(result: UpdateResult): UpdateRelease | null {
+  const version = result.latestVersion || "";
+  const assetName = result.assetName || "";
+  const assetUrl = result.assetUrl || "";
+  if (!version || !assetName || !assetUrl) return null;
+  return {
+    version,
+    url: "",
+    body: result.releaseSummary || "",
+    asset_name: assetName,
+    asset_url: assetUrl,
+  };
 }

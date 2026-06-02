@@ -800,7 +800,7 @@ export function AboutScreen({ overview, update, actions }: { overview: OverviewR
           </div>
           <UpdateMessage message={updateMessage} />
           <Toolbar sticky>
-            <Button onClick={() => void actions.checkUpdate()}>检查更新</Button>
+            <Button onClick={() => void actions.checkUpdate()}>检查并更新</Button>
             <Button disabled={!hasUpdate} variant="secondary" onClick={() => void actions.performUpdate()}>下载并安装</Button>
           </Toolbar>
         </CardContent>
