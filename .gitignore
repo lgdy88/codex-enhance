@@ -8,6 +8,7 @@ node_modules/
 .codex_asar_extract_latest/
 .superpowers/
 .claude/
+.serena/
 docs/superpowers/
 
 *.log
