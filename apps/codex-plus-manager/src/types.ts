@@ -80,6 +80,126 @@ export type WatcherResult = CommandResult<{
   disabled_flag: string;
 }>;
 
+export type RemoteControlConfig = {
+  enabled: boolean;
+  channel: "feishu" | string;
+  workspaceName: string;
+  workspacePath: string;
+  larkAppId: string;
+  larkAppSecret: string;
+  larkEncryptKey: string;
+  larkVerificationToken: string;
+  threadName: string;
+  threadId: string;
+  feishuChatId: string;
+  feishuUserId: string;
+  autoBindP2p: boolean;
+  appServerPort: number;
+  bindHost: string;
+  approvalPolicy: string;
+  sandbox: string;
+};
+
+export type RemoteControlCheck = {
+  key: string;
+  label: string;
+  status: string;
+  detail: string;
+};
+
+export type RemoteControlStatus = {
+  status: string;
+  message: string;
+  configPath: string;
+  workspaceReady: boolean;
+  appServerUrl: string;
+  routeKey: string;
+  warnings: string[];
+  commands: {
+    codexAppServer: string;
+    feishuBridgeEnv: string[];
+    feishuBridgeNotes: string[];
+  };
+  checks: RemoteControlCheck[];
+};
+
+export type RemoteControlResult = CommandResult<{
+  config: RemoteControlConfig;
+  status: RemoteControlStatus;
+}>;
+
+export type RemoteDependencyResult = CommandResult<{
+  checks: RemoteControlCheck[];
+}>;
+
+export type CodexProjectSummary = {
+  name: string;
+  cwd: string;
+  threadCount: number;
+  latestUpdatedAtMs: number | null;
+};
+
+export type CodexThreadSummary = {
+  id: string;
+  title: string;
+  cwd: string;
+  archived: boolean;
+  rolloutPath: string | null;
+  updatedAtMs: number | null;
+};
+
+export type RemoteInventoryResult = CommandResult<{
+  inventory: {
+    status: string;
+    message: string;
+    dbPath: string;
+    projects: CodexProjectSummary[];
+    threads: CodexThreadSummary[];
+  };
+}>;
+
+export type RemoteBotMessageResult = CommandResult<{
+  response: {
+    status: string;
+    reply: string;
+    action: string;
+    selection: {
+      workspaceName: string;
+      workspacePath: string;
+      threadId: string;
+      threadName: string;
+      updatedAtMs: number | null;
+    } | null;
+    choices: Array<{
+      index: number;
+      title: string;
+      subtitle: string;
+      value: string;
+    }>;
+    forwardToCodex: {
+      workspacePath: string;
+      threadId: string | null;
+      threadName: string;
+      prompt: string;
+      createNewThread: boolean;
+    } | null;
+  };
+}>;
+
+export type RemoteBridgeResult = CommandResult<{
+  bridge: {
+    status: string;
+    message: string;
+    pid: number | null;
+    startedAtMs: number | null;
+    stoppedAtMs: number | null;
+    scriptPath: string;
+    configPath: string;
+    logPath: string;
+  };
+  log: string;
+}>;
+
 export type InstallResult = CommandResult<{
   silent_shortcut: { installed: boolean; path: string | null };
   management_shortcut: { installed: boolean; path: string | null };
@@ -105,6 +225,7 @@ export type Route =
   | "enhance"
   | "userScripts"
   | "providerSync"
+  | "remoteControl"
   | "maintenance"
   | "settings"
   | "logs"
@@ -117,6 +238,32 @@ export type LaunchForm = {
   appPath: string;
   debugPort: string;
   helperPort: string;
+};
+
+export type RemoteControlForm = {
+  enabled: boolean;
+  channel: string;
+  workspaceName: string;
+  workspacePath: string;
+  larkAppId: string;
+  larkAppSecret: string;
+  larkEncryptKey: string;
+  larkVerificationToken: string;
+  threadName: string;
+  threadId: string;
+  feishuChatId: string;
+  feishuUserId: string;
+  autoBindP2p: boolean;
+  appServerPort: string;
+  bindHost: string;
+  approvalPolicy: string;
+  sandbox: string;
+};
+
+export type RemoteBotForm = {
+  chatId: string;
+  userId: string;
+  text: string;
 };
 
 export type Notice = {
@@ -148,6 +295,13 @@ export type Actions = {
   deleteUserScript: (key: string) => Promise<void>;
   syncProvidersNow: () => Promise<void>;
   repairProviderPaths: () => Promise<void>;
+  saveRemoteControl: () => Promise<void>;
+  checkRemoteDependencies: () => Promise<void>;
+  refreshRemoteInventory: () => Promise<void>;
+  sendRemoteBotMessage: () => Promise<void>;
+  refreshRemoteBridge: () => Promise<void>;
+  startRemoteBridge: () => Promise<void>;
+  stopRemoteBridge: () => Promise<void>;
   openExternalUrl: (url: string) => Promise<void>;
   refreshLogs: () => Promise<void>;
   refreshDiagnostics: () => Promise<void>;

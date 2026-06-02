@@ -9,3 +9,4 @@ pub use provider_sync::{
     ProviderSyncResult, ProviderSyncStatus, run_provider_path_repair, run_provider_sync,
 };
 pub use storage::SQLiteStorageAdapter;
+pub use storage::{CodexProjectSummary, CodexRemoteInventory, CodexThreadSummary};

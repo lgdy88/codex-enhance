@@ -631,6 +631,16 @@ body {
   margin-bottom: 12px;
 }
 
+.field select {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid hsl(var(--input));
+  border-radius: 6px;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  padding: 0 10px;
+}
+
 .field span,
 .check-row span {
   color: hsl(var(--foreground));
@@ -663,10 +673,50 @@ body {
   margin: 10px 0;
 }
 
+.loose-check {
+  align-items: flex-start;
+  color: hsl(var(--muted-foreground));
+  line-height: 1.45;
+}
+
 .check-row input {
   width: 16px;
   height: 16px;
   padding: 0;
+}
+
+.security-grid {
+  margin-top: 12px;
+}
+
+.warning-list {
+  display: grid;
+  gap: 8px;
+  margin: 4px 0 12px;
+}
+
+.warning-item {
+  border: 1px solid hsl(var(--destructive) / 0.34);
+  border-radius: 8px;
+  background: hsl(var(--destructive) / 0.08);
+  color: hsl(var(--foreground));
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  padding: 9px 12px;
+}
+
+.remote-checks {
+  margin-top: 12px;
+}
+
+.command-box {
+  min-height: 48px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.command-box.tallish {
+  min-height: 128px;
 }
 
 .log-view {
@@ -836,6 +886,14 @@ body {
 
   .health-item {
     grid-template-columns: 22px minmax(0, 1fr);
+  }
+
+  .remote-checks .health-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .remote-checks .health-item > span:first-child {
+    display: none;
   }
 
   .health-item .inline-flex {

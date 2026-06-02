@@ -8,6 +8,12 @@ import type {
   LogsResult,
   OverviewResult,
   ProviderActionResult,
+  RemoteControlConfig,
+  RemoteControlResult,
+  RemoteDependencyResult,
+  RemoteInventoryResult,
+  RemoteBridgeResult,
+  RemoteBotMessageResult,
   SettingsResult,
   StartupResult,
   UpdateRelease,
@@ -56,6 +62,25 @@ export const repairBackend = () => call<SettingsResult>("repair_backend");
 export const deleteUserScript = (key: string) => call<SettingsResult>("delete_user_script", { request: { key } });
 
 export const runProviderAction = (command: "sync_providers_now" | "repair_provider_paths") => call<ProviderActionResult>(command);
+
+export const loadRemoteControl = () => call<RemoteControlResult>("load_remote_control");
+
+export const saveRemoteControl = (config: RemoteControlConfig) => call<RemoteControlResult>("save_remote_control", { config });
+
+export const checkRemoteDependencies = () => call<RemoteDependencyResult>("check_remote_dependencies");
+
+export const loadRemoteInventory = () => call<RemoteInventoryResult>("load_remote_inventory");
+
+export const handleRemoteBotMessage = (request: { chatId: string; userId: string; text: string }) =>
+  call<RemoteBotMessageResult>("handle_remote_bot_message", { request });
+
+export const remoteBridgeStatus = () => call<RemoteBridgeResult>("remote_bridge_status");
+
+export const startRemoteBridge = () => call<RemoteBridgeResult>("start_remote_bridge");
+
+export const stopRemoteBridge = () => call<RemoteBridgeResult>("stop_remote_bridge");
+
+export const readRemoteBridgeLog = () => call<RemoteBridgeResult>("read_remote_bridge_log");
 
 export const installEntrypoints = () => call<InstallResult>("install_entrypoints");
 

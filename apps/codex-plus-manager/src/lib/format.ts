@@ -9,13 +9,15 @@ export function statusLabel(status: string) {
     accepted: "已受理",
     not_checked: "未检查",
     disabled: "已禁用",
+    ready: "已就绪",
+    incomplete: "待完善",
     unknown: "未知",
   };
   return labels[status] ?? status;
 }
 
 export function statusClass(status: string) {
-  if (["found", "installed", "ok", "running"].includes(status)) return "good";
+  if (["found", "installed", "ok", "running", "ready"].includes(status)) return "good";
   if (["failed", "missing"].includes(status)) return "bad";
   return "warn";
 }

@@ -19,6 +19,36 @@ enum SchemaKind {
     CodexThreads,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexProjectSummary {
+    pub name: String,
+    pub cwd: String,
+    pub thread_count: usize,
+    pub latest_updated_at_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexThreadSummary {
+    pub id: String,
+    pub title: String,
+    pub cwd: String,
+    pub archived: bool,
+    pub rollout_path: Option<String>,
+    pub updated_at_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexRemoteInventory {
+    pub status: String,
+    pub message: String,
+    pub db_path: String,
+    pub projects: Vec<CodexProjectSummary>,
+    pub threads: Vec<CodexThreadSummary>,
+}
+
 #[derive(Debug, Clone)]
 struct OwnedSqlValue(SqlValue);
 
@@ -135,6 +165,52 @@ impl SQLiteStorageAdapter {
         let id: String = row.get(0).ok()?;
         let row_title: Option<String> = row.get(1).ok()?;
         SessionRef::new(id, row_title.unwrap_or_else(|| title.to_string())).ok()
+    }
+
+    pub fn remote_inventory(&self, max_threads: usize) -> CodexRemoteInventory {
+        if !self.db_path.exists() {
+            return CodexRemoteInventory {
+                status: "failed".to_string(),
+                message: format!("Database not found: {}", self.db_path.to_string_lossy()),
+                db_path: self.db_path.to_string_lossy().to_string(),
+                projects: Vec::new(),
+                threads: Vec::new(),
+            };
+        }
+        let result = (|| -> anyhow::Result<CodexRemoteInventory> {
+            let db = Connection::open(&self.db_path)?;
+            if schema_kind(&db)? != Some(SchemaKind::CodexThreads)
+                || !has_columns(&db, "threads", &["id", "title", "cwd"])?
+            {
+                return Ok(CodexRemoteInventory {
+                    status: "failed".to_string(),
+                    message: "Unsupported local storage schema".to_string(),
+                    db_path: self.db_path.to_string_lossy().to_string(),
+                    projects: Vec::new(),
+                    threads: Vec::new(),
+                });
+            }
+            let threads = list_codex_threads(&db, max_threads)?;
+            let projects = summarize_projects(&threads);
+            Ok(CodexRemoteInventory {
+                status: "ok".to_string(),
+                message: format!(
+                    "已读取 {} 个项目、{} 个对话。",
+                    projects.len(),
+                    threads.len()
+                ),
+                db_path: self.db_path.to_string_lossy().to_string(),
+                projects,
+                threads,
+            })
+        })();
+        result.unwrap_or_else(|err| CodexRemoteInventory {
+            status: "failed".to_string(),
+            message: err.to_string(),
+            db_path: self.db_path.to_string_lossy().to_string(),
+            projects: Vec::new(),
+            threads: Vec::new(),
+        })
     }
 
     pub fn move_codex_thread_workspace(
@@ -527,6 +603,117 @@ fn table_columns(db: &Connection, table: &str) -> anyhow::Result<Vec<String>> {
     ))?;
     let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+fn list_codex_threads(
+    db: &Connection,
+    max_threads: usize,
+) -> anyhow::Result<Vec<CodexThreadSummary>> {
+    let columns: HashSet<String> = table_columns(db, "threads")?.into_iter().collect();
+    let title_expr = if columns.contains("title") {
+        "COALESCE(title, '') AS title"
+    } else {
+        "'' AS title"
+    };
+    let cwd_expr = if columns.contains("cwd") {
+        "COALESCE(cwd, '') AS cwd"
+    } else {
+        "'' AS cwd"
+    };
+    let archived_expr = if columns.contains("archived") {
+        "COALESCE(archived, 0) AS archived"
+    } else {
+        "0 AS archived"
+    };
+    let rollout_expr = if columns.contains("rollout_path") {
+        "rollout_path"
+    } else {
+        "NULL AS rollout_path"
+    };
+    let updated_source = if columns.contains("updated_at_ms") {
+        "updated_at_ms".to_string()
+    } else if columns.contains("updated_at") {
+        "updated_at * 1000".to_string()
+    } else if columns.contains("created_at_ms") {
+        "created_at_ms".to_string()
+    } else {
+        "0".to_string()
+    };
+    let updated_expr = format!("{updated_source} AS updated_at_ms");
+    let limit = max_threads.clamp(1, 500) as i64;
+    let sql = format!(
+        "SELECT id, {title_expr}, {cwd_expr}, {archived_expr}, {rollout_expr}, {updated_expr}
+         FROM threads
+         ORDER BY {updated_source} DESC
+         LIMIT ?1"
+    );
+    let mut stmt = db.prepare(&sql)?;
+    let rows = stmt.query_map([limit], |row| {
+        let id: String = row.get(0)?;
+        let title: Option<String> = row.get(1)?;
+        let cwd: Option<String> = row.get(2)?;
+        let archived: i64 = row.get(3)?;
+        let rollout_path: Option<String> = row.get(4)?;
+        let updated_at_ms: Option<i64> = row.get(5)?;
+        Ok(CodexThreadSummary {
+            title: title
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| id.clone()),
+            id,
+            cwd: cwd.unwrap_or_default(),
+            archived: archived != 0,
+            rollout_path: rollout_path.filter(|value| !value.trim().is_empty()),
+            updated_at_ms,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+fn summarize_projects(threads: &[CodexThreadSummary]) -> Vec<CodexProjectSummary> {
+    let mut projects = Vec::<CodexProjectSummary>::new();
+    for thread in threads {
+        let cwd = thread.cwd.trim();
+        if cwd.is_empty() {
+            continue;
+        }
+        if let Some(project) = projects.iter_mut().find(|project| project.cwd == cwd) {
+            project.thread_count += 1;
+            project.latest_updated_at_ms =
+                newest_timestamp(project.latest_updated_at_ms, thread.updated_at_ms);
+        } else {
+            projects.push(CodexProjectSummary {
+                name: project_name_from_cwd(cwd),
+                cwd: cwd.to_string(),
+                thread_count: 1,
+                latest_updated_at_ms: thread.updated_at_ms,
+            });
+        }
+    }
+    projects.sort_by(|left, right| {
+        right
+            .latest_updated_at_ms
+            .cmp(&left.latest_updated_at_ms)
+            .then_with(|| left.name.cmp(&right.name))
+    });
+    projects
+}
+
+fn newest_timestamp(left: Option<i64>, right: Option<i64>) -> Option<i64> {
+    match (left, right) {
+        (Some(left), Some(right)) => Some(left.max(right)),
+        (Some(left), None) => Some(left),
+        (None, Some(right)) => Some(right),
+        (None, None) => None,
+    }
+}
+
+fn project_name_from_cwd(cwd: &str) -> String {
+    Path::new(cwd)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .map(ToString::to_string)
+        .unwrap_or_else(|| cwd.to_string())
 }
 
 fn select_dicts(db: &Connection, sql: &str, params: &[&dyn ToSql]) -> anyhow::Result<Vec<Value>> {

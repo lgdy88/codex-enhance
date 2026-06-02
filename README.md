@@ -128,6 +128,7 @@ target/release/codex-plus-plus \
 - Provider History Manager：通过本地 SQLite bridge 处理跨 provider 历史可见性。
 - Windows 入口安装/修复、可选 watcher、GitHub Release 更新。
 - 用户脚本管理：独立扫描、开关、删除并在启动时注入。
+- 移动/远程控制中心：配置 Lark / 飞书 Channel，保存飞书 App 凭据、Codex 项目、旧对话和安全策略路由，生成本地 app-server 与 bridge 参数，检查 `codex` / `node` / `lark-cli` 依赖，并提供 `/项目`、`/对话`、`/新建对话` 的命令路由预览和本地桥接启动/停止。
 
 ## 界面预览
 
@@ -162,6 +163,9 @@ Dex 使用外部启动方式运行 Codex：
 - 不绕过官方账号、地区、灰度或后端权限限制。
 - 删除、路径修复、provider metadata 收敛等写操作会先备份相关本地数据。
 - 可选 watcher 默认只记录状态；只有设置 `CODEX_PLUS_ALLOW_FORCE_TAKEOVER=1` 后才会尝试接管原生启动。
+- 飞书远程入口是消息桥接路由，不是飞书扫码直连 Codex。Dex 会把 Lark App ID/App Secret、项目路径、Codex thread、飞书 chat/user 绑定和安全策略保存到本地远程配置；诊断和审计日志只记录是否已设置，不输出 secret 原文。
+- 飞书桥接优先使用官方 Node SDK 长连接接收 `im.message.receive_v1` 和 `card.action.trigger`；缺少 SDK 运行依赖时可退回 `lark-cli` 文本事件链路。
+- 远程桥接默认要求 Codex app-server 只监听 `127.0.0.1` / `::1`，并把 `approvalPolicy=never`、`danger-full-access` 标记为风险状态；不要把 app-server 直接暴露到局域网或公网。
 
 ## Provider History Manager
 

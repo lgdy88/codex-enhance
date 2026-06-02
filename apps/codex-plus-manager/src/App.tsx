@@ -6,26 +6,36 @@ import dexLogo from "./assets/dex-logo.png";
 import { NoticeDialog } from "@/components/app";
 import { Button } from "@/components/ui/button";
 import { numberOrDefault, stringifyError } from "@/lib/format";
+import { defaultRemoteControl, remoteConfigToForm, remoteFormToConfig } from "@/lib/remote-control";
 import { defaultSettings, normalizeSettings } from "@/lib/settings";
 import {
   checkUpdate as checkUpdateCommand,
+  checkRemoteDependencies as checkRemoteDependenciesCommand,
   copyDiagnostics as copyDiagnosticsCommand,
   deleteUserScript as deleteUserScriptCommand,
+  handleRemoteBotMessage,
   installEntrypoints as installEntrypointsCommand,
   launchCodexPlus,
   loadOverview,
+  loadRemoteControl,
+  loadRemoteInventory,
   loadSettings,
   loadWatcherState,
   openExternalUrl as openExternalUrlCommand,
   performUpdate as performUpdateCommand,
+  readRemoteBridgeLog,
+  remoteBridgeStatus,
   readLatestLogs,
   repairBackend as repairBackendCommand,
   repairShortcuts as repairShortcutsCommand,
   resetBackendSettings,
+  saveRemoteControl as saveRemoteControlCommand,
   runProviderAction,
   runWatcherAction,
   saveBackendSettings,
+  startRemoteBridge as startRemoteBridgeCommand,
   startupOptions,
+  stopRemoteBridge as stopRemoteBridgeCommand,
   uninstallEntrypoints as uninstallEntrypointsCommand,
 } from "@/lib/tauri-api";
 import { routes, routeSubtitle, routeTitle } from "@/routes";
@@ -37,6 +47,7 @@ import {
   MaintenanceScreen,
   OverviewScreen,
   ProviderSyncScreen,
+  RemoteControlScreen,
   SettingsScreen,
   UserScriptsScreen,
 } from "@/screens";
@@ -49,6 +60,13 @@ import type {
   Notice,
   OverviewResult,
   ProviderActionResult,
+  RemoteBotForm,
+  RemoteBotMessageResult,
+  RemoteBridgeResult,
+  RemoteControlForm,
+  RemoteControlResult,
+  RemoteDependencyResult,
+  RemoteInventoryResult,
   Route,
   SettingsResult,
   Status,
@@ -69,12 +87,23 @@ export function App() {
   const [diagnostics, setDiagnostics] = useState<DiagnosticsResult | null>(null);
   const [watcher, setWatcher] = useState<WatcherResult | null>(null);
   const [update, setUpdate] = useState<UpdateResult | null>(null);
+  const [remoteControl, setRemoteControl] = useState<RemoteControlResult | null>(null);
+  const [remoteDependencies, setRemoteDependencies] = useState<RemoteDependencyResult | null>(null);
+  const [remoteInventory, setRemoteInventory] = useState<RemoteInventoryResult | null>(null);
+  const [remoteBotResult, setRemoteBotResult] = useState<RemoteBotMessageResult | null>(null);
+  const [remoteBridge, setRemoteBridge] = useState<RemoteBridgeResult | null>(null);
   const [launchForm, setLaunchForm] = useState<LaunchForm>({
     appPath: "",
     debugPort: "9229",
     helperPort: "57321",
   });
   const [settingsForm, setSettingsForm] = useState<BackendSettings>({ ...defaultSettings });
+  const [remoteForm, setRemoteForm] = useState<RemoteControlForm>(remoteConfigToForm(defaultRemoteControl));
+  const [remoteBotForm, setRemoteBotForm] = useState<RemoteBotForm>({
+    chatId: "dex-preview-chat",
+    userId: "dex-preview-user",
+    text: "/项目",
+  });
   const [removeOwnedData, setRemoveOwnedData] = useState(false);
 
   const showNotice = (title: string, message: string, status?: Status) => setNotice({ title, message, status });
@@ -132,10 +161,23 @@ export function App() {
     if (!silent) showNotice("Watcher 状态", result.message, result.status);
   };
 
+  const refreshRemoteControl = async (silent = false) => {
+    const result = await run(loadRemoteControl);
+    if (!result) return;
+    setRemoteControl(result);
+    setRemoteForm(remoteConfigToForm(result.config));
+    const inventory = await run(loadRemoteInventory);
+    if (inventory) setRemoteInventory(inventory);
+    const bridge = await run(remoteBridgeStatus);
+    if (bridge) setRemoteBridge(bridge);
+    if (!silent) showNotice("移动/远程", result.message, result.status);
+  };
+
   const navigate = async (next: Route) => {
     setRoute(next);
     if (next === "overview" || next === "about") await refreshOverview(true);
     if (next === "settings" || next === "userScripts" || next === "providerSync" || next === "enhance") await refreshSettings(true);
+    if (next === "remoteControl") await refreshRemoteControl(true);
     if (next === "logs") await refreshLogs(true);
     if (next === "diagnostics") await refreshDiagnostics(true);
     if (next === "maintenance") {
@@ -209,6 +251,64 @@ export function App() {
     if (!result) return;
     setProviderResult(result);
     showNotice("Provider History", result.message, result.status);
+  };
+
+  const saveRemoteControl = async () => {
+    const result = await run(() => saveRemoteControlCommand(remoteFormToConfig(remoteForm)));
+    if (!result) return;
+    setRemoteControl(result);
+    setRemoteForm(remoteConfigToForm(result.config));
+    const bridge = await run(remoteBridgeStatus);
+    if (bridge) setRemoteBridge(bridge);
+    showNotice("移动/远程", result.message, result.status);
+  };
+
+  const checkRemoteDependencies = async () => {
+    const result = await run(checkRemoteDependenciesCommand);
+    if (!result) return;
+    setRemoteDependencies(result);
+    showNotice("远程依赖诊断", result.message, result.status);
+  };
+
+  const refreshRemoteInventory = async () => {
+    const result = await run(loadRemoteInventory);
+    if (!result) return;
+    setRemoteInventory(result);
+    showNotice("本地项目/对话", result.message, result.status);
+  };
+
+  const refreshRemoteBridge = async () => {
+    const result = await run(readRemoteBridgeLog);
+    if (!result) return;
+    setRemoteBridge(result);
+    showNotice("飞书桥接", result.message, result.status);
+  };
+
+  const startRemoteBridge = async () => {
+    const result = await run(startRemoteBridgeCommand);
+    if (!result) return;
+    setRemoteBridge(result);
+    showNotice("飞书桥接", result.message, result.status);
+  };
+
+  const stopRemoteBridge = async () => {
+    const result = await run(stopRemoteBridgeCommand);
+    if (!result) return;
+    setRemoteBridge(result);
+    showNotice("飞书桥接", result.message, result.status);
+  };
+
+  const sendRemoteBotMessage = async () => {
+    const result = await run(() =>
+      handleRemoteBotMessage({
+        chatId: remoteBotForm.chatId,
+        userId: remoteBotForm.userId,
+        text: remoteBotForm.text,
+      }),
+    );
+    if (!result) return;
+    setRemoteBotResult(result);
+    showNotice("飞书命令路由", result.message, result.status);
   };
 
   const installEntrypoints = async () => {
@@ -288,6 +388,7 @@ export function App() {
       }
       await refreshOverview(true);
       await refreshSettings(true);
+      await refreshRemoteControl(true);
     })();
   }, []);
 
@@ -313,6 +414,13 @@ export function App() {
       deleteUserScript,
       syncProvidersNow: () => providerAction("sync_providers_now"),
       repairProviderPaths: () => providerAction("repair_provider_paths"),
+      saveRemoteControl,
+      checkRemoteDependencies,
+      refreshRemoteInventory,
+      sendRemoteBotMessage,
+      refreshRemoteBridge,
+      startRemoteBridge,
+      stopRemoteBridge,
       openExternalUrl,
       refreshLogs,
       refreshDiagnostics,
@@ -330,7 +438,7 @@ export function App() {
       disableWatcher: () => watcherAction("disable_watcher"),
       toggleTheme: () => setTheme((current) => (current === "dark" ? "light" : "dark")),
     }),
-    [route, launchForm, settingsForm, removeOwnedData, update, logs, diagnostics, theme],
+    [route, launchForm, settingsForm, remoteForm, remoteBotForm, removeOwnedData, update, logs, diagnostics, theme],
   );
 
   return (
@@ -383,6 +491,20 @@ export function App() {
           {route === "userScripts" ? <UserScriptsScreen settings={settings} actions={actions} /> : null}
           {route === "providerSync" ? (
             <ProviderSyncScreen settings={settings} form={settingsForm} result={providerResult} onFormChange={setSettingsForm} actions={actions} />
+          ) : null}
+          {route === "remoteControl" ? (
+            <RemoteControlScreen
+              result={remoteControl}
+              dependencies={remoteDependencies}
+              inventory={remoteInventory}
+              bridge={remoteBridge}
+              botForm={remoteBotForm}
+              botResult={remoteBotResult}
+              form={remoteForm}
+              onFormChange={setRemoteForm}
+              onBotFormChange={setRemoteBotForm}
+              actions={actions}
+            />
           ) : null}
           {route === "maintenance" ? (
             <MaintenanceScreen

@@ -2,6 +2,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use codex_plus_core::remote::{
+    RemoteControlCheck, RemoteControlConfig, RemoteControlStatus, RemoteControlStore,
+};
+use codex_plus_core::remote_bot::{
+    RemoteBotInventory, RemoteBotMessage, RemoteBotResponse, RemoteBotRouter, RemoteProject,
+    RemoteThread,
+};
+use codex_plus_core::remote_bridge::{RemoteBridgeController, RemoteBridgeStatus};
 use codex_plus_core::settings::{BackendSettings, SettingsStore};
 use codex_plus_core::status::{LaunchStatus, StatusStore};
 use codex_plus_core::user_scripts::UserScriptManager;
@@ -94,6 +102,49 @@ pub struct WatcherPayload {
 #[serde(rename_all = "camelCase")]
 pub struct StartupPayload {
     pub show_update: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteControlPayload {
+    pub config: RemoteControlConfig,
+    pub status: RemoteControlStatus,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteDependencyPayload {
+    pub checks: Vec<RemoteControlCheck>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteInventoryPayload {
+    pub inventory: codex_plus_data::CodexRemoteInventory,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteBotMessageRequest {
+    #[serde(default)]
+    pub chat_id: String,
+    #[serde(default)]
+    pub user_id: String,
+    #[serde(default)]
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteBotMessagePayload {
+    pub response: RemoteBotResponse,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteBridgePayload {
+    pub bridge: RemoteBridgeStatus,
+    pub log: String,
 }
 
 #[tauri::command]
@@ -264,6 +315,197 @@ pub fn save_settings(settings: BackendSettings) -> CommandResult<SettingsPayload
             },
         ),
     }
+}
+
+#[tauri::command]
+pub fn load_remote_control() -> CommandResult<RemoteControlPayload> {
+    remote_control_payload("远程控制配置已加载。", "远程控制配置读取失败")
+}
+
+#[tauri::command]
+pub fn save_remote_control(config: RemoteControlConfig) -> CommandResult<RemoteControlPayload> {
+    let store = RemoteControlStore::default();
+    match store.save(&config) {
+        Ok(config) => {
+            let _ = codex_plus_core::diagnostic_log::append_diagnostic_log(
+                "manager.remote_config_saved",
+                codex_plus_core::remote::audit_remote_config_saved(&config),
+            );
+            ok(
+                "远程控制配置已保存。",
+                RemoteControlPayload {
+                    status: codex_plus_core::remote::build_status(&config, store.path()),
+                    config,
+                },
+            )
+        }
+        Err(error) => failed(
+            &format!("远程控制配置保存失败：{error}"),
+            RemoteControlPayload {
+                status: codex_plus_core::remote::build_status(&config, store.path()),
+                config,
+            },
+        ),
+    }
+}
+
+#[tauri::command]
+pub fn check_remote_dependencies() -> CommandResult<RemoteDependencyPayload> {
+    let checks = codex_plus_core::remote::dependency_checks();
+    let missing = checks.iter().filter(|check| check.status != "ok").count();
+    let message = if missing == 0 {
+        "远程桥接依赖已可用。".to_string()
+    } else {
+        format!("有 {missing} 个远程桥接依赖未就绪。")
+    };
+    ok(&message, RemoteDependencyPayload { checks })
+}
+
+#[tauri::command]
+pub async fn load_remote_inventory() -> CommandResult<RemoteInventoryPayload> {
+    let result = tauri::async_runtime::spawn_blocking(load_remote_inventory_value).await;
+    match result {
+        Ok(inventory) => {
+            let status = inventory.status.clone();
+            let message = inventory.message.clone();
+            CommandResult {
+                status,
+                message,
+                payload: RemoteInventoryPayload { inventory },
+            }
+        }
+        Err(error) => failed(
+            &format!("读取本地项目和对话失败：{error}"),
+            RemoteInventoryPayload {
+                inventory: codex_plus_data::CodexRemoteInventory {
+                    status: "failed".to_string(),
+                    message: error.to_string(),
+                    db_path: String::new(),
+                    projects: Vec::new(),
+                    threads: Vec::new(),
+                },
+            },
+        ),
+    }
+}
+
+#[tauri::command]
+pub async fn handle_remote_bot_message(
+    request: RemoteBotMessageRequest,
+) -> CommandResult<RemoteBotMessagePayload> {
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let inventory = inventory_for_bot(load_remote_inventory_value());
+        let message = RemoteBotMessage {
+            chat_id: request.chat_id,
+            user_id: request.user_id,
+            text: request.text,
+        };
+        let response = RemoteBotRouter::default().handle(&message, &inventory)?;
+        let _ = codex_plus_core::diagnostic_log::append_diagnostic_log(
+            "manager.remote_bot_message",
+            codex_plus_core::remote_bot::audit_bot_message(&message, &response),
+        );
+        anyhow::Ok(response)
+    })
+    .await;
+    match result {
+        Ok(Ok(response)) => CommandResult {
+            status: response.status.clone(),
+            message: response.reply.clone(),
+            payload: RemoteBotMessagePayload { response },
+        },
+        Ok(Err(error)) => failed(
+            &format!("处理飞书远程命令失败：{error}"),
+            RemoteBotMessagePayload {
+                response: RemoteBotResponse {
+                    status: "failed".to_string(),
+                    reply: error.to_string(),
+                    action: "error".to_string(),
+                    selection: None,
+                    choices: Vec::new(),
+                    forward_to_codex: None,
+                },
+            },
+        ),
+        Err(error) => failed(
+            &format!("处理飞书远程命令后台任务失败：{error}"),
+            RemoteBotMessagePayload {
+                response: RemoteBotResponse {
+                    status: "failed".to_string(),
+                    reply: error.to_string(),
+                    action: "error".to_string(),
+                    selection: None,
+                    choices: Vec::new(),
+                    forward_to_codex: None,
+                },
+            },
+        ),
+    }
+}
+
+#[tauri::command]
+pub fn remote_bridge_status() -> CommandResult<RemoteBridgePayload> {
+    remote_bridge_payload("飞书桥接状态已读取。")
+}
+
+#[tauri::command]
+pub fn start_remote_bridge() -> CommandResult<RemoteBridgePayload> {
+    if let Err(error) = write_remote_inventory_snapshot() {
+        return failed(
+            &format!("飞书桥接启动前刷新项目/对话快照失败：{error}"),
+            remote_bridge_payload_value(),
+        );
+    }
+    match codex_plus_core::remote_bridge::start_default_bridge() {
+        Ok(bridge) => {
+            let _ = codex_plus_core::diagnostic_log::append_diagnostic_log(
+                "manager.remote_bridge_started",
+                json!({
+                    "status": bridge.status,
+                    "pid": bridge.pid,
+                    "script_path": bridge.script_path,
+                    "config_path": bridge.config_path,
+                    "log_path": bridge.log_path,
+                }),
+            );
+            let log = RemoteBridgeController::default()
+                .read_log(160)
+                .unwrap_or_default();
+            ok("飞书桥接已启动。", RemoteBridgePayload { bridge, log })
+        }
+        Err(error) => failed(
+            &format!("飞书桥接启动失败：{error}"),
+            remote_bridge_payload_value(),
+        ),
+    }
+}
+
+#[tauri::command]
+pub fn stop_remote_bridge() -> CommandResult<RemoteBridgePayload> {
+    let controller = RemoteBridgeController::default();
+    match controller.stop() {
+        Ok(bridge) => {
+            let _ = codex_plus_core::diagnostic_log::append_diagnostic_log(
+                "manager.remote_bridge_stopped",
+                json!({
+                    "status": bridge.status,
+                    "pid": bridge.pid,
+                    "log_path": bridge.log_path,
+                }),
+            );
+            let log = controller.read_log(160).unwrap_or_default();
+            ok("飞书桥接已停止。", RemoteBridgePayload { bridge, log })
+        }
+        Err(error) => failed(
+            &format!("飞书桥接停止失败：{error}"),
+            remote_bridge_payload_value(),
+        ),
+    }
+}
+
+#[tauri::command]
+pub fn read_remote_bridge_log() -> CommandResult<RemoteBridgePayload> {
+    remote_bridge_payload("飞书桥接日志已读取。")
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -669,6 +911,9 @@ fn diagnostics_report() -> String {
         },
     );
     let settings = SettingsStore::default().load().unwrap_or_default();
+    let remote_store = RemoteControlStore::default();
+    let remote_config = remote_store.load().unwrap_or_default();
+    let remote_status = codex_plus_core::remote::build_status(&remote_config, remote_store.path());
     let generated_at_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -678,6 +923,14 @@ fn diagnostics_report() -> String {
         "version": codex_plus_core::version::VERSION,
         "overview": overview.payload,
         "settings": settings,
+        "remoteControl": {
+            "enabled": remote_config.enabled,
+            "channel": remote_config.channel,
+            "workspacePathSet": !remote_config.workspace_path.is_empty(),
+            "routeKey": remote_status.route_key,
+            "status": remote_status.status,
+            "warnings": remote_status.warnings
+        },
         "logs": {
             "diagnosticLogPath": codex_plus_core::paths::default_diagnostic_log_path(),
             "latestStatusPath": codex_plus_core::paths::default_latest_status_path()
@@ -704,6 +957,95 @@ fn load_overview_payload() -> (
         install::inspect_entrypoints(),
         StatusStore::default().load_latest().unwrap_or(None),
     )
+}
+
+fn load_remote_inventory_value() -> codex_plus_data::CodexRemoteInventory {
+    let state_db = directories::BaseDirs::new()
+        .map(|dirs| dirs.home_dir().join(".codex").join("state_5.sqlite"))
+        .unwrap_or_else(|| PathBuf::from(".codex").join("state_5.sqlite"));
+    let adapter = codex_plus_data::SQLiteStorageAdapter::new(
+        state_db,
+        codex_plus_data::BackupStore::new(
+            codex_plus_core::paths::default_app_state_dir().join("remote-inventory-backups"),
+        ),
+    );
+    adapter.remote_inventory(300)
+}
+
+fn inventory_for_bot(inventory: codex_plus_data::CodexRemoteInventory) -> RemoteBotInventory {
+    RemoteBotInventory {
+        projects: inventory
+            .projects
+            .into_iter()
+            .map(|project| RemoteProject {
+                name: project.name,
+                cwd: project.cwd,
+                thread_count: project.thread_count,
+                latest_updated_at_ms: project.latest_updated_at_ms,
+            })
+            .collect(),
+        threads: inventory
+            .threads
+            .into_iter()
+            .map(|thread| RemoteThread {
+                id: thread.id,
+                title: thread.title,
+                cwd: thread.cwd,
+                archived: thread.archived,
+                updated_at_ms: thread.updated_at_ms,
+            })
+            .collect(),
+    }
+}
+
+fn write_remote_inventory_snapshot() -> anyhow::Result<()> {
+    let inventory = inventory_for_bot(load_remote_inventory_value());
+    let path = codex_plus_core::paths::default_remote_inventory_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let bytes = serde_json::to_vec_pretty(&inventory)?;
+    write_file_atomic(&path, &bytes)
+}
+
+fn write_file_atomic(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, bytes)?;
+    std::fs::rename(tmp, path)?;
+    Ok(())
+}
+
+fn remote_control_payload(
+    success_message: &str,
+    failure_prefix: &str,
+) -> CommandResult<RemoteControlPayload> {
+    let store = RemoteControlStore::default();
+    let config = store.load().unwrap_or_default();
+    let status = codex_plus_core::remote::build_status(&config, store.path());
+    match store.load() {
+        Ok(config) => ok(
+            success_message,
+            RemoteControlPayload {
+                status: codex_plus_core::remote::build_status(&config, store.path()),
+                config,
+            },
+        ),
+        Err(error) => failed(
+            &format!("{failure_prefix}：{error}"),
+            RemoteControlPayload { config, status },
+        ),
+    }
+}
+
+fn remote_bridge_payload(success_message: &str) -> CommandResult<RemoteBridgePayload> {
+    ok(success_message, remote_bridge_payload_value())
+}
+
+fn remote_bridge_payload_value() -> RemoteBridgePayload {
+    let controller = RemoteBridgeController::default();
+    let bridge = controller.status();
+    let log = controller.read_log(160).unwrap_or_default();
+    RemoteBridgePayload { bridge, log }
 }
 
 fn install_background_failure(action: &str, error: impl std::fmt::Display) -> InstallActionResult {
