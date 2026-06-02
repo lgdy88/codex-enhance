@@ -147,6 +147,46 @@ fn latest_metadata_payload_selects_platform_asset() {
 }
 
 #[test]
+fn latest_metadata_payload_accepts_tauri_updater_manifest() {
+    let release = release_from_latest_metadata_payload(&json!({
+        "version": "1.2.6",
+        "notes": "signed updater",
+        "pub_date": "2026-06-02T00:00:00Z",
+        "platforms": {
+            "windows-x86_64": {
+                "signature": "sig",
+                "url": "https://example.test/Dex-1.2.6-windows-x64.msi"
+            },
+            "darwin-aarch64": {
+                "signature": "sig",
+                "url": "https://example.test/Dex-1.2.6-macos-universal.dmg"
+            },
+            "darwin-x86_64": {
+                "signature": "sig",
+                "url": "https://example.test/Dex-1.2.6-macos-universal.dmg"
+            }
+        }
+    }))
+    .unwrap();
+
+    assert_eq!(release.version, "1.2.6");
+    assert_eq!(release.body, "signed updater");
+    if cfg!(windows) {
+        assert_eq!(
+            release.asset_url.as_deref(),
+            Some("https://example.test/Dex-1.2.6-windows-x64.msi")
+        );
+    } else if cfg!(target_os = "macos") {
+        assert_eq!(
+            release.asset_url.as_deref(),
+            Some("https://example.test/Dex-1.2.6-macos-universal.dmg")
+        );
+    } else {
+        assert_eq!(release.asset_url.as_deref(), None);
+    }
+}
+
+#[test]
 fn platform_download_asset_normalizes_tags() {
     let selected = platform_download_asset_for_version("1.0.12");
     if cfg!(windows) {

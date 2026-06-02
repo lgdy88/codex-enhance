@@ -761,6 +761,12 @@ export function DiagnosticsScreen({ diagnostics, actions }: { diagnostics: Diagn
 }
 
 export function AboutScreen({ overview, update, actions }: { overview: OverviewResult | null; update: UpdateResult | null; actions: Actions }) {
+  const hasUpdate = update?.updateAvailable === true;
+  const updateMessage =
+    update?.releaseSummary ||
+    update?.message ||
+    "尚未检查更新；Dex 会通过签名更新清单下载并安装新版本。";
+
   return (
     <>
       <Panel>
@@ -784,18 +790,18 @@ export function AboutScreen({ overview, update, actions }: { overview: OverviewR
         </CardContent>
       </Panel>
       <Panel>
-        <CardHead title="GitHub Release 更新" detail={`当前版本 ${overview?.current_version ?? update?.currentVersion ?? "-"}`} />
+        <CardHead title="应用更新" detail={`当前版本 ${overview?.current_version ?? update?.currentVersion ?? "-"}`} />
         <CardContent>
           <div className="metric-list">
             <Metric label="状态" value={update?.status ?? "not_checked"} />
             <Metric label="最新版本" value={update?.latestVersion ?? "未检查"} />
-            <Metric label="资源" value={update?.assetName ?? "-"} />
+            <Metric label="发布日期" value={update?.updateDate ?? "-"} />
             <Metric label="进度" value={`${update?.progress ?? 0}%`} />
           </div>
-          <UpdateMessage message={update?.releaseSummary || update?.message || "尚未检查 GitHub Release；更新会下载并启动安装包。"} />
+          <UpdateMessage message={updateMessage} />
           <Toolbar sticky>
             <Button onClick={() => void actions.checkUpdate()}>检查更新</Button>
-            <Button variant="secondary" onClick={() => void actions.performUpdate()}>下载并运行安装包</Button>
+            <Button disabled={!hasUpdate} variant="secondary" onClick={() => void actions.performUpdate()}>下载并安装</Button>
           </Toolbar>
         </CardContent>
       </Panel>

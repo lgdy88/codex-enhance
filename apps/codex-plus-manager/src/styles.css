@@ -165,6 +165,17 @@ body {
   transform: translateY(-1px);
 }
 
+.brand-update-button.active {
+  border-color: hsl(142 64% 44% / 0.5);
+  background: hsl(142 70% 95%);
+  color: hsl(142 72% 32%);
+}
+
+.dark .brand-update-button.active {
+  background: hsl(142 44% 18%);
+  color: hsl(142 68% 58%);
+}
+
 .brand-update-button:focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;

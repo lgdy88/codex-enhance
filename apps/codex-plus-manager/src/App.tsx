@@ -9,7 +9,6 @@ import { numberOrDefault, stringifyError } from "@/lib/format";
 import { defaultRemoteControl, remoteConfigToForm, remoteFormToConfig } from "@/lib/remote-control";
 import { defaultSettings, normalizeSettings } from "@/lib/settings";
 import {
-  checkUpdate as checkUpdateCommand,
   checkRemoteDependencies as checkRemoteDependenciesCommand,
   copyDiagnostics as copyDiagnosticsCommand,
   deleteUserScript as deleteUserScriptCommand,
@@ -22,7 +21,6 @@ import {
   loadSettings,
   loadWatcherState,
   openExternalUrl as openExternalUrlCommand,
-  performUpdate as performUpdateCommand,
   readRemoteBridgeLog,
   remoteBridgeStatus,
   readLatestLogs,
@@ -38,6 +36,7 @@ import {
   stopRemoteBridge as stopRemoteBridgeCommand,
   uninstallEntrypoints as uninstallEntrypointsCommand,
 } from "@/lib/tauri-api";
+import { checkForUpdate, installUpdate } from "@/lib/updater";
 import { routes, routeSubtitle, routeTitle } from "@/routes";
 import {
   AboutScreen,
@@ -74,6 +73,7 @@ import type {
   UpdateResult,
   WatcherResult,
 } from "@/types";
+import type { Update } from "@tauri-apps/plugin-updater";
 
 export function App() {
   const [theme, setTheme] = useState<Theme>(() => loadInitialTheme());
@@ -87,6 +87,7 @@ export function App() {
   const [diagnostics, setDiagnostics] = useState<DiagnosticsResult | null>(null);
   const [watcher, setWatcher] = useState<WatcherResult | null>(null);
   const [update, setUpdate] = useState<UpdateResult | null>(null);
+  const [updateHandle, setUpdateHandle] = useState<Update | null>(null);
   const [remoteControl, setRemoteControl] = useState<RemoteControlResult | null>(null);
   const [remoteDependencies, setRemoteDependencies] = useState<RemoteDependencyResult | null>(null);
   const [remoteInventory, setRemoteInventory] = useState<RemoteInventoryResult | null>(null);
@@ -340,24 +341,34 @@ export function App() {
   };
 
   const checkUpdate = async (silent = false) => {
-    const result = await run(checkUpdateCommand);
-    if (!result) return;
-    setUpdate(result);
-    if (!silent || result.updateAvailable) showNotice("GitHub Release 检查", result.message, result.status);
+    const checkResult = await run(checkForUpdate);
+    if (!checkResult) return;
+    setUpdate(checkResult.result);
+    setUpdateHandle(checkResult.update);
+    if (shouldShowUpdateNotice(checkResult.result, silent)) {
+      showNotice("GitHub Release 检查", checkResult.result.message, checkResult.result.status);
+    }
   };
 
   const performUpdate = async () => {
-    const release =
-      update?.latestVersion && update.assetName && update.assetUrl
-        ? {
-            version: update.latestVersion,
-            url: "",
-            body: update.releaseSummary ?? "",
-            asset_name: update.assetName,
-            asset_url: update.assetUrl,
-          }
-        : null;
-    const result = await run(() => performUpdateCommand(release));
+    if (!updateHandle) {
+      showNotice("更新安装", "请先检查更新并确认有可安装版本。", "not_checked");
+      return;
+    }
+    let downloaded = 0;
+    let total = 0;
+    const result = await run(() =>
+      installUpdate(updateHandle, (event) => {
+        if (event.event === "Started") {
+          total = event.total;
+          downloaded = 0;
+        } else if (event.event === "Progress") {
+          downloaded += event.chunkLength;
+        }
+        const progress = total > 0 ? Math.min(99, Math.round((downloaded / total) * 100)) : update?.progress ?? 0;
+        setUpdate((current) => (current ? { ...current, status: "ok", message: "正在下载并安装更新。", progress } : current));
+      }),
+    );
     if (!result) return;
     setUpdate(result);
     showNotice("更新安装", result.message, result.status);
@@ -446,18 +457,20 @@ export function App() {
       <aside className="sidebar">
         <div className="brand">
           <img className="brand-logo" src={dexLogo} alt="Dex" />
-          <Button
-            aria-label="检查更新"
-            className="brand-update-button"
-            disabled={busy}
-            onClick={() => void actions.checkUpdate()}
-            size="icon"
-            title="检查更新"
-            type="button"
-            variant="ghost"
-          >
-            <CircleArrowUp className="h-5 w-5" aria-hidden="true" />
-          </Button>
+          {update?.updateAvailable ? (
+            <Button
+              aria-label={`发现 Dex 更新 ${update.latestVersion ?? ""}`}
+              className="brand-update-button active"
+              disabled={busy}
+              onClick={() => void navigate("about")}
+              size="icon"
+              title={`发现 Dex 更新 ${update.latestVersion ?? ""}`}
+              type="button"
+              variant="ghost"
+            >
+              <CircleArrowUp className="h-5 w-5" aria-hidden="true" />
+            </Button>
+          ) : null}
         </div>
         <nav className="nav">
           {routes.map((item) => {
@@ -550,4 +563,10 @@ function loadInitialRoute(): Route {
   const params = new URLSearchParams(window.location.search);
   if (params.get("showUpdate") === "1" || window.location.hash === "#about") return "about";
   return "overview";
+}
+
+function shouldShowUpdateNotice(result: UpdateResult, silent: boolean): boolean {
+  if (result.updateAvailable) return true;
+  if (silent) return false;
+  return true;
 }

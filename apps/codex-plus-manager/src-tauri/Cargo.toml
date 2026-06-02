@@ -23,6 +23,8 @@ directories.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tauri = { version = "2", features = ["custom-protocol"] }
+tauri-plugin-process = "2"
+tauri-plugin-updater = "2"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

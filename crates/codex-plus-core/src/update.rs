@@ -112,7 +112,28 @@ pub fn release_from_latest_metadata_payload(payload: &Value) -> anyhow::Result<R
         .ok_or_else(|| anyhow::anyhow!("latest.json missing version"))?
         .to_string();
     parse_version_tag(&version)?;
-    let assets = payload
+    let assets = latest_metadata_assets(payload);
+    let selected = select_update_asset(&assets);
+    Ok(Release {
+        version,
+        url: payload
+            .get("url")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        body: payload
+            .get("body")
+            .or_else(|| payload.get("notes"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        asset_name: selected.as_ref().map(|asset| asset.name.clone()),
+        asset_url: selected.map(|asset| asset.browser_download_url),
+    })
+}
+
+fn latest_metadata_assets(payload: &Value) -> Vec<(String, String)> {
+    let mut assets = payload
         .get("assets")
         .and_then(Value::as_array)
         .into_iter()
@@ -124,22 +145,38 @@ pub fn release_from_latest_metadata_payload(payload: &Value) -> anyhow::Result<R
             ))
         })
         .collect::<Vec<_>>();
-    let selected = select_update_asset(&assets);
-    Ok(Release {
-        version,
-        url: payload
-            .get("url")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string(),
-        body: payload
-            .get("body")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string(),
-        asset_name: selected.as_ref().map(|asset| asset.name.clone()),
-        asset_url: selected.map(|asset| asset.browser_download_url),
-    })
+
+    if assets.is_empty() {
+        assets.extend(tauri_updater_platform_assets(payload));
+    }
+
+    assets
+}
+
+fn tauri_updater_platform_assets(payload: &Value) -> Option<(String, String)> {
+    let platform = if cfg!(windows) {
+        "windows-x86_64"
+    } else if cfg!(target_os = "macos") && cfg!(target_arch = "aarch64") {
+        "darwin-aarch64"
+    } else if cfg!(target_os = "macos") {
+        "darwin-x86_64"
+    } else {
+        return None;
+    };
+    let url = payload
+        .get("platforms")?
+        .get(platform)?
+        .get("url")?
+        .as_str()?
+        .to_string();
+    let name = url
+        .rsplit('/')
+        .next()
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or(platform)
+        .to_string();
+
+    Some((name, url))
 }
 
 pub fn parse_latest_release_tag_url(value: &str) -> anyhow::Result<String> {

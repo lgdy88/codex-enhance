@@ -212,9 +212,15 @@ export type UpdateResult = CommandResult<{
   assetName?: string | null;
   assetUrl?: string | null;
   updateAvailable?: boolean;
+  updateDate?: string | null;
   installedPath?: string;
   progress?: number;
 }>;
+
+export type UpdateProgressEvent =
+  | { event: "Started"; total: number }
+  | { event: "Progress"; chunkLength: number }
+  | { event: "Finished" };
 
 export type StartupResult = CommandResult<{
   showUpdate: boolean;

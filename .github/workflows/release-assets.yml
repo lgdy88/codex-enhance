@@ -67,6 +67,9 @@ jobs:
       - name: Build Windows MSI
         if: runner.os == 'Windows'
         working-directory: apps/codex-plus-manager
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run build
 
       - name: Build macOS desktop binaries
@@ -85,6 +88,9 @@ jobs:
 
       - name: Collect desktop artifacts
         shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           mkdir -p desktop-dist
           if [ "$RUNNER_OS" = "Windows" ]; then
@@ -105,6 +111,26 @@ jobs:
               exit 1
             fi
             cp "$msi" "desktop-dist/Dex-${VERSION}-windows-x64.msi"
+            sig="${msi}.sig"
+            if [ ! -f "$sig" ]; then
+              if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+                echo "Missing TAURI_SIGNING_PRIVATE_KEY for updater signature" >&2
+                exit 1
+              fi
+              key_file="$(mktemp)"
+              printf '%s' "$TAURI_SIGNING_PRIVATE_KEY" > "$key_file"
+              sign_args=(--private-key-path "$key_file")
+              if [ -n "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" ]; then
+                sign_args+=(--password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD")
+              fi
+              npm --prefix apps/codex-plus-manager exec tauri signer sign -- "${sign_args[@]}" "$msi" > "$sig"
+            fi
+            if [ -f "$sig" ]; then
+              cp "$sig" "desktop-dist/Dex-${VERSION}-windows-x64.msi.sig"
+            else
+              echo "No Windows updater signature found: $sig"
+              exit 1
+            fi
           elif [ "$RUNNER_OS" = "macOS" ]; then
             cp dist/macos/Dex-*-macos-universal.dmg desktop-dist/
           fi
@@ -147,6 +173,7 @@ jobs:
         run: |
           set -euo pipefail
           gh release view "$TAG" --repo "$REPO" --json assets,body,tagName,url > release.json
+          gh release download "$TAG" --repo "$REPO" --pattern '*.sig' --dir .
           node <<'NODE'
           const fs = require("fs");
           const release = JSON.parse(fs.readFileSync("release.json", "utf8"));
@@ -154,16 +181,30 @@ jobs:
           const tag = release.tagName || process.env.TAG;
           const version = tag.replace(/^v/i, "");
           const baseUrl = `https://github.com/${repo}/releases/download/${tag}`;
-          const assets = (release.assets || [])
-            .map((asset) => asset.name)
-            .filter((name) => name !== "latest.json")
-            .filter((name) => !name.startsWith("CodexPlusPlus-"))
-            .map((name) => ({ name, url: `${baseUrl}/${encodeURIComponent(name)}` }));
+          const names = new Set((release.assets || []).map((asset) => asset.name));
+          const signatureFor = (name) => {
+            const sigName = `${name}.sig`;
+            if (!names.has(sigName)) return null;
+            return fs.readFileSync(sigName, "utf8").trim();
+          };
+          const platforms = {};
+          for (const name of names) {
+            if (!/^Dex-.+-windows-x64\.msi$/i.test(name)) continue;
+            const signature = signatureFor(name);
+            if (!signature) continue;
+            platforms["windows-x86_64"] = {
+              signature,
+              url: `${baseUrl}/${encodeURIComponent(name)}`
+            };
+          }
+          if (!platforms["windows-x86_64"]) {
+            throw new Error("Missing signed Windows updater asset");
+          }
           const payload = {
-            version: `v${version}`,
-            url: release.url || `https://github.com/${repo}/releases/tag/${tag}`,
-            body: release.body || "",
-            assets
+            version,
+            notes: release.body || "",
+            pub_date: new Date().toISOString(),
+            platforms
           };
           fs.writeFileSync("latest.json", `${JSON.stringify(payload, null, 2)}\n`);
           NODE
