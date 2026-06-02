@@ -375,11 +375,7 @@ export function App() {
       return;
     }
     if (release) {
-      setUpdate((current) => (current ? { ...current, status: "ok", message: "正在下载并启动安装包。", progress: current.progress ?? 0 } : current));
-      const result = await run(() => performUpdateCommand(release));
-      if (!result) return;
-      setUpdate(result);
-      showNotice("更新安装", result.message, result.status);
+      await installReleaseUpdate(release);
       return;
     }
     if (!handle) {
@@ -388,8 +384,9 @@ export function App() {
     }
     let downloaded = 0;
     let total = 0;
-    const result = await run(() =>
-      installUpdate(handle, (event) => {
+    setBusy(true);
+    try {
+      const result = await installUpdate(handle, (event) => {
         if (event.event === "Started") {
           total = event.total;
           downloaded = 0;
@@ -398,15 +395,46 @@ export function App() {
         }
         const progress = total > 0 ? Math.min(99, Math.round((downloaded / total) * 100)) : update?.progress ?? 0;
         setUpdate((current) => (current ? { ...current, status: "ok", message: "正在下载并安装更新。", progress } : current));
-      }),
-    );
-    if (!result) return;
-    setUpdate(result);
-    showNotice("更新安装", result.message, result.status);
+      });
+      setUpdate(result);
+      showNotice("更新安装", result.message, result.status);
+      return;
+    } catch (error) {
+      const fallback = await installUpdateFallback(error);
+      if (fallback) return;
+      showNotice("更新安装", `签名更新下载失败：${stringifyError(error)}`, "failed");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const performUpdate = async () => {
     await installCheckedUpdate(updateHandle, updateRelease);
+  };
+
+  const installReleaseUpdate = async (release: UpdateRelease) => {
+    setUpdate((current) => (current ? { ...current, status: "ok", message: "正在下载并启动安装包。", progress: current.progress ?? 0 } : current));
+    const result = await run(() => performUpdateCommand(release));
+    if (!result) return false;
+    setUpdate(result);
+    showNotice("更新安装", result.message, result.status);
+    return true;
+  };
+
+  const installUpdateFallback = async (error: unknown) => {
+    setBusy(false);
+    const fallback = await run(checkUpdateCommand);
+    if (!fallback?.updateAvailable) return false;
+    const fallbackRelease = updateReleaseFromResult(fallback);
+    if (!fallbackRelease) return false;
+    setUpdateHandle(null);
+    setUpdateRelease(fallbackRelease);
+    setUpdate({
+      ...fallback,
+      message: `签名更新下载失败，改用 GitHub 安装包下载：${stringifyError(error)}`,
+      progress: 0,
+    });
+    return await installReleaseUpdate(fallbackRelease);
   };
 
   const copyText = async (text: string, message: string) => {
