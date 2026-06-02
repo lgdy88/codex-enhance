@@ -6,8 +6,7 @@ use codex_plus_core::remote::{
     RemoteControlCheck, RemoteControlConfig, RemoteControlStatus, RemoteControlStore,
 };
 use codex_plus_core::remote_bot::{
-    RemoteBotInventory, RemoteBotMessage, RemoteBotResponse, RemoteBotRouter, RemoteProject,
-    RemoteThread,
+    RemoteBotInventory, RemoteBotResponse, RemoteProject, RemoteThread,
 };
 use codex_plus_core::remote_bridge::{RemoteBridgeController, RemoteBridgeStatus};
 use codex_plus_core::settings::{BackendSettings, SettingsStore};
@@ -16,7 +15,13 @@ use codex_plus_core::user_scripts::UserScriptManager;
 use serde::Serialize;
 use serde_json::{Value, json};
 
-use crate::install::{self, InstallActionResult, InstallOptions};
+use crate::install::{self, InstallActionResult};
+
+pub mod maintenance;
+pub mod remote;
+pub mod settings;
+pub mod update;
+pub use update::{check_update, perform_update};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CommandResult<T>
@@ -295,240 +300,10 @@ fn spawn_silent_launcher(request: &LaunchRequest) -> anyhow::Result<()> {
         .map_err(|error| anyhow::anyhow!("无法启动 {}：{error}", launcher.to_string_lossy()))
 }
 
-#[tauri::command]
-pub fn load_settings() -> CommandResult<SettingsPayload> {
-    settings_payload("设置已加载。", "设置读取失败")
-}
-
-#[tauri::command]
-pub fn save_settings(settings: BackendSettings) -> CommandResult<SettingsPayload> {
-    match SettingsStore::default().save(&settings) {
-        Ok(()) => settings_payload("设置已保存。", "设置保存后重新读取失败"),
-        Err(error) => failed(
-            &format!("保存设置失败：{error}"),
-            SettingsPayload {
-                settings,
-                settings_path: codex_plus_core::paths::default_settings_path()
-                    .to_string_lossy()
-                    .to_string(),
-                user_scripts: user_script_inventory(),
-            },
-        ),
-    }
-}
-
-#[tauri::command]
-pub fn load_remote_control() -> CommandResult<RemoteControlPayload> {
-    remote_control_payload("远程控制配置已加载。", "远程控制配置读取失败")
-}
-
-#[tauri::command]
-pub fn save_remote_control(config: RemoteControlConfig) -> CommandResult<RemoteControlPayload> {
-    let store = RemoteControlStore::default();
-    match store.save(&config) {
-        Ok(config) => {
-            let _ = codex_plus_core::diagnostic_log::append_diagnostic_log(
-                "manager.remote_config_saved",
-                codex_plus_core::remote::audit_remote_config_saved(&config),
-            );
-            ok(
-                "远程控制配置已保存。",
-                RemoteControlPayload {
-                    status: codex_plus_core::remote::build_status(&config, store.path()),
-                    config,
-                },
-            )
-        }
-        Err(error) => failed(
-            &format!("远程控制配置保存失败：{error}"),
-            RemoteControlPayload {
-                status: codex_plus_core::remote::build_status(&config, store.path()),
-                config,
-            },
-        ),
-    }
-}
-
-#[tauri::command]
-pub fn check_remote_dependencies() -> CommandResult<RemoteDependencyPayload> {
-    let checks = codex_plus_core::remote::dependency_checks();
-    let missing = checks.iter().filter(|check| check.status != "ok").count();
-    let message = if missing == 0 {
-        "远程桥接依赖已可用。".to_string()
-    } else {
-        format!("有 {missing} 个远程桥接依赖未就绪。")
-    };
-    ok(&message, RemoteDependencyPayload { checks })
-}
-
-#[tauri::command]
-pub async fn load_remote_inventory() -> CommandResult<RemoteInventoryPayload> {
-    let result = tauri::async_runtime::spawn_blocking(load_remote_inventory_value).await;
-    match result {
-        Ok(inventory) => {
-            let status = inventory.status.clone();
-            let message = inventory.message.clone();
-            CommandResult {
-                status,
-                message,
-                payload: RemoteInventoryPayload { inventory },
-            }
-        }
-        Err(error) => failed(
-            &format!("读取本地项目和对话失败：{error}"),
-            RemoteInventoryPayload {
-                inventory: codex_plus_data::CodexRemoteInventory {
-                    status: "failed".to_string(),
-                    message: error.to_string(),
-                    db_path: String::new(),
-                    projects: Vec::new(),
-                    threads: Vec::new(),
-                },
-            },
-        ),
-    }
-}
-
-#[tauri::command]
-pub async fn handle_remote_bot_message(
-    request: RemoteBotMessageRequest,
-) -> CommandResult<RemoteBotMessagePayload> {
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        let inventory = inventory_for_bot(load_remote_inventory_value());
-        let message = RemoteBotMessage {
-            chat_id: request.chat_id,
-            user_id: request.user_id,
-            text: request.text,
-        };
-        let response = RemoteBotRouter::default().handle(&message, &inventory)?;
-        let _ = codex_plus_core::diagnostic_log::append_diagnostic_log(
-            "manager.remote_bot_message",
-            codex_plus_core::remote_bot::audit_bot_message(&message, &response),
-        );
-        anyhow::Ok(response)
-    })
-    .await;
-    match result {
-        Ok(Ok(response)) => CommandResult {
-            status: response.status.clone(),
-            message: response.reply.clone(),
-            payload: RemoteBotMessagePayload { response },
-        },
-        Ok(Err(error)) => failed(
-            &format!("处理飞书远程命令失败：{error}"),
-            RemoteBotMessagePayload {
-                response: RemoteBotResponse {
-                    status: "failed".to_string(),
-                    reply: error.to_string(),
-                    action: "error".to_string(),
-                    selection: None,
-                    choices: Vec::new(),
-                    forward_to_codex: None,
-                },
-            },
-        ),
-        Err(error) => failed(
-            &format!("处理飞书远程命令后台任务失败：{error}"),
-            RemoteBotMessagePayload {
-                response: RemoteBotResponse {
-                    status: "failed".to_string(),
-                    reply: error.to_string(),
-                    action: "error".to_string(),
-                    selection: None,
-                    choices: Vec::new(),
-                    forward_to_codex: None,
-                },
-            },
-        ),
-    }
-}
-
-#[tauri::command]
-pub fn remote_bridge_status() -> CommandResult<RemoteBridgePayload> {
-    remote_bridge_payload("飞书桥接状态已读取。")
-}
-
-#[tauri::command]
-pub fn start_remote_bridge() -> CommandResult<RemoteBridgePayload> {
-    if let Err(error) = write_remote_inventory_snapshot() {
-        return failed(
-            &format!("飞书桥接启动前刷新项目/对话快照失败：{error}"),
-            remote_bridge_payload_value(),
-        );
-    }
-    match codex_plus_core::remote_bridge::start_default_bridge() {
-        Ok(bridge) => {
-            let _ = codex_plus_core::diagnostic_log::append_diagnostic_log(
-                "manager.remote_bridge_started",
-                json!({
-                    "status": bridge.status,
-                    "pid": bridge.pid,
-                    "script_path": bridge.script_path,
-                    "config_path": bridge.config_path,
-                    "log_path": bridge.log_path,
-                }),
-            );
-            let log = RemoteBridgeController::default()
-                .read_log(160)
-                .unwrap_or_default();
-            ok("飞书桥接已启动。", RemoteBridgePayload { bridge, log })
-        }
-        Err(error) => failed(
-            &format!("飞书桥接启动失败：{error}"),
-            remote_bridge_payload_value(),
-        ),
-    }
-}
-
-#[tauri::command]
-pub fn stop_remote_bridge() -> CommandResult<RemoteBridgePayload> {
-    let controller = RemoteBridgeController::default();
-    match controller.stop() {
-        Ok(bridge) => {
-            let _ = codex_plus_core::diagnostic_log::append_diagnostic_log(
-                "manager.remote_bridge_stopped",
-                json!({
-                    "status": bridge.status,
-                    "pid": bridge.pid,
-                    "log_path": bridge.log_path,
-                }),
-            );
-            let log = controller.read_log(160).unwrap_or_default();
-            ok("飞书桥接已停止。", RemoteBridgePayload { bridge, log })
-        }
-        Err(error) => failed(
-            &format!("飞书桥接停止失败：{error}"),
-            remote_bridge_payload_value(),
-        ),
-    }
-}
-
-#[tauri::command]
-pub fn read_remote_bridge_log() -> CommandResult<RemoteBridgePayload> {
-    remote_bridge_payload("飞书桥接日志已读取。")
-}
-
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserScriptKeyRequest {
     pub key: String,
-}
-
-#[tauri::command]
-pub fn delete_user_script(request: UserScriptKeyRequest) -> CommandResult<SettingsPayload> {
-    match default_user_script_manager().delete_user_script(&request.key) {
-        Ok(_) => settings_payload("用户脚本已删除。", "删除脚本后重新读取设置失败"),
-        Err(error) => failed(
-            &format!("删除用户脚本失败：{error}"),
-            SettingsPayload {
-                settings: SettingsStore::default().load().unwrap_or_default(),
-                settings_path: codex_plus_core::paths::default_settings_path()
-                    .to_string_lossy()
-                    .to_string(),
-                user_scripts: user_script_inventory(),
-            },
-        ),
-    }
 }
 
 #[tauri::command]
@@ -580,229 +355,10 @@ pub async fn repair_provider_paths() -> CommandResult<Value> {
     }
 }
 
-#[tauri::command]
-pub fn open_external_url(url: String) -> CommandResult<Value> {
-    let trimmed = url.trim();
-    if !(trimmed.starts_with("https://") || trimmed.starts_with("http://")) {
-        return failed("只允许打开 http 或 https 链接。", json!({}));
-    }
-    match open_url(trimmed) {
-        Ok(()) => ok("已在系统浏览器打开链接。", json!({ "url": trimmed })),
-        Err(error) => failed(&format!("打开链接失败：{error}"), json!({ "url": trimmed })),
-    }
-}
-
-#[tauri::command]
-pub async fn install_entrypoints() -> InstallActionResult {
-    tauri::async_runtime::spawn_blocking(install::install_entrypoints)
-        .await
-        .unwrap_or_else(|error| install_background_failure("安装入口", error))
-}
-
-#[tauri::command]
-pub async fn uninstall_entrypoints(options: InstallOptions) -> InstallActionResult {
-    tauri::async_runtime::spawn_blocking(move || install::uninstall_entrypoints(options))
-        .await
-        .unwrap_or_else(|error| install_background_failure("卸载入口", error))
-}
-
-#[tauri::command]
-pub async fn repair_shortcuts() -> InstallActionResult {
-    tauri::async_runtime::spawn_blocking(install::repair_shortcuts)
-        .await
-        .unwrap_or_else(|error| install_background_failure("修复快捷方式", error))
-}
-
-#[tauri::command]
-pub fn repair_backend() -> CommandResult<SettingsPayload> {
-    settings_payload("后端状态已刷新。", "修复后重新读取设置失败")
-}
-
-#[tauri::command]
-pub async fn check_update() -> CommandResult<Value> {
-    match codex_plus_core::update::check_for_update(codex_plus_core::version::VERSION).await {
-        Ok(update) => {
-            let status = if update.update_available {
-                "ok"
-            } else {
-                "not_checked"
-            };
-            CommandResult {
-                status: status.to_string(),
-                message: if update.update_available {
-                    "发现可用更新。".to_string()
-                } else {
-                    "当前已是最新版本。".to_string()
-                },
-                payload: json!({
-                    "currentVersion": update.current_version,
-                    "latestVersion": update.latest_version,
-                    "releaseSummary": update.release_summary,
-                    "assetName": update.asset_name,
-                    "assetUrl": update.asset_url,
-                    "updateAvailable": update.update_available,
-                    "progress": 0
-                }),
-            }
-        }
-        Err(error) => failed(
-            &format!("检查更新失败：{error}"),
-            json!({
-                "currentVersion": codex_plus_core::version::VERSION,
-                "latestVersion": Value::Null,
-                "releaseSummary": "",
-                "assetName": Value::Null,
-                "assetUrl": Value::Null,
-                "updateAvailable": false,
-                "progress": 0
-            }),
-        ),
-    }
-}
-
-#[tauri::command]
-pub async fn perform_update(
-    release: Option<codex_plus_core::update::Release>,
-) -> CommandResult<Value> {
-    let Some(release) = release else {
-        return failed(
-            "请先检查更新并选择可下载的 Release asset。",
-            json!({
-                "currentVersion": codex_plus_core::version::VERSION,
-                "progress": 0
-            }),
-        );
-    };
-    let download_dir = codex_plus_core::paths::default_app_state_dir().join("updates");
-    match codex_plus_core::update::perform_update(&release, &download_dir).await {
-        Ok(result) => ok(
-            "安装包已下载并启动，请按安装向导完成更新。",
-            json!({
-                "currentVersion": codex_plus_core::version::VERSION,
-                "latestVersion": result.release.version,
-                "releaseSummary": result.release.body,
-                "installedPath": result.installer_path.to_string_lossy(),
-                "launched": result.launched,
-                "progress": 100
-            }),
-        ),
-        Err(error) => failed(
-            &format!("安装更新失败：{error}"),
-            json!({
-                "currentVersion": codex_plus_core::version::VERSION,
-                "latestVersion": release.version,
-                "releaseSummary": release.body,
-                "progress": 0
-            }),
-        ),
-    }
-}
-
-#[tauri::command]
-pub fn load_watcher_state() -> CommandResult<WatcherPayload> {
-    ok("watcher 状态已加载。", watcher_payload())
-}
-
-#[tauri::command]
-pub fn install_watcher() -> CommandResult<WatcherPayload> {
-    let launcher_path = codex_plus_core::install::resolve_silent_launcher();
-    match codex_plus_core::watcher::install_watcher(&launcher_path, default_debug_port()) {
-        Ok(()) => ok("watcher 已安装。", watcher_payload()),
-        Err(error) => failed(&format!("安装 watcher 失败：{error}"), watcher_payload()),
-    }
-}
-
-#[tauri::command]
-pub fn uninstall_watcher() -> CommandResult<WatcherPayload> {
-    match codex_plus_core::watcher::uninstall_watcher() {
-        Ok(()) => ok("watcher 已移除。", watcher_payload()),
-        Err(error) => failed(&format!("移除 watcher 失败：{error}"), watcher_payload()),
-    }
-}
-
-#[tauri::command]
-pub fn enable_watcher() -> CommandResult<WatcherPayload> {
-    match codex_plus_core::watcher::enable_watcher() {
-        Ok(()) => ok("watcher 已启用。", watcher_payload()),
-        Err(error) => failed(&format!("启用 watcher 失败：{error}"), watcher_payload()),
-    }
-}
-
-#[tauri::command]
-pub fn disable_watcher() -> CommandResult<WatcherPayload> {
-    match codex_plus_core::watcher::disable_watcher() {
-        Ok(()) => ok("watcher 已禁用。", watcher_payload()),
-        Err(error) => failed(&format!("禁用 watcher 失败：{error}"), watcher_payload()),
-    }
-}
-
-#[tauri::command]
-pub fn read_latest_logs(request: LogRequest) -> CommandResult<LogsPayload> {
-    let path = codex_plus_core::paths::default_diagnostic_log_path();
-    match read_tail(&path, request.lines) {
-        Ok(text) => ok(
-            "日志已读取。",
-            LogsPayload {
-                path: path.to_string_lossy().to_string(),
-                text,
-                lines: request.lines,
-            },
-        ),
-        Err(error) => failed(
-            &format!("读取日志失败：{error}"),
-            LogsPayload {
-                path: path.to_string_lossy().to_string(),
-                text: String::new(),
-                lines: request.lines,
-            },
-        ),
-    }
-}
-
-#[tauri::command]
-pub fn copy_diagnostics() -> CommandResult<DiagnosticsPayload> {
-    ok(
-        "诊断报告已生成。",
-        DiagnosticsPayload {
-            report: diagnostics_report(),
-        },
-    )
-}
-
-#[tauri::command]
-pub fn reset_settings() -> CommandResult<SettingsPayload> {
-    let settings = BackendSettings::default();
-    match SettingsStore::default().save(&settings) {
-        Ok(()) => settings_payload("设置已重置为默认值。", "设置重置后重新读取失败"),
-        Err(error) => failed(
-            &format!("重置设置失败：{error}"),
-            SettingsPayload {
-                settings,
-                settings_path: codex_plus_core::paths::default_settings_path()
-                    .to_string_lossy()
-                    .to_string(),
-                user_scripts: user_script_inventory(),
-            },
-        ),
-    }
-}
-
-fn open_url(url: &str) -> anyhow::Result<()> {
-    #[cfg(windows)]
-    {
-        codex_plus_core::windows_open_url(url)
-    }
-    #[cfg(not(windows))]
-    {
-        std::process::Command::new("open")
-            .arg(url)
-            .spawn()
-            .map(|_| ())
-            .map_err(|error| anyhow::anyhow!("启动系统浏览器失败：{error}"))
-    }
-}
-
-fn settings_payload(message: &str, failure_context: &str) -> CommandResult<SettingsPayload> {
+pub(crate) fn settings_payload(
+    message: &str,
+    failure_context: &str,
+) -> CommandResult<SettingsPayload> {
     let store = SettingsStore::default();
     let settings_path = codex_plus_core::paths::default_settings_path()
         .to_string_lossy()
@@ -827,7 +383,7 @@ fn settings_payload(message: &str, failure_context: &str) -> CommandResult<Setti
     }
 }
 
-fn user_script_inventory() -> Value {
+pub(crate) fn user_script_inventory() -> Value {
     default_user_script_manager()
         .inventory()
         .unwrap_or_else(|error| {
@@ -839,7 +395,7 @@ fn user_script_inventory() -> Value {
         })
 }
 
-fn default_user_script_manager() -> UserScriptManager {
+pub(crate) fn default_user_script_manager() -> UserScriptManager {
     let config_dir = user_scripts_config_dir();
     let manager = UserScriptManager::new(
         builtin_user_scripts_dir(),
@@ -855,10 +411,10 @@ fn default_user_script_manager() -> UserScriptManager {
 }
 
 fn user_scripts_config_dir() -> PathBuf {
-    if cfg!(windows) {
-        if let Some(roaming) = std::env::var_os("APPDATA") {
-            return PathBuf::from(roaming).join("Dex");
-        }
+    if cfg!(windows)
+        && let Some(roaming) = std::env::var_os("APPDATA")
+    {
+        return PathBuf::from(roaming).join("Dex");
     }
     std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
@@ -868,10 +424,10 @@ fn user_scripts_config_dir() -> PathBuf {
 }
 
 fn legacy_user_scripts_config_dir() -> PathBuf {
-    if cfg!(windows) {
-        if let Some(roaming) = std::env::var_os("APPDATA") {
-            return PathBuf::from(roaming).join("Codex++");
-        }
+    if cfg!(windows)
+        && let Some(roaming) = std::env::var_os("APPDATA")
+    {
+        return PathBuf::from(roaming).join("Codex++");
     }
     std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
@@ -888,7 +444,7 @@ fn builtin_user_scripts_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("user_scripts"))
 }
 
-fn diagnostics_report() -> String {
+pub(crate) fn diagnostics_report() -> String {
     let (codex_app_path, entrypoints, latest_launch) = load_overview_payload();
     let overview = ok(
         "概览已加载。",
@@ -959,7 +515,7 @@ fn load_overview_payload() -> (
     )
 }
 
-fn load_remote_inventory_value() -> codex_plus_data::CodexRemoteInventory {
+pub(crate) fn load_remote_inventory_value() -> codex_plus_data::CodexRemoteInventory {
     let state_db = directories::BaseDirs::new()
         .map(|dirs| dirs.home_dir().join(".codex").join("state_5.sqlite"))
         .unwrap_or_else(|| PathBuf::from(".codex").join("state_5.sqlite"));
@@ -972,7 +528,9 @@ fn load_remote_inventory_value() -> codex_plus_data::CodexRemoteInventory {
     adapter.remote_inventory(300)
 }
 
-fn inventory_for_bot(inventory: codex_plus_data::CodexRemoteInventory) -> RemoteBotInventory {
+pub(crate) fn inventory_for_bot(
+    inventory: codex_plus_data::CodexRemoteInventory,
+) -> RemoteBotInventory {
     RemoteBotInventory {
         projects: inventory
             .projects
@@ -998,7 +556,7 @@ fn inventory_for_bot(inventory: codex_plus_data::CodexRemoteInventory) -> Remote
     }
 }
 
-fn write_remote_inventory_snapshot() -> anyhow::Result<()> {
+pub(crate) fn write_remote_inventory_snapshot() -> anyhow::Result<()> {
     let inventory = inventory_for_bot(load_remote_inventory_value());
     let path = codex_plus_core::paths::default_remote_inventory_path();
     if let Some(parent) = path.parent() {
@@ -1015,7 +573,7 @@ fn write_file_atomic(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn remote_control_payload(
+pub(crate) fn remote_control_payload(
     success_message: &str,
     failure_prefix: &str,
 ) -> CommandResult<RemoteControlPayload> {
@@ -1037,18 +595,21 @@ fn remote_control_payload(
     }
 }
 
-fn remote_bridge_payload(success_message: &str) -> CommandResult<RemoteBridgePayload> {
+pub(crate) fn remote_bridge_payload(success_message: &str) -> CommandResult<RemoteBridgePayload> {
     ok(success_message, remote_bridge_payload_value())
 }
 
-fn remote_bridge_payload_value() -> RemoteBridgePayload {
+pub(crate) fn remote_bridge_payload_value() -> RemoteBridgePayload {
     let controller = RemoteBridgeController::default();
     let bridge = controller.status();
     let log = controller.read_log(160).unwrap_or_default();
     RemoteBridgePayload { bridge, log }
 }
 
-fn install_background_failure(action: &str, error: impl std::fmt::Display) -> InstallActionResult {
+pub(crate) fn install_background_failure(
+    action: &str,
+    error: impl std::fmt::Display,
+) -> InstallActionResult {
     let state = install::inspect_entrypoints();
     InstallActionResult {
         status: "failed".to_string(),
@@ -1058,7 +619,7 @@ fn install_background_failure(action: &str, error: impl std::fmt::Display) -> In
     }
 }
 
-fn watcher_payload() -> WatcherPayload {
+pub(crate) fn watcher_payload() -> WatcherPayload {
     let flag = codex_plus_core::watcher::default_watcher_disabled_flag();
     WatcherPayload {
         enabled: !flag.exists(),
@@ -1066,7 +627,7 @@ fn watcher_payload() -> WatcherPayload {
     }
 }
 
-fn read_tail(path: &Path, max_lines: usize) -> std::io::Result<String> {
+pub(crate) fn read_tail(path: &Path, max_lines: usize) -> std::io::Result<String> {
     let contents = fs::read_to_string(path)?;
     let mut lines = contents.lines().rev().take(max_lines).collect::<Vec<_>>();
     lines.reverse();
@@ -1097,7 +658,7 @@ fn shortcut_state(shortcut: install::ShortcutState) -> PathState {
     }
 }
 
-fn ok<T: Serialize>(message: &str, payload: T) -> CommandResult<T> {
+pub(crate) fn ok<T: Serialize>(message: &str, payload: T) -> CommandResult<T> {
     CommandResult {
         status: "ok".to_string(),
         message: message.to_string(),
@@ -1105,7 +666,7 @@ fn ok<T: Serialize>(message: &str, payload: T) -> CommandResult<T> {
     }
 }
 
-fn failed<T: Serialize>(message: &str, payload: T) -> CommandResult<T> {
+pub(crate) fn failed<T: Serialize>(message: &str, payload: T) -> CommandResult<T> {
     CommandResult {
         status: "failed".to_string(),
         message: message.to_string(),
@@ -1113,7 +674,7 @@ fn failed<T: Serialize>(message: &str, payload: T) -> CommandResult<T> {
     }
 }
 
-fn default_debug_port() -> u16 {
+pub(crate) fn default_debug_port() -> u16 {
     9229
 }
 
@@ -1202,7 +763,7 @@ mod tests {
 
     #[test]
     fn watcher_state_returns_disabled_flag_path() {
-        let result = load_watcher_state();
+        let result = maintenance::load_watcher_state();
 
         assert_eq!(result.status, "ok");
         assert!(result.payload.disabled_flag.contains("watcher.disabled"));
@@ -1210,7 +771,7 @@ mod tests {
 
     #[test]
     fn missing_logs_return_failed_status() {
-        let result = read_latest_logs(LogRequest { lines: 25 });
+        let result = maintenance::read_latest_logs(LogRequest { lines: 25 });
 
         if result.payload.text.is_empty() {
             assert_eq!(result.status, "failed");
@@ -1219,7 +780,7 @@ mod tests {
 
     #[test]
     fn open_external_url_rejects_non_http_urls() {
-        let result = open_external_url("file:///C:/Windows/win.ini".to_string());
+        let result = maintenance::open_external_url("file:///C:/Windows/win.ini".to_string());
 
         assert_eq!(result.status, "failed");
         assert!(result.message.contains("只允许打开 http 或 https 链接"));

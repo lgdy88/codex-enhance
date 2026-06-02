@@ -1,0 +1,89 @@
+@media (max-width: 860px) {
+  body {
+    min-width: 0;
+  }
+
+  .shell {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+
+  .brand {
+    display: grid;
+    gap: 6px;
+    justify-content: center;
+    padding: 6px 0 12px;
+  }
+
+  .brand-logo {
+    width: 42px;
+    height: 42px;
+  }
+
+  .brand-update-button {
+    position: static;
+    width: 32px;
+    height: 32px;
+    justify-self: center;
+  }
+
+  .brand-update-button:hover {
+    transform: translateY(-1px);
+  }
+
+  .nav-label {
+    font-size: 0;
+  }
+
+  .nav-item {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    padding: 0;
+  }
+
+  .grid.two,
+  .form-row,
+  .setting-grid,
+  .hero-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-actions {
+    justify-content: flex-start;
+  }
+
+  .health-item {
+    grid-template-columns: 22px minmax(0, 1fr);
+  }
+
+  .remote-checks .health-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .remote-checks .health-item > span:first-child {
+    display: none;
+  }
+
+  .health-item .inline-flex {
+    grid-column: 2;
+    width: fit-content;
+  }
+}
+
+@media (max-height: 640px) {
+  .topbar {
+    min-height: 60px;
+    padding-block: 10px;
+  }
+
+  .screen {
+    padding-block: 12px 24px;
+  }
+
+  .health-item,
+  .feature-item,
+  .theme-row,
+  .guide-step,
+  .switch-row {
+    padding-block: 9px;
+  }
+}

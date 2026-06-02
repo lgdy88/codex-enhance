@@ -1,0 +1,87 @@
+@theme {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+}
+
+:root,
+.light {
+  --background: 48 24% 96%;
+  --foreground: 72 6% 12%;
+  --card: 0 0% 100%;
+  --card-foreground: 72 6% 12%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 72 6% 12%;
+  --primary: 173 83% 34%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 42 100% 92%;
+  --secondary-foreground: 33 100% 32%;
+  --muted: 45 30% 94%;
+  --muted-foreground: 70 4% 45%;
+  --accent: 167 50% 93%;
+  --accent-foreground: 175 88% 26%;
+  --destructive: 3 52% 50%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 42 17% 86%;
+  --input: 42 17% 86%;
+  --ring: 173 83% 34%;
+}
+
+.dark {
+  --background: 174 24% 9%;
+  --foreground: 48 24% 94%;
+  --card: 174 20% 12%;
+  --card-foreground: 48 24% 94%;
+  --popover: 174 20% 12%;
+  --popover-foreground: 48 24% 94%;
+  --primary: 173 66% 46%;
+  --primary-foreground: 174 24% 9%;
+  --secondary: 37 78% 25%;
+  --secondary-foreground: 42 100% 92%;
+  --muted: 174 16% 18%;
+  --muted-foreground: 48 13% 72%;
+  --accent: 174 22% 18%;
+  --accent-foreground: 167 54% 78%;
+  --destructive: 3 58% 44%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 174 14% 24%;
+  --input: 174 14% 24%;
+  --ring: 173 66% 46%;
+}
+
+:root {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  color-scheme: light;
+  font-family:
+    Inter, "Segoe UI", "Microsoft YaHei", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 14px;
+}
+
+:root.light {
+  color-scheme: light;
+}
+
+:root.dark {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
