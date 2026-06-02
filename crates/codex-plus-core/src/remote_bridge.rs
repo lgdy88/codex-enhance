@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -110,7 +111,15 @@ impl RemoteBridgeController {
         append_log_line(&self.log_path, "starting feishu bridge")?;
         let stdout = log_file(&self.log_path)?;
         let stderr = log_file(&self.log_path)?;
-        let mut command = Command::new(node_command());
+        let node_command = node_command_path();
+        append_log_line(
+            &self.log_path,
+            &format!(
+                "starting feishu bridge via {}",
+                node_command.to_string_lossy()
+            ),
+        )?;
+        let mut command = Command::new(&node_command);
         command
             .arg(&self.script_path)
             .arg("--config")
@@ -137,8 +146,9 @@ impl RemoteBridgeController {
         }
         let child = command.spawn().with_context(|| {
             format!(
-                "无法启动 Node 飞书桥接脚本 {}",
-                self.script_path.to_string_lossy()
+                "无法启动 Node 飞书桥接脚本 {}；命令：{}",
+                self.script_path.to_string_lossy(),
+                node_command.to_string_lossy()
             )
         })?;
         let state = RemoteBridgeState {
@@ -347,16 +357,20 @@ fn ensure_app_server_running(
         return Ok(());
     }
     let log_path = default_app_server_log_path();
+    let codex_command = codex_command_path();
     append_log_line(
         bridge_log_path,
-        &format!("starting codex app-server {listen_url}"),
+        &format!(
+            "starting codex app-server {listen_url} via {}",
+            codex_command.to_string_lossy()
+        ),
     )?;
     if let Some(parent) = log_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     let stdout = log_file(&log_path)?;
     let stderr = log_file(&log_path)?;
-    let mut command = Command::new("codex");
+    let mut command = Command::new(&codex_command);
     command
         .args(["app-server", "--listen", &listen_url])
         .stdin(Stdio::null())
@@ -367,9 +381,12 @@ fn ensure_app_server_running(
         use std::os::windows::process::CommandExt;
         command.creation_flags(crate::windows_create_no_window());
     }
-    let child = command
-        .spawn()
-        .with_context(|| format!("无法启动 Codex app-server：{listen_url}"))?;
+    let child = command.spawn().with_context(|| {
+        format!(
+            "无法启动 Codex app-server：{listen_url}；命令：{}",
+            codex_command.to_string_lossy()
+        )
+    })?;
     let state = RemoteAppServerState {
         pid: child.id(),
         started_at_ms: now_ms(),
@@ -445,8 +462,121 @@ fn try_connect_port(port: u16) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn node_command() -> &'static str {
-    if cfg!(windows) { "node.exe" } else { "node" }
+fn node_command_path() -> PathBuf {
+    find_command_path(node_command_candidates())
+        .unwrap_or_else(|| PathBuf::from(if cfg!(windows) { "node.exe" } else { "node" }))
+}
+
+fn codex_command_path() -> PathBuf {
+    if let Some(path) = explicit_command_path("DEX_CODEX_CLI") {
+        return path;
+    }
+    find_command_path(codex_command_candidates()).unwrap_or_else(|| PathBuf::from("codex"))
+}
+
+fn explicit_command_path(env_key: &str) -> Option<PathBuf> {
+    let value = std::env::var_os(env_key)?;
+    let path = PathBuf::from(value);
+    path.is_file().then_some(path)
+}
+
+#[cfg(windows)]
+fn codex_command_candidates() -> &'static [&'static str] {
+    &["codex.cmd", "codex.exe", "codex.bat"]
+}
+
+#[cfg(not(windows))]
+fn codex_command_candidates() -> &'static [&'static str] {
+    &["codex"]
+}
+
+#[cfg(windows)]
+fn node_command_candidates() -> &'static [&'static str] {
+    &["node.exe", "node.cmd", "node.bat"]
+}
+
+#[cfg(not(windows))]
+fn node_command_candidates() -> &'static [&'static str] {
+    &["node"]
+}
+
+fn find_command_path(candidates: &[&str]) -> Option<PathBuf> {
+    find_command_in_paths(candidates, command_search_paths())
+}
+
+fn find_command_in_paths<I>(candidates: &[&str], paths: I) -> Option<PathBuf>
+where
+    I: IntoIterator<Item = PathBuf>,
+{
+    paths
+        .into_iter()
+        .flat_map(|dir| candidates.iter().map(move |candidate| dir.join(candidate)))
+        .find(|path| path.is_file())
+}
+
+fn command_search_paths() -> Vec<PathBuf> {
+    let mut paths = std::env::var_os("PATH")
+        .map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
+        .unwrap_or_default();
+    add_windows_command_search_paths(&mut paths);
+    paths
+}
+
+#[cfg(windows)]
+fn add_windows_command_search_paths(paths: &mut Vec<PathBuf>) {
+    push_env_path(paths, "APPDATA", ["npm"]);
+    push_env_path(paths, "ProgramFiles", ["nodejs"]);
+    push_env_path(paths, "ProgramFiles(x86)", ["nodejs"]);
+    push_local_codex_bin_paths(paths);
+}
+
+#[cfg(not(windows))]
+fn add_windows_command_search_paths(_paths: &mut Vec<PathBuf>) {}
+
+#[cfg(windows)]
+fn push_env_path<const N: usize>(paths: &mut Vec<PathBuf>, env_key: &str, parts: [&str; N]) {
+    let Some(base) = std::env::var_os(env_key).map(PathBuf::from) else {
+        return;
+    };
+    let path = parts.iter().fold(base, |acc, part| acc.join(part));
+    push_unique_path(paths, path);
+}
+
+#[cfg(windows)]
+fn push_local_codex_bin_paths(paths: &mut Vec<PathBuf>) {
+    let Some(local_app_data) = std::env::var_os("LOCALAPPDATA").map(PathBuf::from) else {
+        return;
+    };
+    let bin_root = local_app_data.join("OpenAI").join("Codex").join("bin");
+    push_unique_path(paths, bin_root.clone());
+    let Ok(entries) = std::fs::read_dir(bin_root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            push_unique_path(paths, path);
+        }
+    }
+}
+
+#[cfg(windows)]
+fn push_unique_path(paths: &mut Vec<PathBuf>, path: PathBuf) {
+    if !paths.iter().any(|existing| same_path(existing, &path)) {
+        paths.push(path);
+    }
+}
+
+#[cfg(windows)]
+fn same_path(left: &Path, right: &Path) -> bool {
+    let left = path_key(left);
+    let right = path_key(right);
+    left == right
+}
+
+#[cfg(windows)]
+fn path_key(path: &Path) -> OsString {
+    OsString::from(path.to_string_lossy().to_ascii_lowercase())
 }
 
 fn now_ms() -> u64 {
@@ -530,5 +660,24 @@ mod tests {
         let config = config();
 
         assert!(validate_launch_config(&config).is_ok());
+    }
+
+    #[test]
+    fn find_command_in_paths_prefers_first_existing_candidate() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let empty_dir = tempdir.path().join("empty");
+        let npm_dir = tempdir.path().join("npm");
+        std::fs::create_dir_all(&empty_dir).unwrap();
+        std::fs::create_dir_all(&npm_dir).unwrap();
+        let command_path = npm_dir.join(if cfg!(windows) { "codex.cmd" } else { "codex" });
+        std::fs::write(&command_path, b"").unwrap();
+
+        let found = find_command_in_paths(
+            codex_command_candidates(),
+            [empty_dir.clone(), npm_dir.clone()],
+        )
+        .unwrap();
+
+        assert_eq!(found, command_path);
     }
 }

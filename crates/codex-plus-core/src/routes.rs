@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Instant, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use serde_json::{Value, json};
@@ -79,6 +79,12 @@ pub trait BridgeDataService: Send + Sync {
         session: SessionRef,
         target_cwd: String,
     ) -> anyhow::Result<Value>;
+    async fn project_threads(
+        &self,
+        project_cwd: String,
+        limit: usize,
+        cursor: String,
+    ) -> anyhow::Result<Value>;
     async fn thread_sort_key(&self, session: SessionRef) -> anyhow::Result<Value>;
     async fn thread_sort_keys(&self, sessions: Vec<SessionRef>) -> anyhow::Result<Value>;
 }
@@ -135,6 +141,7 @@ pub async fn handle_bridge_request(
         "/manager/open" => ctx.runtime.open_manager().await,
         "/backend/status" => ctx.runtime.backend_status().await,
         "/backend/repair" => ctx.runtime.repair_backend().await,
+        "/provider/status" => provider_status_value(),
         "/codex-model-catalog" | "/codex-config-model" => ctx.runtime.codex_model_catalog().await,
         "/diagnostics/log" => diagnostic_log_value(payload.clone()),
         "/delete" => result_value(ctx.data.delete(session_from_payload(&payload)).await),
@@ -168,6 +175,24 @@ pub async fn handle_bridge_request(
             ctx.data
                 .move_thread_workspace(session_from_payload(&payload), target_cwd)
                 .await
+        }
+        "/project-threads" => {
+            let project_cwd = payload
+                .get("project_cwd")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            let limit = payload
+                .get("limit")
+                .and_then(Value::as_u64)
+                .map(|value| value.clamp(1, 100) as usize)
+                .unwrap_or(30);
+            let cursor = payload
+                .get("cursor")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            ctx.data.project_threads(project_cwd, limit, cursor).await
         }
         "/thread-sort-key" => {
             ctx.data
@@ -431,6 +456,19 @@ impl BridgeDataService for UnavailableDataService {
         }))
     }
 
+    async fn project_threads(
+        &self,
+        _project_cwd: String,
+        _limit: usize,
+        _cursor: String,
+    ) -> anyhow::Result<Value> {
+        Ok(json!({
+            "status": "failed",
+            "message": "Project thread service is not wired in core launcher hooks",
+            "threads": []
+        }))
+    }
+
     async fn thread_sort_key(&self, session: SessionRef) -> anyhow::Result<Value> {
         Ok(json!({
             "status": "failed",
@@ -487,6 +525,44 @@ fn diagnostic_log_value(payload: Value) -> anyhow::Result<Value> {
         "status": "ok",
         "message": "日志已记录"
     }))
+}
+
+fn provider_status_value() -> anyhow::Result<Value> {
+    let config_path = codex_home_dir().join("config.toml");
+    let current_provider = read_current_provider(&config_path);
+    let config_mtime_ms = std::fs::metadata(&config_path)
+        .and_then(|metadata| metadata.modified())
+        .ok()
+        .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or_default();
+    Ok(json!({
+        "status": if config_path.is_file() { "ok" } else { "missing" },
+        "current_provider": current_provider,
+        "config_mtime_ms": config_mtime_ms,
+        "path": config_path.to_string_lossy()
+    }))
+}
+
+fn codex_home_dir() -> PathBuf {
+    std::env::var_os("CODEX_HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| directories::BaseDirs::new().map(|dirs| dirs.home_dir().join(".codex")))
+        .unwrap_or_else(|| PathBuf::from(".codex"))
+}
+
+fn read_current_provider(path: &Path) -> String {
+    let Ok(contents) = std::fs::read_to_string(path) else {
+        return String::new();
+    };
+    contents
+        .lines()
+        .filter_map(|line| line.split_once('='))
+        .find_map(|(key, value)| {
+            (key.trim() == "model_provider").then(|| value.trim().trim_matches('"').to_string())
+        })
+        .unwrap_or_default()
 }
 
 fn sanitize_diagnostic_event(event: &str) -> String {

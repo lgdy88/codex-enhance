@@ -90,20 +90,41 @@ async function handleNormalizedMessage(event) {
 }
 
 async function handleCardAction(data) {
-  const action = data?.action || {};
-  const value = action.value || {};
-  const chatId = data?.open_chat_id || data?.context?.open_chat_id || value.chatId || "";
-  const userId = data?.operator?.open_id || data?.operator?.user_id || value.userId || "";
-  if (!allowed(chatId, userId, config, "")) return;
+  const event = data?.event || data || {};
+  const action = event?.action || {};
+  const value = normalizeActionValue(action.value || action.option || {});
+  const chatId = event?.open_chat_id || event?.context?.open_chat_id || value.chatId || "";
+  const userId = event?.operator?.open_id || event?.operator?.user_id || event?.operator?.union_id || value.userId || "";
+  log(
+    "card_action_raw",
+    "chat",
+    Boolean(chatId),
+    "user",
+    Boolean(userId),
+    "keys",
+    Object.keys(event || {}).join(",") || "-",
+    "action",
+    Object.keys(action || {}).join(",") || "-"
+  );
+  if (!allowed(chatId, userId, config, "")) {
+    return statusCard("操作未生效", "这次卡片点击没有匹配到已绑定的飞书 chat/user。", "red");
+  }
   const text = actionText(value);
-  if (!text) return;
+  if (!text) return statusCard("操作未生效", "这次卡片点击没有携带可识别的命令。", "red");
   log("card_action", "chat", Boolean(chatId), "user", Boolean(userId), "text", text);
-  await routeAndReply({ chatId, userId, messageId: "", text });
+  try {
+    const response = await routeAndReply({ chatId, userId, messageId: "", text }, { returnOnly: true });
+    return cardForActionResponse(response, { chatId, userId });
+  } catch (error) {
+    log("card_action_failed", error?.message || error);
+    return statusCard("操作失败", `飞书卡片操作失败：${error?.message || error}`, "red");
+  }
 }
 
-async function routeAndReply(message) {
+async function routeAndReply(message, options = {}) {
   const response = handleBotMessage(state, message, inventory);
   saveState();
+  if (options.returnOnly) return response;
   if (response.forwardToCodex) {
     await replyText(message, "已收到，我会转发给 Codex。");
     try {
@@ -590,6 +611,31 @@ function cardFor(response, message) {
   };
 }
 
+function cardForActionResponse(response, message) {
+  if (response.choices?.length) return cardFor(response, message);
+  const title = response.action === "select_project"
+    ? "已选择 Codex 项目"
+    : response.action === "select_thread"
+      ? "已选择 Codex 对话"
+      : response.action === "new_thread"
+        ? "已准备新建对话"
+        : response.status === "failed"
+          ? "操作失败"
+          : "操作完成";
+  return statusCard(title, response.reply, response.status === "failed" ? "red" : "green");
+}
+
+function statusCard(title, content, template = "green") {
+  return {
+    config: { wide_screen_mode: true },
+    header: {
+      template,
+      title: { tag: "plain_text", content: title },
+    },
+    elements: [{ tag: "markdown", content: truncate(String(content || ""), 1800) || "操作已完成。" }],
+  };
+}
+
 function actionText(value) {
   const command = value.command || "";
   const index = value.index || "";
@@ -597,6 +643,19 @@ function actionText(value) {
   if (command === "/对话" && index) return `/对话 ${index}`;
   if (value.text) return String(value.text);
   return "";
+}
+
+function normalizeActionValue(value) {
+  if (!value) return {};
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === "object" ? parsed : { text: value };
+    } catch {
+      return { text: value };
+    }
+  }
+  return typeof value === "object" ? value : {};
 }
 
 function allowed(chatId, userId, remoteConfig, chatType) {

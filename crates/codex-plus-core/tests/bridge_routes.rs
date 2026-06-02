@@ -33,6 +33,7 @@ async fn bridge_routes_cover_all_current_paths() {
         ("/manager/open", json!({})),
         ("/backend/status", json!({})),
         ("/backend/repair", json!({})),
+        ("/provider/status", json!({})),
         ("/codex-model-catalog", json!({})),
         ("/codex-config-model", json!({})),
         ("/delete", json!({"session_id": "s1", "title": "First"})),
@@ -45,6 +46,10 @@ async fn bridge_routes_cover_all_current_paths() {
         (
             "/move-thread-workspace",
             json!({"session_id": "s1", "title": "First", "target_cwd": "/new"}),
+        ),
+        (
+            "/project-threads",
+            json!({"project_cwd": "/new", "limit": 30, "cursor": ""}),
         ),
         (
             "/thread-sort-key",
@@ -206,6 +211,20 @@ async fn data_routes_forward_payloads_to_data_service() {
         )
         .await,
         json!({"status": "moved", "session_id": "s1", "target_cwd": "/new"})
+    );
+    assert_eq!(
+        handle_bridge_request(
+            ctx.clone(),
+            "/project-threads",
+            json!({"project_cwd": "/new", "limit": 30, "cursor": ""}),
+        )
+        .await,
+        json!({
+            "status": "ok",
+            "threads": [{"session_id": "s1", "title": "First", "cwd": "/new"}],
+            "next_cursor": "",
+            "has_more": false
+        })
     );
     assert_eq!(
         handle_bridge_request(
@@ -672,6 +691,20 @@ impl BridgeDataService for FakeData {
         target_cwd: String,
     ) -> anyhow::Result<Value> {
         Ok(json!({"status": "moved", "session_id": session.session_id, "target_cwd": target_cwd}))
+    }
+
+    async fn project_threads(
+        &self,
+        project_cwd: String,
+        _limit: usize,
+        _cursor: String,
+    ) -> anyhow::Result<Value> {
+        Ok(json!({
+            "status": "ok",
+            "threads": [{"session_id": "s1", "title": "First", "cwd": project_cwd}],
+            "next_cursor": "",
+            "has_more": false
+        }))
     }
 
     async fn thread_sort_key(&self, session: SessionRef) -> anyhow::Result<Value> {

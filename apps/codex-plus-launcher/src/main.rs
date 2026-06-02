@@ -261,6 +261,66 @@ impl BridgeDataService for LauncherDataService {
         .map_err(|error| anyhow::anyhow!("move thread workspace task failed: {error}"))
     }
 
+    async fn project_threads(
+        &self,
+        project_cwd: String,
+        limit: usize,
+        cursor: String,
+    ) -> anyhow::Result<Value> {
+        let adapter = self.storage_adapter();
+        tokio::task::spawn_blocking(move || {
+            let limit = limit.clamp(1, 100);
+            let offset = cursor.parse::<usize>().unwrap_or_default();
+            let inventory = adapter.remote_inventory(1000);
+            if inventory.status != "ok" {
+                return serde_json::to_value(inventory)
+                    .map_err(|error| anyhow::anyhow!("serialize inventory failed: {error}"));
+            }
+            let target = normalize_route_cwd(&project_cwd);
+            let mut threads = inventory
+                .threads
+                .into_iter()
+                .filter(|thread| normalize_route_cwd(&thread.cwd) == target)
+                .map(|thread| {
+                    json!({
+                        "session_id": thread.id,
+                        "title": thread.title,
+                        "cwd": thread.cwd,
+                        "archived": thread.archived,
+                        "rollout_path": thread.rollout_path,
+                        "updated_at_ms": thread.updated_at_ms
+                    })
+                })
+                .collect::<Vec<_>>();
+            threads.sort_by(|left, right| {
+                let left_ms = left
+                    .get("updated_at_ms")
+                    .and_then(Value::as_i64)
+                    .unwrap_or_default();
+                let right_ms = right
+                    .get("updated_at_ms")
+                    .and_then(Value::as_i64)
+                    .unwrap_or_default();
+                right_ms.cmp(&left_ms)
+            });
+            let total = threads.len();
+            let page = threads
+                .into_iter()
+                .skip(offset)
+                .take(limit)
+                .collect::<Vec<_>>();
+            let next_offset = offset + page.len();
+            Ok(json!({
+                "status": "ok",
+                "threads": page,
+                "next_cursor": if next_offset < total { next_offset.to_string() } else { String::new() },
+                "has_more": next_offset < total
+            }))
+        })
+        .await
+        .map_err(|error| anyhow::anyhow!("project threads task failed: {error}"))?
+    }
+
     async fn thread_sort_key(&self, session: SessionRef) -> anyhow::Result<Value> {
         let adapter = self.storage_adapter();
         tokio::task::spawn_blocking(move || adapter.codex_thread_sort_key(&session))
@@ -283,6 +343,15 @@ impl LauncherDataService {
             codex_plus_data::BackupStore::new(self.backup_dir.clone()),
         )
     }
+}
+
+fn normalize_route_cwd(value: &str) -> String {
+    value
+        .trim()
+        .trim_start_matches("\\\\?\\")
+        .replace('\\', "/")
+        .trim_end_matches('/')
+        .to_ascii_lowercase()
 }
 
 struct LauncherRuntimeService {
