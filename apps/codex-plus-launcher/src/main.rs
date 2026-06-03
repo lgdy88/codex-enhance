@@ -36,6 +36,10 @@ impl Default for LauncherHooks {
 #[tokio::main]
 async fn main() -> Result<()> {
     let options = parse_launch_options(std::env::args().skip(1));
+    let Some(_guard) = acquire_single_instance_guard(options.debug_port)? else {
+        activate_existing_codex_app(&options).await?;
+        return Ok(());
+    };
     tokio::spawn(async {
         let _ = notify_manager_when_update_available().await;
     });
@@ -43,6 +47,152 @@ async fn main() -> Result<()> {
     let handle = launch_and_inject_with_hooks(options, &hooks).await?;
     handle.wait_for_codex_exit().await?;
     Ok(())
+}
+
+fn acquire_single_instance_guard(debug_port: u16) -> anyhow::Result<Option<std::net::TcpListener>> {
+    acquire_single_instance_guard_with_retry(debug_port, true)
+}
+
+fn acquire_single_instance_guard_with_retry(
+    debug_port: u16,
+    allow_stale_recovery: bool,
+) -> anyhow::Result<Option<std::net::TcpListener>> {
+    match try_acquire_single_instance_guard() {
+        Ok(listener) => Ok(Some(listener)),
+        Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => {
+            log_launcher_already_running(debug_port);
+            if allow_stale_recovery && should_recover_stale_launcher(debug_port) {
+                codex_plus_core::watcher::stop_launcher_processes();
+                std::thread::sleep(std::time::Duration::from_millis(250));
+                return acquire_single_instance_guard_with_retry(debug_port, false);
+            }
+            Ok(None)
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn try_acquire_single_instance_guard() -> std::io::Result<std::net::TcpListener> {
+    codex_plus_core::ports::acquire_loopback_port_guard(codex_plus_core::ports::LAUNCHER_GUARD_PORT)
+}
+
+fn should_recover_stale_launcher(debug_port: u16) -> bool {
+    let has_codex_process = !codex_plus_core::watcher::find_codex_processes().is_empty();
+    let cdp_listening = codex_plus_core::watcher::cdp_listening(debug_port);
+    let recover =
+        codex_plus_core::watcher::should_recover_stale_launcher(has_codex_process, cdp_listening);
+    let _ = codex_plus_core::diagnostic_log::append_diagnostic_log(
+        "launcher.stale_recovery_check",
+        json!({
+            "debug_port": debug_port,
+            "has_codex_process": has_codex_process,
+            "cdp_listening": cdp_listening,
+            "recover": recover
+        }),
+    );
+    recover
+}
+
+async fn activate_existing_codex_app(options: &LaunchOptions) -> anyhow::Result<()> {
+    let hooks = LauncherHooks::default();
+    let settings = hooks.load_settings().await?;
+    let app_dir = hooks.resolve_app_dir(options.app_dir.as_deref(), &settings)?;
+    let mut codex_extra_args = settings.codex_extra_args.clone();
+    codex_extra_args.extend(options.codex_extra_args.clone());
+    let launch_result = hooks
+        .launch_codex(&app_dir, options.debug_port, &codex_extra_args)
+        .await;
+    let helper_ready = if settings.enhancements_enabled {
+        ensure_existing_instance_helper(&hooks, options.helper_port).await
+    } else {
+        false
+    };
+    let injection_ready = if settings.enhancements_enabled {
+        helper_ready
+            && hooks
+                .ensure_injection(options.debug_port, options.helper_port)
+                .await
+    } else {
+        false
+    };
+    if injection_ready {
+        hooks.write_status("running").await;
+    } else if settings.enhancements_enabled {
+        hooks.write_status("running_degraded").await;
+    }
+    let process_ids = codex_plus_core::watcher::find_codex_processes();
+    let mut activated = false;
+    #[cfg(windows)]
+    {
+        for process_id in &process_ids {
+            if codex_plus_core::windows_activate_process_window(*process_id) {
+                activated = true;
+                break;
+            }
+        }
+    }
+    let _ = codex_plus_core::diagnostic_log::append_diagnostic_log(
+        "launcher.activate_existing_codex",
+        json!({
+            "app_dir": app_dir.to_string_lossy(),
+            "debug_port": options.debug_port,
+            "helper_port": options.helper_port,
+            "process_ids": process_ids,
+            "activated": activated,
+            "helper_ready": helper_ready,
+            "injection_ready": injection_ready,
+            "launch_ok": launch_result.is_ok(),
+            "launch_error": launch_result.as_ref().err().map(|error| error.to_string())
+        }),
+    );
+    if activated || launch_result.is_ok() {
+        Ok(())
+    } else {
+        launch_result.map(|_| ())
+    }
+}
+
+async fn ensure_existing_instance_helper(hooks: &LauncherHooks, helper_port: u16) -> bool {
+    match hooks.start_helper(helper_port).await {
+        Ok(()) => true,
+        Err(error) if helper_port_already_in_use(&error) => {
+            let _ = codex_plus_core::diagnostic_log::append_diagnostic_log(
+                "launcher.helper_reuse_existing",
+                json!({
+                    "helper_port": helper_port,
+                    "message": error.to_string()
+                }),
+            );
+            true
+        }
+        Err(error) => {
+            let _ = codex_plus_core::diagnostic_log::append_diagnostic_log(
+                "launcher.helper_start_failed",
+                json!({
+                    "helper_port": helper_port,
+                    "message": error.to_string()
+                }),
+            );
+            false
+        }
+    }
+}
+
+fn helper_port_already_in_use(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .filter_map(|cause| cause.downcast_ref::<std::io::Error>())
+        .any(|error| error.kind() == std::io::ErrorKind::AddrInUse)
+}
+
+fn log_launcher_already_running(debug_port: u16) {
+    let _ = codex_plus_core::diagnostic_log::append_diagnostic_log(
+        "launcher.already_running",
+        json!({
+            "guard_port": codex_plus_core::ports::LAUNCHER_GUARD_PORT,
+            "debug_port": debug_port
+        }),
+    );
 }
 
 async fn notify_manager_when_update_available() -> anyhow::Result<bool> {
@@ -637,6 +787,29 @@ mod tests {
 
         assert_eq!(options.debug_port, LaunchOptions::default().debug_port);
         assert_eq!(options.helper_port, LaunchOptions::default().helper_port);
+    }
+
+    #[test]
+    fn existing_instance_path_starts_helper_and_ensures_injection() {
+        let source = include_str!("main.rs").replace("\r\n", "\n");
+
+        assert!(source.contains(
+            "async fn activate_existing_codex_app(options: &LaunchOptions) -> anyhow::Result<()> {\n    let hooks = LauncherHooks::default();"
+        ));
+        assert!(
+            source.contains("ensure_existing_instance_helper(&hooks, options.helper_port).await")
+        );
+        assert!(source.contains(".ensure_injection(options.debug_port, options.helper_port)"));
+        assert!(source.contains("injection_ready"));
+        assert!(source.contains("running_degraded"));
+    }
+
+    #[test]
+    fn existing_instance_helper_reuses_busy_helper_port() {
+        let error = anyhow::Error::new(std::io::Error::new(std::io::ErrorKind::AddrInUse, "busy"))
+            .context("failed to bind helper runtime on 127.0.0.1:57321");
+
+        assert!(helper_port_already_in_use(&error));
     }
 
     #[test]

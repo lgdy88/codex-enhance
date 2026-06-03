@@ -298,6 +298,7 @@ export type Actions = {
   performUpdate: () => Promise<void>;
   saveSettings: () => Promise<void>;
   resetSettings: () => Promise<void>;
+  chooseCodexAppPath: (mode: "folder" | "file") => Promise<void>;
   deleteUserScript: (key: string) => Promise<void>;
   syncProvidersNow: () => Promise<void>;
   repairProviderPaths: () => Promise<void>;

@@ -1,3 +1,5 @@
+import { FileSearch, FolderOpen } from "lucide-react";
+
 import { CardHead, Field, Panel, Toolbar } from "@/components/app";
 import { Button } from "@/components/ui/button";
 import { CardContent } from "@/components/ui/card";
@@ -31,13 +33,33 @@ export function SettingsScreen({
           <Button variant="secondary" onClick={actions.toggleTheme}>切换主题</Button>
         </div>
         <div className="setting-grid">
-          <Field label="默认 Codex 应用路径">
-            <Input
-              placeholder="Codex.exe、Codex.app、app 目录或解包目录"
-              value={form.codexAppPath}
-              onChange={(event) => onFormChange({ ...form, codexAppPath: event.currentTarget.value })}
-            />
-          </Field>
+          <div className="field">
+            <span>默认 Codex 应用路径</span>
+            <div className="path-picker-row">
+              <Input
+                aria-label="默认 Codex 应用路径"
+                placeholder="Codex.exe、Codex.app、app 目录或解包目录"
+                value={form.codexAppPath}
+                onChange={(event) => onFormChange({ ...form, codexAppPath: event.currentTarget.value })}
+              />
+              <Button
+                size="icon"
+                title="选择目录"
+                variant="secondary"
+                onClick={() => void actions.chooseCodexAppPath("folder")}
+              >
+                <FolderOpen className="h-4 w-4" />
+              </Button>
+              <Button
+                size="icon"
+                title="选择文件"
+                variant="secondary"
+                onClick={() => void actions.chooseCodexAppPath("file")}
+              >
+                <FileSearch className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
           <label className="switch-row">
             <input checked={form.enhancementsEnabled} onChange={(event) => onFormChange({ ...form, enhancementsEnabled: event.currentTarget.checked })} type="checkbox" />
             <span>

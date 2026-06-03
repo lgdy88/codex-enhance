@@ -8,7 +8,7 @@ authors.workspace = true
 
 [lib]
 name = "codex_plus_manager_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+crate-type = ["rlib"]
 
 [[bin]]
 name = "codex-plus-plus-manager"
@@ -23,6 +23,7 @@ directories.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tauri = { version = "2", features = ["custom-protocol"] }
+tauri-plugin-dialog = "2"
 tauri-plugin-process = "2"
 tauri-plugin-updater = "2"
 

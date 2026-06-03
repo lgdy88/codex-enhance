@@ -338,6 +338,13 @@
   margin-bottom: 12px;
 }
 
+.path-picker-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px 36px;
+  gap: 8px;
+  align-items: center;
+}
+
 .field select {
   width: 100%;
   min-height: 36px;

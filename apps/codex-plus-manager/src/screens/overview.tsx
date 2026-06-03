@@ -36,8 +36,8 @@ export function OverviewScreen({ overview, actions }: { overview: OverviewResult
         <CardHead title="健康检查" detail="只展示本地桌面管理器需要处理的关键项" />
         <CardContent>
           <div className="health-grid">
-            <div className="health-item ok">
-              <CheckCircle2 className="h-4 w-4" />
+            <div className={`health-item ${overview?.codex_version ? "ok" : "needs-fix"}`}>
+              {overview?.codex_version ? <CheckCircle2 className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
               <div>
                 <strong>Codex 版本</strong>
                 <span>{overview?.codex_version ?? "未检测到 Codex 应用版本。"}</span>

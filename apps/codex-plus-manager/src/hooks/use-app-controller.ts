@@ -58,6 +58,7 @@ import type {
   UpdateResult,
   WatcherResult,
 } from "@/types";
+import { open } from "@tauri-apps/plugin-dialog";
 import type { Update } from "@tauri-apps/plugin-updater";
 
 export function useAppController() {
@@ -226,6 +227,21 @@ export function useAppController() {
     setSettingsForm(normalized);
     setLaunchForm((current) => ({ ...current, appPath: normalized.codexAppPath }));
     showNotice("设置重置", result.message, result.status);
+  };
+
+  const chooseCodexAppPath = async (mode: "folder" | "file") => {
+    let selected: unknown;
+    try {
+      selected = await open(codexAppPickerOptions(mode));
+    } catch (error) {
+      showNotice("Codex 应用路径", `打开选择器失败：${stringifyError(error)}`, "failed");
+      return;
+    }
+    if (typeof selected !== "string" || !selected.trim()) return;
+    const path = selected.trim();
+    setSettingsForm((current) => ({ ...current, codexAppPath: path }));
+    setLaunchForm((current) => ({ ...current, appPath: path }));
+    showNotice("Codex 应用路径", "已填入选择的路径，保存设置后生效。", "ok");
   };
 
   const repairBackend = async () => {
@@ -478,6 +494,7 @@ export function useAppController() {
       performUpdate,
       saveSettings,
       resetSettings,
+      chooseCodexAppPath,
       deleteUserScript,
       syncProvidersNow: () => providerAction("sync_providers_now"),
       repairProviderPaths: () => providerAction("repair_provider_paths"),
@@ -557,6 +574,18 @@ function shouldShowUpdateNotice(result: UpdateResult, silent: boolean): boolean 
   if (result.updateAvailable) return true;
   if (silent) return false;
   return true;
+}
+
+function codexAppPickerOptions(mode: "folder" | "file") {
+  if (mode === "folder") {
+    return { directory: true, multiple: false, title: "选择 Codex 应用目录" };
+  }
+  return {
+    directory: false,
+    multiple: false,
+    title: "选择 Codex.exe 或 Codex.app",
+    filters: [{ name: "Codex 应用", extensions: ["exe", "app"] }],
+  };
 }
 
 function updateReleaseFromResult(result: UpdateResult): UpdateRelease | null {

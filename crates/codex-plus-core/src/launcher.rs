@@ -139,6 +139,9 @@ pub trait LaunchHooks: Send + Sync {
         Ok(None)
     }
     async fn inject(&self, debug_port: u16, helper_port: u16) -> anyhow::Result<()>;
+    async fn inject_once(&self, debug_port: u16, helper_port: u16) -> anyhow::Result<()> {
+        self.inject(debug_port, helper_port).await
+    }
     async fn inject_bridge(
         &self,
         debug_port: u16,
@@ -146,6 +149,31 @@ pub trait LaunchHooks: Send + Sync {
         _ctx: crate::routes::BridgeContext,
     ) -> anyhow::Result<()> {
         self.inject(debug_port, helper_port).await
+    }
+    async fn ensure_injection(&self, debug_port: u16, helper_port: u16) -> bool {
+        for attempt in 1..=120 {
+            let result = match self.bridge_context(debug_port).await {
+                Ok(Some(ctx)) => self.inject_bridge(debug_port, helper_port, ctx).await,
+                Ok(None) => self.inject_once(debug_port, helper_port).await,
+                Err(error) => Err(error),
+            };
+            match result {
+                Ok(()) => return true,
+                Err(error) => {
+                    let _ = crate::diagnostic_log::append_diagnostic_log(
+                        "launcher.ensure_injection_retry_failed",
+                        serde_json::json!({
+                            "debug_port": debug_port,
+                            "helper_port": helper_port,
+                            "attempt": attempt,
+                            "message": error.to_string()
+                        }),
+                    );
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                }
+            }
+        }
+        false
     }
     async fn write_status(&self, status: &str);
     async fn wait_for_codex_exit(&self, launch: &CodexLaunch) -> anyhow::Result<()>;
@@ -185,6 +213,7 @@ where
     let status_store = options.status_store.clone();
     let mut helper_started = false;
     let mut launched = None;
+    let mut keep_launched_on_error = false;
 
     let result: anyhow::Result<LaunchHandle> = async {
         if settings.provider_sync_enabled {
@@ -200,23 +229,37 @@ where
             .launch_codex(&app_dir, debug_port, &codex_extra_args)
             .await?;
         launched = Some(launch.clone());
+        keep_launched_on_error = true;
 
+        let mut injection_degraded = false;
         if settings.enhancements_enabled {
-            match hooks.bridge_context(debug_port).await? {
-                Some(ctx) => hooks.inject_bridge(debug_port, helper_port, ctx).await?,
-                None => hooks.inject(debug_port, helper_port).await?,
+            if hooks.ensure_injection(debug_port, helper_port).await {
+                keep_launched_on_error = false;
+            } else {
+                let degraded = launch_status(
+                    "running_degraded",
+                    "Codex 已启动，Dex 增强仍在等待页面就绪。",
+                    debug_port,
+                    helper_port,
+                    &app_dir,
+                );
+                options.status_store.save_latest(&degraded)?;
+                hooks.write_status("running_degraded").await;
+                injection_degraded = true;
             }
         }
 
-        let status = launch_status(
-            "running",
-            "Dex launcher ready",
-            debug_port,
-            helper_port,
-            &app_dir,
-        );
-        options.status_store.save_latest(&status)?;
-        hooks.write_status("running").await;
+        if !settings.enhancements_enabled || !injection_degraded {
+            let status = launch_status(
+                "running",
+                "Dex launcher ready",
+                debug_port,
+                helper_port,
+                &app_dir,
+            );
+            options.status_store.save_latest(&status)?;
+            hooks.write_status("running").await;
+        }
 
         Ok(LaunchHandle {
             debug_port,
@@ -237,7 +280,9 @@ where
                 hooks.shutdown_helper(helper_port).await;
             }
             if let Some(launch) = &launched {
-                hooks.terminate_codex(launch).await;
+                if !keep_launched_on_error {
+                    hooks.terminate_codex(launch).await;
+                }
             }
             let message = error.to_string();
             let failure = launch_status("failed", &message, debug_port, helper_port, &app_dir);
@@ -362,17 +407,18 @@ impl LaunchHooks for DefaultLaunchHooks {
                 let process_id =
                     activate_packaged_app_with_environment(app_user_model_id, arguments, &env)
                         .await?;
-                return Ok(match activation {
-                    CodexLaunch::PackagedActivation {
-                        app_user_model_id,
-                        arguments,
-                        ..
-                    } => CodexLaunch::PackagedActivation {
-                        app_user_model_id,
-                        arguments,
-                        process_id: Some(process_id),
-                    },
-                    CodexLaunch::Process { .. } => unreachable!(),
+                let CodexLaunch::PackagedActivation {
+                    app_user_model_id,
+                    arguments,
+                    ..
+                } = activation
+                else {
+                    unreachable!();
+                };
+                return Ok(CodexLaunch::PackagedActivation {
+                    app_user_model_id,
+                    arguments,
+                    process_id: Some(process_id),
                 });
             }
         }
@@ -427,6 +473,10 @@ impl LaunchHooks for DefaultLaunchHooks {
 
     async fn inject(&self, debug_port: u16, helper_port: u16) -> anyhow::Result<()> {
         retry_injection(debug_port, helper_port).await
+    }
+
+    async fn inject_once(&self, debug_port: u16, helper_port: u16) -> anyhow::Result<()> {
+        try_inject(debug_port, helper_port).await
     }
 
     async fn write_status(&self, _status: &str) {}

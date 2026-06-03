@@ -1,12 +1,20 @@
 use codex_plus_core::watcher::{
     build_spawn_launcher_command, build_watcher_install_plan, cdp_listening, codex_process_ids,
     disable_watcher_at, enable_watcher_at, filter_killable_launcher_processes,
-    watcher_disabled_flag,
+    should_recover_stale_launcher, watcher_disabled_flag,
 };
 
 #[test]
 fn cdp_listening_returns_true_for_bound_loopback_port() {
     let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    assert!(cdp_listening(port));
+}
+
+#[test]
+fn cdp_listening_returns_true_for_bound_ipv6_loopback_port() {
+    let listener = std::net::TcpListener::bind("[::1]:0").unwrap();
     let port = listener.local_addr().unwrap().port();
 
     assert!(cdp_listening(port));
@@ -20,6 +28,14 @@ fn cdp_listening_returns_false_for_closed_port() {
     };
 
     assert!(!cdp_listening(port));
+}
+
+#[test]
+fn stale_launcher_recovery_only_runs_when_codex_and_cdp_are_absent() {
+    assert!(should_recover_stale_launcher(false, false));
+    assert!(!should_recover_stale_launcher(true, false));
+    assert!(!should_recover_stale_launcher(false, true));
+    assert!(!should_recover_stale_launcher(true, true));
 }
 
 #[test]

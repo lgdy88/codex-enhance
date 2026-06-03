@@ -158,6 +158,34 @@ fn app_paths_extracts_codex_version_from_windows_package_app_dir() {
         codex_app_version(&app_dir).as_deref(),
         Some("26.513.3673.0")
     );
+    assert_eq!(
+        codex_app_version(&app_dir.join("resources")).as_deref(),
+        Some("26.513.3673.0")
+    );
+}
+
+#[test]
+fn app_paths_extracts_codex_version_from_macos_bundle_plist() {
+    let temp = tempfile::tempdir().unwrap();
+    let contents = temp.path().join("OpenAI Codex.app").join("Contents");
+    std::fs::create_dir_all(&contents).unwrap();
+    std::fs::write(
+        contents.join("Info.plist"),
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+  <key>CFBundleVersion</key>
+  <string>26.500.0</string>
+  <key>CFBundleShortVersionString</key>
+  <string>26.513.3673</string>
+</dict>
+</plist>
+"#,
+    )
+    .unwrap();
+
+    let app = temp.path().join("OpenAI Codex.app");
+    assert_eq!(codex_app_version(&app).as_deref(), Some("26.513.3673"));
 }
 
 #[test]
@@ -622,7 +650,7 @@ async fn launch_lifecycle_passes_configured_extra_args_to_codex_launch() {
 }
 
 #[tokio::test]
-async fn launch_lifecycle_writes_failure_and_cleans_helper_when_injection_fails() {
+async fn launch_lifecycle_enters_degraded_mode_when_injection_fails() {
     let temp = tempfile::tempdir().unwrap();
     let app_dir = temp.path().join("Codex.app");
     std::fs::create_dir_all(&app_dir).unwrap();
@@ -630,7 +658,7 @@ async fn launch_lifecycle_writes_failure_and_cleans_helper_when_injection_fails(
     let events = Arc::new(Mutex::new(Vec::<String>::new()));
     let hooks = FakeHooks::new(events.clone()).with_inject_error("inject failed");
 
-    let error = launch_and_inject_with_hooks(
+    let handle = launch_and_inject_with_hooks(
         LaunchOptions {
             app_dir: Some(app_dir),
             codex_extra_args: Vec::new(),
@@ -641,9 +669,8 @@ async fn launch_lifecycle_writes_failure_and_cleans_helper_when_injection_fails(
         &hooks,
     )
     .await
-    .unwrap_err();
+    .unwrap();
 
-    assert!(error.to_string().contains("inject failed"));
     assert_eq!(
         *events.lock().unwrap(),
         vec![
@@ -653,14 +680,18 @@ async fn launch_lifecycle_writes_failure_and_cleans_helper_when_injection_fails(
             "start-helper:57321",
             "launch:9229",
             "inject:9229:57321",
-            "shutdown-helper:57321",
-            "terminate-codex",
-            "status:failed",
+            "status:running_degraded",
         ]
     );
     let status = status_store.load_latest().unwrap().unwrap();
-    assert_eq!(status.status, "failed");
-    assert!(status.message.contains("inject failed"));
+    assert_eq!(status.status, "running_degraded");
+    assert!(status.message.contains("Codex 已启动"));
+
+    handle.wait_for_codex_exit().await.unwrap();
+    let events = events.lock().unwrap().clone();
+    assert!(events.contains(&"wait-codex".to_string()));
+    assert!(events.contains(&"shutdown-helper:57321".to_string()));
+    assert!(!events.contains(&"terminate-codex".to_string()));
 }
 
 #[tokio::test]
@@ -750,7 +781,7 @@ async fn launch_lifecycle_cleans_helper_and_codex_when_status_save_fails() {
 }
 
 #[tokio::test]
-async fn launch_lifecycle_terminates_packaged_process_id_when_injection_fails() {
+async fn launch_lifecycle_keeps_packaged_process_id_running_when_injection_fails() {
     let temp = tempfile::tempdir().unwrap();
     let app_dir = temp.path().join("Codex.app");
     std::fs::create_dir_all(&app_dir).unwrap();
@@ -764,7 +795,7 @@ async fn launch_lifecycle_terminates_packaged_process_id_when_injection_fails() 
         })
         .with_inject_error("inject failed");
 
-    let error = launch_and_inject_with_hooks(
+    let handle = launch_and_inject_with_hooks(
         LaunchOptions {
             app_dir: Some(app_dir),
             codex_extra_args: Vec::new(),
@@ -775,15 +806,15 @@ async fn launch_lifecycle_terminates_packaged_process_id_when_injection_fails() 
         &hooks,
     )
     .await
-    .unwrap_err();
+    .unwrap();
 
-    assert!(error.to_string().contains("inject failed"));
     assert!(
-        events
+        !events
             .lock()
             .unwrap()
             .contains(&"terminate-packaged:4242".to_string())
     );
+    handle.wait_for_codex_exit().await.unwrap();
 }
 
 #[tokio::test]
@@ -836,6 +867,23 @@ async fn default_launch_hooks_provider_sync_enabled_returns_explicit_error() {
         error
             .to_string()
             .contains("provider sync requires launcher hooks")
+    );
+}
+
+#[tokio::test]
+async fn default_ensure_injection_uses_single_attempt_hook() {
+    let events = Arc::new(Mutex::new(Vec::<String>::new()));
+    let hooks = SingleAttemptHooks {
+        events: events.clone(),
+    };
+
+    assert!(hooks.ensure_injection(9229, 57321).await);
+    assert_eq!(
+        *events.lock().unwrap(),
+        vec![
+            "bridge-context:9229".to_string(),
+            "inject-once:9229:57321".to_string()
+        ]
     );
 }
 
@@ -973,6 +1021,10 @@ impl LaunchHooks for FakeHooks {
         Ok(())
     }
 
+    async fn ensure_injection(&self, debug_port: u16, helper_port: u16) -> bool {
+        self.inject(debug_port, helper_port).await.is_ok()
+    }
+
     async fn write_status(&self, status: &str) {
         self.event(format!("status:{status}"));
     }
@@ -993,4 +1045,88 @@ impl LaunchHooks for FakeHooks {
             self.event("terminate-codex");
         }
     }
+}
+
+#[derive(Clone)]
+struct SingleAttemptHooks {
+    events: Arc<Mutex<Vec<String>>>,
+}
+
+impl SingleAttemptHooks {
+    fn event(&self, event: impl Into<String>) {
+        self.events.lock().unwrap().push(event.into());
+    }
+}
+
+#[async_trait::async_trait(?Send)]
+impl LaunchHooks for SingleAttemptHooks {
+    fn resolve_app_dir(
+        &self,
+        app_dir: Option<&Path>,
+        _settings: &BackendSettings,
+    ) -> anyhow::Result<PathBuf> {
+        app_dir
+            .map(Path::to_path_buf)
+            .ok_or_else(|| anyhow::anyhow!("missing app dir"))
+    }
+
+    fn select_debug_port(&self, requested: u16) -> u16 {
+        requested
+    }
+
+    fn select_helper_port(&self, requested: u16) -> u16 {
+        requested
+    }
+
+    async fn load_settings(&self) -> anyhow::Result<BackendSettings> {
+        Ok(BackendSettings::default())
+    }
+
+    async fn run_provider_sync(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn start_helper(&self, _helper_port: u16) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn launch_codex(
+        &self,
+        _app_dir: &Path,
+        _debug_port: u16,
+        _extra_args: &[String],
+    ) -> anyhow::Result<CodexLaunch> {
+        Ok(CodexLaunch::Process {
+            command: vec!["codex".to_string()],
+            wait_strategy: codex_plus_core::launcher::ProcessWaitStrategy::TrackedChild,
+            macos_cleanup_policy: None,
+        })
+    }
+
+    async fn bridge_context(
+        &self,
+        debug_port: u16,
+    ) -> anyhow::Result<Option<codex_plus_core::routes::BridgeContext>> {
+        self.event(format!("bridge-context:{debug_port}"));
+        Ok(None)
+    }
+
+    async fn inject(&self, _debug_port: u16, _helper_port: u16) -> anyhow::Result<()> {
+        anyhow::bail!("retrying inject should not run from default ensure_injection")
+    }
+
+    async fn inject_once(&self, debug_port: u16, helper_port: u16) -> anyhow::Result<()> {
+        self.event(format!("inject-once:{debug_port}:{helper_port}"));
+        Ok(())
+    }
+
+    async fn write_status(&self, _status: &str) {}
+
+    async fn wait_for_codex_exit(&self, _launch: &CodexLaunch) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn shutdown_helper(&self, _helper_port: u16) {}
+
+    async fn terminate_codex(&self, _launch: &CodexLaunch) {}
 }

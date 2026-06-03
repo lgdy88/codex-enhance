@@ -265,24 +265,21 @@ fn read_current_provider(path: &Path) -> String {
     let Ok(text) = fs::read_to_string(path) else {
         return DEFAULT_PROVIDER.to_string();
     };
-    for line in text.lines() {
-        let stripped = line.trim();
-        if stripped.starts_with("model_provider") && stripped.contains('=') {
-            let raw = stripped
-                .split_once('=')
-                .map(|(_, value)| value.trim())
-                .unwrap_or("");
-            if raw.len() >= 2 && raw.starts_with('"') && raw.ends_with('"') {
-                let value = &raw[1..raw.len() - 1];
-                return if value.is_empty() {
-                    DEFAULT_PROVIDER.to_string()
-                } else {
-                    value.to_string()
-                };
-            }
-        }
+    let provider = root_toml_string_value(&text, "model_provider").unwrap_or_default();
+    if provider.trim().is_empty() {
+        DEFAULT_PROVIDER.to_string()
+    } else {
+        provider
     }
-    DEFAULT_PROVIDER.to_string()
+}
+
+fn root_toml_string_value(text: &str, key: &str) -> Option<String> {
+    let config = text.parse::<toml::Value>().ok()?;
+    config
+        .as_table()?
+        .get(key)
+        .and_then(toml::Value::as_str)
+        .map(str::to_string)
 }
 
 fn acquire_lock(path: &Path) -> std::io::Result<()> {
