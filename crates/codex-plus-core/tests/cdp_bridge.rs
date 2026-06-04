@@ -56,6 +56,70 @@ fn injection_script_marks_diagnostic_build_and_reports_script_loaded() {
 }
 
 #[test]
+fn injection_script_keeps_bundled_marketplace_name_for_default_filter() {
+    let script = assets::injection_script(57321);
+
+    assert!(script.contains("codexPluginMarketplaceUnlockVersion = \"10\""));
+    assert!(script.contains("if (name === \"openai-bundled\") return \"\""));
+    assert!(!script.contains("if (name === \"openai-bundled\") return \"dex-openai-bundled\""));
+    assert!(script.contains("if (name === \"openai-bundled\" || name === \"dex-openai-bundled\") return \"OpenAI Plugins 1 (Dex)\""));
+    assert!(script.contains(
+        "if (!alias && !codexPluginOfficialMarketplaceName(marketplace.name)) return false"
+    ));
+    assert!(!script.contains("codexPluginMarketplacePathAliasForName"));
+    assert!(!script.contains("marketplace.path ="));
+}
+
+#[test]
+fn injection_script_bypasses_plugin_marketplace_build_flavor_filters() {
+    let script = assets::injection_script(57321);
+
+    assert!(script.contains("installPluginBuildFlavorFilterPatch"));
+    assert!(script.contains("Array.prototype.filter"));
+    assert!(script.contains("codexPluginBuildFlavorFilterPatch"));
+    assert!(script.contains("source.includes(\"!u(e.marketplaceName)||e.marketplaceName===r\")"));
+    assert!(script.contains("source.includes(\"!t.includes(e.name)\")"));
+    assert!(script.contains(
+        "codexPluginOfficialMarketplaceName(plugin?.marketplaceName) && !callback(plugin)"
+    ));
+    assert!(script.contains(
+        "codexPluginOfficialMarketplaceName(marketplace?.name) && !callback(marketplace)"
+    ));
+    assert!(script.contains("plugin_build_flavor_filter_bypassed"));
+    assert!(script.contains("plugin_marketplace_hidden_filter_bypassed"));
+}
+
+#[test]
+fn injection_script_restores_official_marketplace_names_for_plugin_install() {
+    let script = assets::injection_script(57321);
+
+    assert!(script.contains("restorePluginMarketplaceName"));
+    assert!(script.contains("if (name === \"dex-openai-curated\") return \"openai-curated\""));
+    assert!(script.contains("method === \"install-plugin\""));
+    assert!(script.contains(
+        "next.remoteMarketplaceName = restorePluginMarketplaceName(next.remoteMarketplaceName)"
+    ));
+    assert!(script.contains("if (typeof next.marketplacePath === \"string\" && next.marketplacePath.startsWith(\"remote:\"))"));
+    assert!(script.contains("delete next.marketplacePath"));
+    assert!(script.contains("requestRemoteMarketplaceName"));
+    assert!(script.contains("plugin_install_request_debug"));
+    assert!(script.contains("plugin_install_request_failed"));
+    assert!(script.contains("plugin_marketplace_response_debug"));
+    assert!(script.contains("pluginMarketplaceCounts"));
+}
+
+#[test]
+fn injection_script_keeps_plugin_marketplace_patch_provider_agnostic() {
+    let script = assets::injection_script(57321);
+
+    assert!(script.contains("installPluginMarketplaceRequestPatch"));
+    assert!(script.contains("installPluginBuildFlavorFilterPatch"));
+    assert!(!script.contains("pluginPatchDisabledInRelayMode"));
+    assert!(!script.contains("launchMode === \"relay\""));
+    assert!(!script.contains("!codexPlusBackendSettingsLoaded"));
+}
+
+#[test]
 fn cdp_target_deserializes_websocket_field() {
     let target: CdpTarget = serde_json::from_value(json!({
         "id": "page-1",
