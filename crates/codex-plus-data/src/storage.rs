@@ -775,12 +775,13 @@ fn newest_timestamp(left: Option<i64>, right: Option<i64>) -> Option<i64> {
 }
 
 fn project_name_from_cwd(cwd: &str) -> String {
-    Path::new(cwd)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .filter(|name| !name.is_empty())
+    let normalized = normalize_cwd_for_display(cwd);
+    let trimmed = normalized.trim_end_matches(['/', '\\']);
+    trimmed
+        .rsplit(['/', '\\'])
+        .find(|name| !name.is_empty())
         .map(ToString::to_string)
-        .unwrap_or_else(|| cwd.to_string())
+        .unwrap_or_else(|| normalized.to_string())
 }
 
 fn default_codex_global_state_path() -> PathBuf {
