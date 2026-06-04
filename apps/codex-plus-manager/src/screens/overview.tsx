@@ -16,7 +16,7 @@ export function OverviewScreen({ overview, actions }: { overview: OverviewResult
             <div>
               <div className="eyebrow">Dex 桌面状态</div>
               <h2>{health.every((item) => item.ok) ? "运行环境看起来正常" : "有项目需要处理"}</h2>
-              <p>桌面版只管理启动、增强、Provider History、维护和诊断，不接管上游代理或远端推荐默认项。</p>
+              <p>桌面版只管理启动、增强、供应商历史和维护，不接管上游代理或远端推荐默认项。</p>
             </div>
             <div className="hero-actions">
               <Button onClick={() => void actions.checkHealth()}>

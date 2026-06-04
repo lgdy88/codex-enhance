@@ -14,6 +14,18 @@ pub struct BackendSettings {
     pub provider_sync_enabled: bool,
     #[serde(rename = "enhancementsEnabled", default = "default_true")]
     pub enhancements_enabled: bool,
+    #[serde(rename = "pluginMarketplaceUnlock", default = "default_true")]
+    pub plugin_marketplace_unlock: bool,
+    #[serde(rename = "forcePluginInstall", default = "default_true")]
+    pub force_plugin_install: bool,
+    #[serde(rename = "sessionDelete", default = "default_true")]
+    pub session_delete: bool,
+    #[serde(rename = "markdownExport", default = "default_true")]
+    pub markdown_export: bool,
+    #[serde(rename = "projectMove", default = "default_true")]
+    pub project_move: bool,
+    #[serde(rename = "conversationTimeline", default = "default_true")]
+    pub conversation_timeline: bool,
 }
 
 impl Default for BackendSettings {
@@ -23,6 +35,12 @@ impl Default for BackendSettings {
             codex_extra_args: Vec::new(),
             provider_sync_enabled: false,
             enhancements_enabled: true,
+            plugin_marketplace_unlock: true,
+            force_plugin_install: true,
+            session_delete: true,
+            markdown_export: true,
+            project_move: true,
+            conversation_timeline: true,
         }
     }
 }
@@ -137,6 +155,18 @@ fn merge_known_setting_fields(target: &mut Map<String, Value>, source: &Map<Stri
     if let Some(value) = source.get("enhancementsEnabled").and_then(Value::as_bool) {
         target.insert("enhancementsEnabled".to_string(), Value::Bool(value));
     }
+    for key in [
+        "pluginMarketplaceUnlock",
+        "forcePluginInstall",
+        "sessionDelete",
+        "markdownExport",
+        "projectMove",
+        "conversationTimeline",
+    ] {
+        if let Some(value) = source.get(key).and_then(Value::as_bool) {
+            target.insert(key.to_string(), Value::Bool(value));
+        }
+    }
 }
 
 fn settings_to_object(settings: &BackendSettings) -> Map<String, Value> {
@@ -200,6 +230,12 @@ mod tests {
         assert!(settings.codex_extra_args.is_empty());
         assert!(!settings.provider_sync_enabled);
         assert!(settings.enhancements_enabled);
+        assert!(settings.plugin_marketplace_unlock);
+        assert!(settings.force_plugin_install);
+        assert!(settings.session_delete);
+        assert!(settings.markdown_export);
+        assert!(settings.project_move);
+        assert!(settings.conversation_timeline);
     }
 
     #[test]
@@ -259,6 +295,12 @@ mod tests {
             .update(json!({
             "providerSyncEnabled": true,
             "enhancementsEnabled": false,
+            "pluginMarketplaceUnlock": false,
+            "forcePluginInstall": false,
+            "sessionDelete": false,
+            "markdownExport": false,
+            "projectMove": false,
+            "conversationTimeline": false,
             "legacyEndpoint": "https://legacy.example.test/v1",
             "legacySecret": "redacted",
             "legacyEnvName": "",
@@ -268,6 +310,12 @@ mod tests {
 
         assert!(updated.provider_sync_enabled);
         assert!(!updated.enhancements_enabled);
+        assert!(!updated.plugin_marketplace_unlock);
+        assert!(!updated.force_plugin_install);
+        assert!(!updated.session_delete);
+        assert!(!updated.markdown_export);
+        assert!(!updated.project_move);
+        assert!(!updated.conversation_timeline);
         assert_eq!(store.load().unwrap(), updated);
         let saved: Value =
             serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap())

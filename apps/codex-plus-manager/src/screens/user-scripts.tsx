@@ -11,7 +11,7 @@ export function UserScriptsScreen({ settings, actions }: { settings: SettingsRes
   return (
     <>
       <Panel>
-        <CardHead title="用户脚本" detail={`${scripts.length} 个脚本，整体 ${inventory?.enabled === false ? "关闭" : "开启"}`} />
+        <CardHead title="脚本" detail={`${scripts.length} 个脚本，整体 ${inventory?.enabled === false ? "关闭" : "开启"}`} />
         <CardContent>
           <div className="metric-list">
             <Metric label="整体状态" value={inventory?.enabled === false ? "关闭" : "开启"} />
@@ -29,7 +29,7 @@ export function UserScriptsScreen({ settings, actions }: { settings: SettingsRes
         <CardHead title="脚本列表" detail="插件内可启用、禁用和重新加载；管理工具用于集中查看" />
         <CardContent>
           <div className="table">
-            {scripts.length ? scripts.map((script) => <ScriptRow actions={actions} key={script.key} script={script} />) : <div className="empty">未发现用户脚本。</div>}
+            {scripts.length ? scripts.map((script) => <ScriptRow actions={actions} key={script.key} script={script} />) : <div className="empty">未发现脚本。</div>}
           </div>
         </CardContent>
       </Panel>

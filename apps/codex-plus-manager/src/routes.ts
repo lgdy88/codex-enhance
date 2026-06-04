@@ -1,29 +1,15 @@
-import {
-  Activity,
-  FileCode2,
-  Hammer,
-  Info,
-  LayoutDashboard,
-  Link2,
-  MessageSquareMore,
-  ScrollText,
-  Settings,
-  Wrench,
-  type LucideIcon,
-} from "lucide-react";
+import { FileCode2, Hammer, Info, LayoutDashboard, Link2, MessageSquareMore, Wrench, type LucideIcon } from "lucide-react";
 
 import type { Route } from "@/types";
 
 export const routes: Array<{ id: Route; label: string; icon: LucideIcon }> = [
   { id: "overview", label: "概览", icon: LayoutDashboard },
-  { id: "enhance", label: "增强功能", icon: Hammer },
-  { id: "userScripts", label: "用户脚本", icon: FileCode2 },
-  { id: "providerSync", label: "Provider History", icon: Link2 },
+  { id: "pluginUnlock", label: "插件解锁", icon: Hammer },
+  { id: "conversationEnhance", label: "对话增强", icon: MessageSquareMore },
+  { id: "userScripts", label: "脚本", icon: FileCode2 },
+  { id: "providerSync", label: "供应商同步", icon: Link2 },
   { id: "remoteControl", label: "移动/远程", icon: MessageSquareMore },
-  { id: "maintenance", label: "安装维护", icon: Wrench },
-  { id: "settings", label: "设置", icon: Settings },
-  { id: "logs", label: "日志", icon: ScrollText },
-  { id: "diagnostics", label: "诊断", icon: Activity },
+  { id: "maintenance", label: "维护", icon: Wrench },
   { id: "about", label: "关于", icon: Info },
 ];
 
@@ -34,14 +20,12 @@ export function routeTitle(route: Route) {
 export function routeSubtitle(route: Route) {
   const subtitles: Record<Route, string> = {
     overview: "检查问题、启动与快速修复",
-    enhance: "脚本增强开关",
+    pluginUnlock: "切换第三方供应商后仍保持插件可见和可安装",
+    conversationEnhance: "对话删除、导出、移动和时间线开关",
     userScripts: "内置和用户自定义脚本清单",
-    providerSync: "历史会话可见性和路径修复",
-    remoteControl: "飞书桥接、项目路由和远程安全预检",
-    maintenance: "入口安装、修复、Watcher 与手动启动",
-    settings: "主题、增强和 Provider 同步设置",
-    logs: "最近状态文件内容",
-    diagnostics: "可复制的运行诊断报告",
+    providerSync: "供应商切换后保持历史会话可见和可续聊",
+    remoteControl: "移动端入口、飞书桥接和远程安全预检",
+    maintenance: "入口安装、修复、Watcher、手动启动与日志",
     about: "版本信息、项目链接与 GitHub Release 更新",
   };
   return subtitles[route];

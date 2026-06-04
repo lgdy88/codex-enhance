@@ -36,6 +36,12 @@ export type BackendSettings = {
   codexExtraArgs: string[];
   providerSyncEnabled: boolean;
   enhancementsEnabled: boolean;
+  pluginMarketplaceUnlock: boolean;
+  forcePluginInstall: boolean;
+  sessionDelete: boolean;
+  markdownExport: boolean;
+  projectMove: boolean;
+  conversationTimeline: boolean;
 };
 
 export type UserScriptInventory = {
@@ -228,14 +234,12 @@ export type StartupResult = CommandResult<{
 
 export type Route =
   | "overview"
-  | "enhance"
+  | "pluginUnlock"
+  | "conversationEnhance"
   | "userScripts"
   | "providerSync"
   | "remoteControl"
   | "maintenance"
-  | "settings"
-  | "logs"
-  | "diagnostics"
   | "about";
 
 export type Theme = "dark" | "light";

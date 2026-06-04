@@ -4,7 +4,5 @@ export { UserScriptsScreen } from "./user-scripts";
 export { ProviderSyncScreen } from "./provider-sync";
 export { RemoteControlScreen } from "./remote-control";
 export { MaintenanceScreen } from "./maintenance";
-export { SettingsScreen } from "./settings";
 export { LogsScreen } from "./logs";
-export { DiagnosticsScreen } from "./diagnostics";
 export { AboutScreen } from "./about";

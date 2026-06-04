@@ -1,13 +1,20 @@
+import { FileSearch, FolderOpen } from "lucide-react";
+
 import { CardHead, Field, Panel, StatusRow, Toolbar } from "@/components/app";
 import { Button } from "@/components/ui/button";
 import { CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import type { Actions, LaunchForm, OverviewResult, WatcherResult } from "@/types";
+import { Textarea } from "@/components/ui/textarea";
+import { codexExtraArgsToInput, inputToCodexExtraArgs } from "@/lib/settings";
+import type { Actions, BackendSettings, LaunchForm, OverviewResult, SettingsResult, WatcherResult } from "@/types";
 
 export function MaintenanceScreen({
   overview,
   watcher,
+  settings,
+  settingsForm,
   launchForm,
+  onSettingsFormChange,
   onLaunchFormChange,
   removeOwnedData,
   onRemoveOwnedDataChange,
@@ -15,13 +22,21 @@ export function MaintenanceScreen({
 }: {
   overview: OverviewResult | null;
   watcher: WatcherResult | null;
+  settings: SettingsResult | null;
+  settingsForm: BackendSettings;
   launchForm: LaunchForm;
+  onSettingsFormChange: (next: BackendSettings) => void;
   onLaunchFormChange: (next: LaunchForm) => void;
   removeOwnedData: boolean;
   onRemoveOwnedDataChange: (value: boolean) => void;
   actions: Actions;
 }) {
   const savedCodexAppPath = overview?.codex_app.path ?? "";
+  const updateCodexAppPath = (path: string) => {
+    onSettingsFormChange({ ...settingsForm, codexAppPath: path });
+    onLaunchFormChange({ ...launchForm, appPath: path });
+  };
+
   return (
     <>
       <Panel>
@@ -37,6 +52,42 @@ export function MaintenanceScreen({
             <Button onClick={() => void actions.checkHealth()}>检查</Button>
             <Button variant="secondary" onClick={() => void actions.repairShortcuts()}>修复快捷方式</Button>
             <Button variant="secondary" onClick={() => void actions.repairBackend()}>修复后端</Button>
+          </Toolbar>
+        </CardContent>
+      </Panel>
+      <Panel>
+        <CardHead title="启动配置" detail={settings?.settings_path ?? "保存到 Dex 本地设置文件"} />
+        <CardContent>
+          <div className="field">
+            <span>默认 Codex 应用路径</span>
+            <div className="path-picker-row">
+              <Input
+                aria-label="默认 Codex 应用路径"
+                placeholder="Codex.exe、Codex.app、app 目录或解包目录"
+                value={settingsForm.codexAppPath}
+                onChange={(event) => updateCodexAppPath(event.currentTarget.value)}
+              />
+              <Button size="icon" title="选择目录" variant="secondary" onClick={() => void actions.chooseCodexAppPath("folder")}>
+                <FolderOpen className="h-4 w-4" />
+              </Button>
+              <Button size="icon" title="选择文件" variant="secondary" onClick={() => void actions.chooseCodexAppPath("file")}>
+                <FileSearch className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+          <Field label="Codex 额外启动参数">
+            <Textarea
+              className="launch-args-input"
+              placeholder="--force_high_performance_gpu"
+              spellCheck={false}
+              value={codexExtraArgsToInput(settingsForm.codexExtraArgs)}
+              onChange={(event) => onSettingsFormChange({ ...settingsForm, codexExtraArgs: inputToCodexExtraArgs(event.currentTarget.value) })}
+            />
+          </Field>
+          <p className="field-hint">每行一个参数，追加到默认 CDP 参数后；不需要填写 open 或 --args。</p>
+          <Toolbar>
+            <Button onClick={() => void actions.saveSettings()}>保存启动配置</Button>
+            <Button variant="secondary" onClick={() => void actions.resetSettings()}>重置启动配置</Button>
           </Toolbar>
         </CardContent>
       </Panel>

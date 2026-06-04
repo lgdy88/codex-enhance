@@ -430,7 +430,7 @@ impl BridgeDataService for LauncherDataService {
             let mut threads = inventory
                 .threads
                 .into_iter()
-                .filter(|thread| normalize_route_cwd(&thread.cwd) == target)
+                .filter(|thread| thread.has_user_event && normalize_route_cwd(&thread.cwd) == target)
                 .map(|thread| {
                     json!({
                         "session_id": thread.id,
@@ -438,6 +438,7 @@ impl BridgeDataService for LauncherDataService {
                         "cwd": thread.cwd,
                         "archived": thread.archived,
                         "rollout_path": thread.rollout_path,
+                        "has_user_event": thread.has_user_event,
                         "updated_at_ms": thread.updated_at_ms
                     })
                 })

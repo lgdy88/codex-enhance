@@ -545,3 +545,46 @@ fn archived_lookup_workspace_move_and_sort_keys_match_legacy_shape() {
         })
     );
 }
+
+#[test]
+fn remote_inventory_normalizes_windows_extended_paths_and_user_event_flag() {
+    let tmp = tempdir().unwrap();
+    let db_path = tmp.path().join("state_5.sqlite");
+    let rollout_path = tmp.path().join("rollout.jsonl");
+    fs::write(&rollout_path, "").unwrap();
+    create_codex_thread_db(&db_path, &rollout_path);
+    let db = Connection::open(&db_path).unwrap();
+    db.execute(
+        "ALTER TABLE threads ADD COLUMN has_user_event INTEGER DEFAULT 1",
+        [],
+    )
+    .unwrap();
+    db.execute(
+        "UPDATE threads SET cwd = '\\\\?\\D:\\Skye\\codex-enhance', has_user_event = 1 WHERE id = 't1'",
+        [],
+    )
+    .unwrap();
+    db.execute(
+        "INSERT INTO threads (id, rollout_path, title, cwd, archived, archived_at, updated_at, updated_at_ms, has_user_event) VALUES ('empty', ?1, 'Empty', '\\\\?\\D:\\Skye\\codex-enhance', 0, NULL, 300, 300000, 0)",
+        [rollout_path.to_string_lossy().to_string()],
+    )
+    .unwrap();
+    drop(db);
+    let adapter = SQLiteStorageAdapter::new(&db_path, BackupStore::new(tmp.path().join("backups")));
+
+    let inventory = adapter.remote_inventory(10);
+
+    let thread = inventory
+        .threads
+        .iter()
+        .find(|thread| thread.id == "t1")
+        .unwrap();
+    assert_eq!(thread.cwd, "D:\\Skye\\codex-enhance");
+    assert!(thread.has_user_event);
+    let empty = inventory
+        .threads
+        .iter()
+        .find(|thread| thread.id == "empty")
+        .unwrap();
+    assert!(!empty.has_user_event);
+}

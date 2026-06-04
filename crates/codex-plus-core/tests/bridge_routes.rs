@@ -96,13 +96,28 @@ async fn settings_routes_use_settings_service() {
     let updated = handle_bridge_request(
         ctx.clone(),
         "/settings/set",
-        json!({"providerSyncEnabled": true, "enhancementsEnabled": false}),
+        json!({
+            "providerSyncEnabled": true,
+            "enhancementsEnabled": false,
+            "pluginMarketplaceUnlock": false,
+            "forcePluginInstall": false,
+            "sessionDelete": false,
+            "markdownExport": false,
+            "projectMove": false,
+            "conversationTimeline": false
+        }),
     )
     .await;
     let loaded = handle_bridge_request(ctx, "/settings/get", json!({})).await;
 
     assert_eq!(updated["providerSyncEnabled"], true);
     assert_eq!(updated["enhancementsEnabled"], false);
+    assert_eq!(updated["pluginMarketplaceUnlock"], false);
+    assert_eq!(updated["forcePluginInstall"], false);
+    assert_eq!(updated["sessionDelete"], false);
+    assert_eq!(updated["markdownExport"], false);
+    assert_eq!(updated["projectMove"], false);
+    assert_eq!(updated["conversationTimeline"], false);
     assert_eq!(loaded, updated);
 }
 
@@ -537,11 +552,19 @@ impl BridgeSettingsService for FakeSettings {
         let current = self.settings.lock().unwrap().clone();
         let mut raw = serde_json::to_value(current).unwrap();
         let raw = raw.as_object_mut().unwrap();
-        if let Some(value) = payload.get("providerSyncEnabled").and_then(Value::as_bool) {
-            raw.insert("providerSyncEnabled".to_string(), json!(value));
-        }
-        if let Some(value) = payload.get("enhancementsEnabled").and_then(Value::as_bool) {
-            raw.insert("enhancementsEnabled".to_string(), json!(value));
+        for key in [
+            "providerSyncEnabled",
+            "enhancementsEnabled",
+            "pluginMarketplaceUnlock",
+            "forcePluginInstall",
+            "sessionDelete",
+            "markdownExport",
+            "projectMove",
+            "conversationTimeline",
+        ] {
+            if let Some(value) = payload.get(key).and_then(Value::as_bool) {
+                raw.insert(key.to_string(), json!(value));
+            }
         }
         let updated: BackendSettings = serde_json::from_value(Value::Object(raw.clone())).unwrap();
         *self.settings.lock().unwrap() = updated.clone();

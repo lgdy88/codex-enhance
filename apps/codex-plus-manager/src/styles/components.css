@@ -186,9 +186,70 @@
 
 .health-grid,
 .feature-list,
+.enhance-groups,
+.feature-check-list,
 .guide-list {
   display: grid;
   gap: 8px;
+}
+
+.enhance-groups {
+  gap: 12px;
+}
+
+.enhance-group {
+  display: grid;
+  gap: 8px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--background) / 0.54);
+  padding: 12px;
+}
+
+.enhance-group-head {
+  display: grid;
+  gap: 3px;
+}
+
+.enhance-group-head strong {
+  font-size: 15px;
+}
+
+.enhance-group-head span,
+.feature-check-row small {
+  color: hsl(var(--muted-foreground));
+  line-height: 1.45;
+}
+
+.feature-check-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--card) / 0.72);
+  padding: 10px 11px;
+}
+
+.feature-check-row input {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+}
+
+.feature-check-row input:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.feature-check-row strong,
+.feature-check-row small {
+  display: block;
+}
+
+.feature-check-row small {
+  margin-top: 3px;
 }
 
 .health-item,
@@ -218,6 +279,10 @@
   border-radius: 8px;
   background: hsl(var(--background) / 0.68);
   padding: 12px;
+  margin-bottom: 12px;
+}
+
+.hero-switch {
   margin-bottom: 12px;
 }
 

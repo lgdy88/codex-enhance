@@ -120,6 +120,40 @@ fn injection_script_keeps_plugin_marketplace_patch_provider_agnostic() {
 }
 
 #[test]
+fn injection_script_loads_app_server_signals_by_asset_prefix() {
+    let script = assets::injection_script(57321);
+
+    assert!(script.contains("loadAppServerSignalsModule"));
+    assert!(script.contains("loadCodexAppModule(\"app-server-manager-signals-\")"));
+    assert!(!script.contains("app-server-manager-signals-C1h8B-R-.js"));
+}
+
+#[test]
+fn injection_script_merges_provider_history_rows_into_native_project_list() {
+    let script = assets::injection_script(57321);
+
+    assert!(script.contains("const codexProjectThreadsVersion = \"2\""));
+    assert!(script.contains("const list = visibleProjectThreadList(projectItem)"));
+    assert!(script.contains("list.setAttribute(\"data-codex-project-thread-list\", \"true\")"));
+    let fallback_list_start = script
+        .find("function projectThreadFallbackList(projectItem)")
+        .expect("fallback list helper should exist");
+    let fallback_list_end = script[fallback_list_start..]
+        .find("function projectThreadTitle")
+        .map(|offset| fallback_list_start + offset)
+        .expect("fallback list helper should be followed by title helper");
+    let fallback_list_body = &script[fallback_list_start..fallback_list_end];
+    assert!(!fallback_list_body.contains("document.createElement(\"div\")"));
+    assert!(!fallback_list_body.contains("body.appendChild(list)"));
+    assert!(script.contains(
+        "[data-app-action-sidebar-thread-id][data-codex-project-thread-injected=\"true\"]"
+    ));
+    assert!(script.contains("hydrateProjectThreadNativeSortKeys"));
+    assert!(script.contains("postJson(\"/thread-sort-keys\", { sessions: refs })"));
+    assert!(script.contains("leftPath.toLowerCase() === rightPath.toLowerCase()"));
+}
+
+#[test]
 fn cdp_target_deserializes_websocket_field() {
     let target: CdpTarget = serde_json::from_value(json!({
         "id": "page-1",

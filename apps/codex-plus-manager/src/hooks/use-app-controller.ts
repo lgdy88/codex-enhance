@@ -164,14 +164,12 @@ export function useAppController() {
   const refreshRouteData = async (next: Route) => {
     const routeLoaders: Record<Route, Array<() => Promise<void>>> = {
       overview: [() => refreshOverview(true)],
-      enhance: [() => refreshSettings(true)],
+      pluginUnlock: [() => refreshSettings(true)],
+      conversationEnhance: [() => refreshSettings(true)],
       userScripts: [() => refreshSettings(true)],
       providerSync: [() => refreshSettings(true)],
       remoteControl: [() => refreshRemoteControl(true)],
-      maintenance: [() => refreshOverview(true), () => refreshWatcher(true)],
-      settings: [() => refreshSettings(true)],
-      logs: [() => refreshLogs(true)],
-      diagnostics: [() => refreshDiagnostics(true)],
+      maintenance: [() => refreshOverview(true), () => refreshWatcher(true), () => refreshLogs(true)],
       about: [() => refreshOverview(true)],
     };
 
@@ -182,6 +180,7 @@ export function useAppController() {
 
   const navigate = async (next: Route) => {
     setRoute(next);
+    syncLocationHash(next);
     await refreshRouteData(next);
   };
 
@@ -257,14 +256,14 @@ export function useAppController() {
     if (!result) return;
     setSettings(result);
     setSettingsForm(normalizeSettings(result.settings));
-    showNotice("用户脚本", result.message, result.status);
+    showNotice("脚本", result.message, result.status);
   };
 
   const providerAction = async (command: "sync_providers_now" | "repair_provider_paths") => {
     const result = await run(() => runProviderAction(command));
     if (!result) return;
     setProviderResult(result);
-    showNotice("Provider History", result.message, result.status);
+    showNotice("供应商历史", result.message, result.status);
   };
 
   const saveRemoteControl = async () => {
@@ -476,10 +475,23 @@ export function useAppController() {
   }, []);
 
   useEffect(() => {
+    const onHashChange = () => {
+      const next = routeFromHash();
+      if (!next) return;
+      setRoute(next);
+      syncLocationHash(next);
+      void refreshRouteData(next);
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  useEffect(() => {
+    syncLocationHash(route);
     document.documentElement.classList.toggle("dark", theme === "dark");
     document.documentElement.classList.toggle("light", theme === "light");
     window.localStorage.setItem("codex-plus-theme", theme);
-  }, [theme]);
+  }, [route, theme]);
 
   const actions: Actions = useMemo(
     () => ({
@@ -510,7 +522,7 @@ export function useAppController() {
       refreshDiagnostics,
       copyLogs: () => copyText(logs?.text ?? "", "日志已复制。"),
       copyDiagnostics: () => copyText(diagnostics?.report ?? "", "诊断报告已复制。"),
-      goLogs: () => navigate("logs"),
+      goLogs: () => navigate("maintenance"),
       checkHealth: async () => {
         await refreshOverview(true);
         await refreshWatcher(true);
@@ -567,7 +579,30 @@ function loadInitialRoute(): Route {
   if (typeof window === "undefined") return "overview";
   const params = new URLSearchParams(window.location.search);
   if (params.get("showUpdate") === "1" || window.location.hash === "#about") return "about";
-  return "overview";
+  return routeFromHash() ?? "overview";
+}
+
+function routeFromHash(): Route | null {
+  if (typeof window === "undefined") return null;
+  const hashRoute = window.location.hash.replace(/^#/, "");
+  const aliases: Record<string, Route> = {
+    enhance: "pluginUnlock",
+    syncRemote: "providerSync",
+    logs: "maintenance",
+  };
+  if (aliases[hashRoute]) return aliases[hashRoute];
+  return isRoute(hashRoute) ? hashRoute : null;
+}
+
+function syncLocationHash(route: Route) {
+  if (typeof window === "undefined") return;
+  const nextHash = `#${route}`;
+  if (window.location.hash === nextHash) return;
+  window.history.pushState(null, "", `${window.location.pathname}${window.location.search}${nextHash}`);
+}
+
+function isRoute(value: string): value is Route {
+  return ["overview", "pluginUnlock", "conversationEnhance", "userScripts", "providerSync", "remoteControl", "maintenance", "about"].includes(value);
 }
 
 function shouldShowUpdateNotice(result: UpdateResult, silent: boolean): boolean {

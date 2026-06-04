@@ -37,6 +37,7 @@ pub struct CodexThreadSummary {
     pub archived: bool,
     pub rollout_path: Option<String>,
     pub updated_at_ms: Option<i64>,
+    pub has_user_event: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -643,6 +644,11 @@ fn list_codex_threads(
     } else {
         "NULL AS rollout_path"
     };
+    let has_user_event_expr = if columns.contains("has_user_event") {
+        "COALESCE(has_user_event, 1) AS has_user_event"
+    } else {
+        "1 AS has_user_event"
+    };
     let updated_source = if columns.contains("updated_at_ms") {
         "updated_at_ms".to_string()
     } else if columns.contains("updated_at") {
@@ -655,7 +661,7 @@ fn list_codex_threads(
     let updated_expr = format!("{updated_source} AS updated_at_ms");
     let limit = max_threads.clamp(1, 500) as i64;
     let sql = format!(
-        "SELECT id, {title_expr}, {cwd_expr}, {archived_expr}, {rollout_expr}, {updated_expr}
+        "SELECT id, {title_expr}, {cwd_expr}, {archived_expr}, {rollout_expr}, {updated_expr}, {has_user_event_expr}
          FROM threads
          ORDER BY {updated_source} DESC
          LIMIT ?1"
@@ -668,15 +674,17 @@ fn list_codex_threads(
         let archived: i64 = row.get(3)?;
         let rollout_path: Option<String> = row.get(4)?;
         let updated_at_ms: Option<i64> = row.get(5)?;
+        let has_user_event: i64 = row.get(6)?;
         Ok(CodexThreadSummary {
             title: title
                 .filter(|value| !value.trim().is_empty())
                 .unwrap_or_else(|| id.clone()),
             id,
-            cwd: cwd.unwrap_or_default(),
+            cwd: normalize_cwd_for_display(cwd.unwrap_or_default()),
             archived: archived != 0,
             rollout_path: rollout_path.filter(|value| !value.trim().is_empty()),
             updated_at_ms,
+            has_user_event: has_user_event != 0,
         })
     })?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -859,7 +867,14 @@ fn same_cwd(left: &str, right: &str) -> bool {
 }
 
 fn normalize_cwd_key(value: &str) -> String {
-    value.trim().replace('\\', "/").to_lowercase()
+    normalize_cwd_for_display(value)
+        .replace('\\', "/")
+        .to_lowercase()
+}
+
+fn normalize_cwd_for_display(value: impl AsRef<str>) -> String {
+    let trimmed = value.as_ref().trim();
+    trimmed.strip_prefix(r"\\?\").unwrap_or(trimmed).to_string()
 }
 
 fn select_dicts(db: &Connection, sql: &str, params: &[&dyn ToSql]) -> anyhow::Result<Vec<Value>> {
@@ -1294,6 +1309,7 @@ mod tests {
             archived: false,
             rollout_path: None,
             updated_at_ms: Some(updated_at_ms),
+            has_user_event: true,
         }
     }
 }

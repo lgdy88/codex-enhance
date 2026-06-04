@@ -21,13 +21,13 @@ export function ProviderSyncScreen({
   return (
     <>
       <Panel>
-        <CardHead title="Provider History" detail="路径修复与 provider metadata 收敛分开执行" />
+        <CardHead title="供应商同步" detail="切换第三方供应商、API Key 或请求地址后，保持历史会话可见" />
         <CardContent>
           <label className="switch-row">
             <input checked={form.providerSyncEnabled} onChange={(event) => onFormChange({ ...form, providerSyncEnabled: event.currentTarget.checked })} type="checkbox" />
             <span>
               <strong>启动前自动同步 provider metadata</strong>
-              <small>开启后，仅在通过 Dex 启动 Codex 前自动同步一次历史会话的 provider 字段。</small>
+              <small>开启后，仅在通过 Dex 启动 Codex 前自动同步一次历史会话的 provider 字段，不写 API Key 或请求地址。</small>
             </span>
           </label>
           <div className="metric-list">
@@ -50,7 +50,7 @@ export function ProviderSyncScreen({
         </CardContent>
       </Panel>
       <Panel>
-        <CardHead title="边界" detail="路径修复更安全，provider 收敛用于兼容历史可见性" />
+        <CardHead title="边界" detail="路径修复更安全，provider 收敛用于兼容历史会话可见性" />
         <CardContent>
           <GuideList
             items={[

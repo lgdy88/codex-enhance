@@ -34,7 +34,7 @@
   const codexDeleteVersion = "7";
   const codexExportVersion = "1";
   const codexProjectMoveVersion = "1";
-  const codexProjectThreadsVersion = "1";
+  const codexProjectThreadsVersion = "2";
   const codexActionGroupVersion = "3";
   const codexArchiveRowActionsVersion = "1";
   const codexArchiveDeleteAllVersion = "2";
@@ -709,6 +709,39 @@
     scan();
   }
 
+  const codexPlusBackendManagedSettingKeys = [
+    "pluginMarketplaceUnlock",
+    "forcePluginInstall",
+    "sessionDelete",
+    "markdownExport",
+    "projectMove",
+    "conversationTimeline",
+  ];
+
+  function syncCodexPlusSettingsFromBackend(settings) {
+    if (!settings || typeof settings !== "object") return;
+    const current = codexPlusSettings();
+    let next = current;
+    const ensureNext = () => {
+      if (next === current) next = { ...current };
+    };
+    for (const key of codexPlusBackendManagedSettingKeys) {
+      if (typeof settings[key] !== "boolean") continue;
+      if (next[key] !== settings[key]) {
+        ensureNext();
+        next[key] = settings[key];
+      }
+      if (key === "pluginMarketplaceUnlock" && next.pluginEntryUnlock !== settings[key]) {
+        ensureNext();
+        next.pluginEntryUnlock = settings[key];
+      }
+    }
+    if (next !== current) {
+      localStorage.setItem(codexPlusSettingsKey, JSON.stringify(next));
+      renderCodexPlusMenu();
+    }
+  }
+
   function renderCodexPlusMenu() {
     document.querySelectorAll(".codex-plus-toggle[data-codex-plus-setting]").forEach((button) => {
       const key = button.getAttribute("data-codex-plus-setting");
@@ -723,6 +756,7 @@
     try {
       const settings = await postJson("/settings/get", {});
       codexPlusBackendSettings = { ...codexPlusBackendSettings, ...settings };
+      syncCodexPlusSettingsFromBackend(codexPlusBackendSettings);
       codexPlusBackendSettingsLoaded = true;
       refreshCodexPlusBackendToggles();
       scan();
@@ -738,6 +772,7 @@
     try {
       const settings = await postJson("/settings/set", { [key]: value });
       codexPlusBackendSettings = { ...codexPlusBackendSettings, ...settings };
+      syncCodexPlusSettingsFromBackend(codexPlusBackendSettings);
     } finally {
       refreshCodexPlusBackendToggles();
     }
@@ -1452,7 +1487,7 @@
               <button type="button" class="codex-plus-toggle" data-codex-plus-setting="conversationTimeline"><span></span></button>
             </div>
             <div class="codex-plus-row">
-              <div><div class="codex-plus-row-title">Provider History Manager</div><div class="codex-plus-row-description">本地 SQLite bridge 优先跨 provider 查询历史；运行中监听 model_provider 变化；路径自动修复，provider metadata 只在兼容模式手动收敛。</div></div>
+              <div><div class="codex-plus-row-title">供应商历史管理</div><div class="codex-plus-row-description">本地 SQLite bridge 优先跨 provider 查询历史；运行中监听 model_provider 变化；路径自动修复，provider metadata 只在兼容模式手动收敛。</div></div>
               <button type="button" class="codex-plus-toggle" data-codex-backend-setting="providerSyncEnabled"><span></span></button>
             </div>
             <div class="codex-plus-row">
@@ -2232,6 +2267,12 @@
     return await codexAppModulePromises.get(namePart);
   }
 
+  async function loadAppServerSignalsModule() {
+    const signals = await loadCodexAppModule("app-server-manager-signals-");
+    if (typeof signals.rn !== "function") throw new Error("app-server bridge 不可用");
+    return signals;
+  }
+
   function downloadMarkdown(filename, markdown) {
     if (!filename || typeof markdown !== "string") {
       throw new Error("导出结果不完整");
@@ -2339,14 +2380,15 @@
   }
 
   function normalizeWorkspacePath(path) {
-    const normalized = String(path || "").trim().replace(/\\/g, "/").replace(/\/+$/, "");
+    const raw = String(path || "").trim().replace(/^\\\\\?\\/, "");
+    const normalized = raw.replace(/\\/g, "/").replace(/\/+$/, "");
     return normalized || String(path || "").trim();
   }
 
   function sameWorkspacePath(left, right) {
     const leftPath = normalizeWorkspacePath(left);
     const rightPath = normalizeWorkspacePath(right);
-    return !!leftPath && !!rightPath && leftPath === rightPath;
+    return !!leftPath && !!rightPath && leftPath.toLowerCase() === rightPath.toLowerCase();
   }
 
   function displayProjectName(path) {
@@ -2845,7 +2887,7 @@
     const emptyLabels = new Set(["暂无对话", "No conversations"]);
     return Array.from(projectItem.querySelectorAll("div, span")).filter((node) => {
       if (node.classList?.contains("overflow-hidden")) return false;
-      if (node.closest('[data-app-action-sidebar-thread-id], [data-codex-project-move-injected-list="true"], [data-codex-project-thread-list="true"]')) return false;
+      if (node.closest('[data-app-action-sidebar-thread-id], [data-codex-project-move-injected-list="true"], [data-codex-project-thread-item="true"], [data-codex-project-thread-more]')) return false;
       return emptyLabels.has(normalizeProjectLabel(node.textContent));
     });
   }
@@ -2874,15 +2916,13 @@
   }
 
   function projectThreadFallbackList(projectItem) {
-    let list = projectItem.querySelector('[data-codex-project-thread-list="true"]');
-    if (!list) {
-      const body = Array.from(projectItem.children).find((child) => child.classList?.contains("overflow-hidden")) || projectItem;
-      list = document.createElement("div");
-      list.setAttribute("role", "list");
-      list.setAttribute("data-codex-project-thread-list", "true");
-      list.dataset.codexProjectThreadsVersion = codexProjectThreadsVersion;
-      body.appendChild(list);
-    }
+    const list = visibleProjectThreadList(projectItem);
+    if (!list) return null;
+    projectItem.querySelectorAll('[data-codex-project-thread-list="true"]').forEach((candidate) => {
+      if (candidate !== list && !candidate.hasAttribute("data-app-action-sidebar-project-list-id")) candidate.remove();
+    });
+    list.setAttribute("data-codex-project-thread-list", "true");
+    list.dataset.codexProjectThreadsVersion = codexProjectThreadsVersion;
     return list;
   }
 
@@ -2963,11 +3003,9 @@
 
   async function loadProjectThreadIntoCodex(threadId) {
     try {
-      const signals = await import("./assets/app-server-manager-signals-C1h8B-R-.js");
-      if (typeof signals.rn === "function") {
-        await signals.rn("load-recent-conversation-ids-for-host", { hostId: "local", conversationIds: [threadId] });
-        await signals.rn("prewarm-conversation-for-host", { hostId: "local", conversationId: threadId });
-      }
+      const signals = await loadAppServerSignalsModule();
+      await signals.rn("load-recent-conversation-ids-for-host", { hostId: "local", conversationIds: [threadId] });
+      await signals.rn("prewarm-conversation-for-host", { hostId: "local", conversationId: threadId });
     } catch (error) {
       window.__codexProjectThreadOpenFailures = window.__codexProjectThreadOpenFailures || [];
       window.__codexProjectThreadOpenFailures.push(String(error?.stack || error));
@@ -2978,11 +3016,7 @@
     if (!providerHistoryEnabled()) return null;
     if (codexProviderHistoryTransport.appServer === "unavailable") return null;
     try {
-      const signals = await import("./assets/app-server-manager-signals-C1h8B-R-.js");
-      if (typeof signals.rn !== "function") {
-        updateProviderHistoryTransport({ appServer: "unavailable", message: "app-server bridge 不可用" });
-        return null;
-      }
+      const signals = await loadAppServerSignalsModule();
       const result = await signals.rn("thread/list", {
         modelProviders: [],
         cwd: workspacePathVariants(projectCwd),
@@ -3037,6 +3071,7 @@
       updated_at: thread.updated_at || thread.updatedAt || "",
       updated_at_ms: thread.updated_at_ms || thread.updatedAtMs || "",
       created_at_ms: thread.created_at_ms || thread.createdAtMs || "",
+      has_user_event: thread.has_user_event ?? thread.hasUserEvent ?? true,
     };
   }
 
@@ -3057,7 +3092,38 @@
 
   function visibleProjectThreadFallbackRows(projectItem) {
     return Array.from(projectItem?.querySelectorAll?.('[data-codex-project-thread-list="true"] [data-app-action-sidebar-thread-id]') || [])
+      .filter((row) => row.dataset.codexProjectThreadInjected === "true")
       .filter((row) => row.offsetParent !== null);
+  }
+
+  async function hydrateProjectThreadNativeSortKeys(projectItem, state) {
+    const rows = nativeProjectRows(projectItem).filter((row) => row.offsetParent !== null);
+    if (!rows.length) return;
+    const refs = rows.map(sessionRefFromRow).filter((ref) => ref.session_id);
+    if (!refs.length) return;
+    const signature = refs.map((ref) => projectMoveSessionKey(ref.session_id)).join("|");
+    const now = Date.now();
+    const hasMissingSortKeys = rows.some((row) => !numericTimestamp(row.dataset.codexProjectMoveSortMs || rowListItem(row).dataset.codexProjectMoveSortMs));
+    if (!hasMissingSortKeys && state?.nativeSortSignature === signature && now - (state?.nativeSortHydratedAt || 0) < chatsSortDbRefreshIntervalMs) return;
+    const result = await postJson("/thread-sort-keys", { sessions: refs }).catch(() => ({ status: "failed", sort_keys: [] }));
+    if (state) {
+      state.nativeSortSignature = signature;
+      state.nativeSortHydratedAt = now;
+    }
+    if (result?.status !== "ok" || !Array.isArray(result?.sort_keys)) return;
+    const byId = new Map();
+    result.sort_keys.forEach((item) => {
+      const key = projectMoveSessionKey(String(item?.session_id || ""));
+      if (key) byId.set(key, item);
+    });
+    rows.forEach((row) => {
+      const ref = sessionRefFromRow(row);
+      const trustedSortMs = timestampMsFromPayload(byId.get(projectMoveSessionKey(ref.session_id)));
+      if (!trustedSortMs) return;
+      row.dataset.codexProjectMoveSortMs = String(trustedSortMs);
+      rowListItem(row).dataset.codexProjectMoveSortMs = String(trustedSortMs);
+      updateRowTimeLabel(row, trustedSortMs);
+    });
   }
 
   function renderedProjectThreadIds(projectItem) {
@@ -3080,7 +3146,13 @@
 
   function projectThreadCandidates(projectItem, threads) {
     const existingIds = renderedProjectThreadIds(projectItem);
-    return threads.filter((thread) => !existingIds.has(projectMoveSessionKey(thread?.session_id || "")));
+    const projectRow = projectItem?.matches?.("[data-app-action-sidebar-project-row]") ? projectItem : projectItem?.querySelector?.("[data-app-action-sidebar-project-row]");
+    const projectPath = projectRow?.getAttribute("data-app-action-sidebar-project-id") || "";
+    return threads.filter((thread) => {
+      if (thread?.has_user_event === false || thread?.has_user_event === 0) return false;
+      if (projectPath && thread?.cwd && !sameWorkspacePath(thread.cwd, projectPath)) return false;
+      return !existingIds.has(projectMoveSessionKey(thread?.session_id || ""));
+    });
   }
 
   function projectCanRenderFallback(projectItem) {
@@ -3093,7 +3165,11 @@
     const visibleSlots = Math.max(0, state.visibleLimit);
     const candidates = projectThreadCandidates(projectItem, threads).slice(0, visibleSlots);
     const list = projectThreadFallbackList(projectItem);
-    const existing = new Map(Array.from(list.querySelectorAll("[data-app-action-sidebar-thread-id]")).map((row) => [projectMoveSessionKey(row.getAttribute("data-app-action-sidebar-thread-id")), row]));
+    if (!list) return;
+    const existing = new Map(
+      Array.from(list.querySelectorAll('[data-app-action-sidebar-thread-id][data-codex-project-thread-injected="true"]'))
+        .map((row) => [projectMoveSessionKey(row.getAttribute("data-app-action-sidebar-thread-id")), row]),
+    );
     const nextIds = new Set();
     candidates.forEach((thread) => upsertProjectThreadFallbackRow(list, existing, nextIds, thread, projectPath));
     removeMissingProjectThreadRows(existing, nextIds);
@@ -3120,6 +3196,7 @@
   async function loadMoreProjectThreads(projectItem, projectPath) {
     const state = projectThreadState(projectPath);
     state.visibleLimit += projectThreadVisibleLimit;
+    await hydrateProjectThreadNativeSortKeys(projectItem, state);
     if (state.hasMore && state.cursor) {
       const result = await fetchProjectThreads(projectPath, state);
       if (result?.status === "ok" && Array.isArray(result.threads)) {
@@ -3163,13 +3240,15 @@
   async function refreshProjectThreadFallbacks() {
     if (!codexPlusSettings().projectMove || !providerHistoryEnabled() || window.__codexProjectThreadsInFlight) return;
     const targets = nativeProjectTargets().filter((target) => projectCanRenderFallback(target.listItem));
-    const incompleteTargets = targets.filter((target) => visibleProjectThreadFallbackRows(target.listItem).length < projectThreadState(target.path).visibleLimit);
-    if (incompleteTargets.length === 0) return;
+    if (targets.length === 0) return;
     window.__codexProjectThreadsInFlight = true;
     try {
-      await Promise.all(incompleteTargets.map(async (target) => {
+      await Promise.all(targets.map(async (target) => {
         const state = projectThreadState(target.path);
-        if (!state.threads.length || (state.hasMore && state.threads.length < state.visibleLimit)) {
+        await hydrateProjectThreadNativeSortKeys(target.listItem, state);
+        const fallbackRows = visibleProjectThreadFallbackRows(target.listItem);
+        const needsMoreFallbackRows = fallbackRows.length < state.visibleLimit;
+        if (!state.threads.length || (needsMoreFallbackRows && state.hasMore && state.threads.length < state.visibleLimit)) {
           const result = await fetchProjectThreads(target.path, state);
           if (result?.status === "ok" && Array.isArray(result.threads)) mergeProjectThreadPage(state, result);
         }
@@ -3181,7 +3260,15 @@
   }
 
   function removeProjectThreadFallback(projectItem) {
-    projectItem?.querySelector?.('[data-codex-project-thread-list="true"]')?.remove();
+    projectItem?.querySelectorAll?.('[data-codex-project-thread-list="true"]').forEach((list) => {
+      list.querySelectorAll('[data-codex-project-thread-item="true"], [data-codex-project-thread-more]').forEach((node) => node.remove());
+      if (!list.hasAttribute("data-app-action-sidebar-project-list-id")) {
+        list.remove();
+        return;
+      }
+      list.removeAttribute("data-codex-project-thread-list");
+      delete list.dataset.codexProjectThreadsVersion;
+    });
     setProjectEmptyStateHidden(projectItem, false);
   }
 
@@ -3307,8 +3394,8 @@
 
   async function refreshRecentConversationsForHost() {
     try {
-      const signals = await import("./assets/app-server-manager-signals-C1h8B-R-.js");
-      if (typeof signals.rn === "function") await signals.rn("refresh-recent-conversations-for-host", { hostId: "local", sortKey: "updated_at" });
+      const signals = await loadAppServerSignalsModule();
+      await signals.rn("refresh-recent-conversations-for-host", { hostId: "local", sortKey: "updated_at" });
     } catch (error) {
       window.__codexProjectMoveRefreshFailures = window.__codexProjectMoveRefreshFailures || [];
       window.__codexProjectMoveRefreshFailures.push(String(error?.stack || error));

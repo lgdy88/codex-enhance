@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import { defaultRemoteControl } from "@/lib/remote-control";
+import { defaultSettings, normalizeSettings } from "@/lib/settings";
 import type {
   BackendSettings,
   CommandResult,
@@ -21,7 +23,10 @@ import type {
   WatcherResult,
 } from "@/types";
 
-const call = <T>(command: string, args?: Record<string, unknown>) => invoke<T>(command, args);
+const call = <T>(command: string, args?: Record<string, unknown>) => {
+  if (hasTauriRuntime()) return invoke<T>(command, args);
+  return Promise.resolve(previewCommand(command, args) as T);
+};
 
 type LaunchRequest = {
   appPath: string;
@@ -97,3 +102,152 @@ export const performUpdate = (release: UpdateRelease | null) => call<UpdateResul
 export const openExternalUrl = (url: string) => call<CommandResult<Record<string, unknown>>>("open_external_url", { url });
 
 export const startupOptions = () => call<StartupResult>("startup_options");
+
+function hasTauriRuntime() {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+function previewSettings(): BackendSettings {
+  try {
+    return normalizeSettings(JSON.parse(window.localStorage.getItem("dex-preview-settings") || "{}"));
+  } catch {
+    return { ...defaultSettings };
+  }
+}
+
+function savePreviewSettings(settings: BackendSettings) {
+  window.localStorage.setItem("dex-preview-settings", JSON.stringify(settings));
+}
+
+function previewCommand(command: string, args?: Record<string, unknown>) {
+  const settings = previewSettings();
+  if (command === "save_settings") {
+    const nextSettings = normalizeSettings((args?.settings ?? settings) as Partial<BackendSettings>);
+    savePreviewSettings(nextSettings);
+    return settingsPayload("Web 预览设置已保存。", nextSettings);
+  }
+  if (command === "reset_settings") {
+    savePreviewSettings({ ...defaultSettings });
+    return settingsPayload("Web 预览设置已重置。", { ...defaultSettings });
+  }
+  if (command === "load_settings" || command === "repair_backend" || command === "delete_user_script") {
+    return settingsPayload(command === "delete_user_script" ? "Web 预览不会删除本地脚本。" : "Web 预览设置已加载。", settings);
+  }
+  if (command === "startup_options") {
+    return { status: "ok", message: "Web 预览启动参数已读取。", showUpdate: false };
+  }
+  if (command === "load_overview") {
+    return {
+      status: "ok",
+      message: "Web 预览概览已加载。",
+      codex_app: { status: "preview", path: null },
+      codex_version: null,
+      silent_shortcut: { status: "preview", path: null },
+      management_shortcut: { status: "preview", path: null },
+      latest_launch: null,
+      current_version: "1.3.2",
+      update_status: "preview",
+      settings_path: "Web preview",
+      logs_path: "Web preview",
+    };
+  }
+  if (command === "load_watcher_state") {
+    return { status: "ok", message: "Web 预览 Watcher 状态。", enabled: false, disabled_flag: "Web preview" };
+  }
+  if (command === "read_latest_logs") {
+    return { status: "ok", message: "Web 预览日志已加载。", path: "Web preview", text: "Web 预览模式：桌面原生命令未连接。", lines: 1 };
+  }
+  if (command === "copy_diagnostics") {
+    return { status: "ok", message: "Web 预览诊断已生成。", report: "Web preview diagnostics" };
+  }
+  if (command === "check_update") {
+    return { status: "ok", message: "Web 预览不检查更新。", currentVersion: "1.3.2", latestVersion: null, updateAvailable: false, progress: 0 };
+  }
+  if (command === "launch_codex_plus" || command === "restart_codex_plus") {
+    return { status: "accepted", message: "Web 预览不会启动桌面 Codex。", debugPort: 9229, helperPort: 57321 };
+  }
+  if (command === "sync_providers_now" || command === "repair_provider_paths") {
+    return {
+      status: "ok",
+      message: "Web 预览不会修改供应商历史。",
+      syncStatus: "preview",
+      targetProvider: "-",
+      changedSessionFiles: 0,
+      sqliteRowsUpdated: 0,
+      backupDir: null,
+      syncMessage: "Web preview",
+    };
+  }
+  if (command === "load_remote_control" || command === "save_remote_control") {
+    const config = command === "save_remote_control" && args?.config ? args.config : defaultRemoteControl;
+    return {
+      message: "Web 预览移动/远程配置已加载。",
+      config,
+      status: remoteStatus(),
+    };
+  }
+  if (command === "load_remote_inventory") {
+    return { status: "ok", message: "Web 预览项目/对话已加载。", inventory: { status: "preview", message: "Web preview", dbPath: "", projects: [], threads: [] } };
+  }
+  if (command === "check_remote_dependencies") {
+    return { status: "ok", message: "Web 预览依赖检查。", checks: [] };
+  }
+  if (command === "handle_remote_bot_message") {
+    return { status: "ok", message: "Web 预览命令已处理。", response: { status: "preview", reply: "Web preview", action: "noop", selection: null, choices: [], forwardToCodex: null } };
+  }
+  if (["remote_bridge_status", "read_remote_bridge_log", "start_remote_bridge", "stop_remote_bridge"].includes(command)) {
+    return { status: "ok", message: "Web 预览桥接状态。", bridge: bridgeStatus(), log: "Web preview" };
+  }
+  if (["install_entrypoints", "uninstall_entrypoints", "repair_shortcuts"].includes(command)) {
+    return {
+      status: "ok",
+      message: "Web 预览不会改动系统入口。",
+      silent_shortcut: { installed: false, path: null },
+      management_shortcut: { installed: false, path: null },
+    };
+  }
+  if (["install_watcher", "uninstall_watcher", "enable_watcher", "disable_watcher"].includes(command)) {
+    return { status: "ok", message: "Web 预览不会改动 Watcher。", enabled: false, disabled_flag: "Web preview" };
+  }
+  if (command === "perform_update") {
+    return { status: "failed", message: "Web 预览不安装更新。", currentVersion: "1.3.2", latestVersion: null, updateAvailable: false, progress: 0 };
+  }
+  return { status: "ok", message: "Web 预览命令已忽略。" };
+}
+
+function settingsPayload(message: string, settings: BackendSettings) {
+  return {
+    status: "ok",
+    message,
+    settings,
+    settings_path: "Web preview",
+    user_scripts: { enabled: true, scripts: [] },
+  };
+}
+
+function remoteStatus() {
+  return {
+    status: "preview",
+    message: "Web preview",
+    configPath: "Web preview",
+    workspaceReady: false,
+    appServerUrl: "",
+    routeKey: "preview",
+    warnings: [],
+    commands: { codexAppServer: "", feishuBridgeEnv: [], feishuBridgeNotes: [] },
+    checks: [],
+  };
+}
+
+function bridgeStatus() {
+  return {
+    status: "preview",
+    message: "Web preview",
+    pid: null,
+    startedAtMs: null,
+    stoppedAtMs: null,
+    scriptPath: "",
+    configPath: "",
+    logPath: "",
+  };
+}

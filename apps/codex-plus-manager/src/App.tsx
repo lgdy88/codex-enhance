@@ -8,14 +8,12 @@ import { useAppController } from "@/hooks/use-app-controller";
 import { routes, routeSubtitle, routeTitle } from "@/routes";
 import {
   AboutScreen,
-  DiagnosticsScreen,
   EnhanceScreen,
   LogsScreen,
   MaintenanceScreen,
   OverviewScreen,
   ProviderSyncScreen,
   RemoteControlScreen,
-  SettingsScreen,
   UserScriptsScreen,
 } from "@/screens";
 
@@ -23,7 +21,6 @@ export function App() {
   const {
     actions,
     busy,
-    diagnostics,
     launchForm,
     logs,
     navigate,
@@ -112,7 +109,8 @@ export function App() {
         {busy ? <div className="busy">正在处理...</div> : null}
         <section className="screen">
           {route === "overview" ? <OverviewScreen overview={overview} actions={actions} /> : null}
-          {route === "enhance" ? <EnhanceScreen form={settingsForm} onFormChange={setSettingsForm} actions={actions} /> : null}
+          {route === "pluginUnlock" ? <EnhanceScreen mode="plugins" form={settingsForm} onFormChange={setSettingsForm} actions={actions} /> : null}
+          {route === "conversationEnhance" ? <EnhanceScreen mode="conversation" form={settingsForm} onFormChange={setSettingsForm} actions={actions} /> : null}
           {route === "userScripts" ? <UserScriptsScreen settings={settings} actions={actions} /> : null}
           {route === "providerSync" ? (
             <ProviderSyncScreen settings={settings} form={settingsForm} result={providerResult} onFormChange={setSettingsForm} actions={actions} />
@@ -132,19 +130,22 @@ export function App() {
             />
           ) : null}
           {route === "maintenance" ? (
-            <MaintenanceScreen
-              overview={overview}
-              watcher={watcher}
-              launchForm={launchForm}
-              onLaunchFormChange={setLaunchForm}
-              removeOwnedData={removeOwnedData}
-              onRemoveOwnedDataChange={setRemoveOwnedData}
-              actions={actions}
-            />
+            <>
+              <MaintenanceScreen
+                overview={overview}
+                watcher={watcher}
+                settings={settings}
+                settingsForm={settingsForm}
+                launchForm={launchForm}
+                onSettingsFormChange={setSettingsForm}
+                onLaunchFormChange={setLaunchForm}
+                removeOwnedData={removeOwnedData}
+                onRemoveOwnedDataChange={setRemoveOwnedData}
+                actions={actions}
+              />
+              <LogsScreen logs={logs} actions={actions} />
+            </>
           ) : null}
-          {route === "settings" ? <SettingsScreen settings={settings} theme={theme} form={settingsForm} onFormChange={setSettingsForm} actions={actions} /> : null}
-          {route === "logs" ? <LogsScreen logs={logs} actions={actions} /> : null}
-          {route === "diagnostics" ? <DiagnosticsScreen diagnostics={diagnostics} actions={actions} /> : null}
           {route === "about" ? <AboutScreen overview={overview} update={update} actions={actions} /> : null}
         </section>
       </main>
