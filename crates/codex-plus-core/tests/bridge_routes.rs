@@ -34,6 +34,10 @@ async fn bridge_routes_cover_all_current_paths() {
         ("/backend/status", json!({})),
         ("/backend/repair", json!({})),
         ("/provider/status", json!({})),
+        (
+            "/plugin-cache/repair-install",
+            json!({"marketplace": "bad/path", "plugin": "chrome"}),
+        ),
         ("/codex-model-catalog", json!({})),
         ("/codex-config-model", json!({})),
         ("/delete", json!({"session_id": "s1", "title": "First"})),
@@ -68,6 +72,24 @@ async fn bridge_routes_cover_all_current_paths() {
             "{path} should be routed"
         );
     }
+}
+
+#[tokio::test]
+async fn plugin_cache_repair_route_rejects_path_segments() {
+    let result = handle_bridge_request(
+        test_context(),
+        "/plugin-cache/repair-install",
+        json!({"marketplace": "openai-bundled", "plugin": "../chrome"}),
+    )
+    .await;
+
+    assert_eq!(result["status"], "failed");
+    assert!(
+        result["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("插件缓存参数")
+    );
 }
 
 #[tokio::test]

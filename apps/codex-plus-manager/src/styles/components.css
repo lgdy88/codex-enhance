@@ -488,6 +488,43 @@
   margin-top: 12px;
 }
 
+.remote-main-flow {
+  display: grid;
+  gap: 14px;
+}
+
+.remote-bridge-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--background) / 0.68);
+  padding: 14px;
+}
+
+.remote-bridge-hero > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.remote-bridge-hero strong {
+  font-size: 17px;
+  line-height: 1.25;
+}
+
+.remote-bridge-hero span {
+  color: hsl(var(--muted-foreground));
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.image-config-state {
+  margin-top: 4px;
+}
+
 .command-box {
   min-height: 48px;
   white-space: pre-wrap;

@@ -141,7 +141,20 @@ pub async fn handle_bridge_request(
         "/manager/open" => ctx.runtime.open_manager().await,
         "/backend/status" => ctx.runtime.backend_status().await,
         "/backend/repair" => ctx.runtime.repair_backend().await,
+        "/image/status" => image_status_value(),
+        "/image/generate" => {
+            let request = serde_json::from_value(payload.clone()).unwrap_or_else(|_| {
+                crate::image::ImageGenerationRequest {
+                    prompt: String::new(),
+                    size: String::new(),
+                    quality: String::new(),
+                    output_format: String::new(),
+                }
+            });
+            result_value(crate::image::generate_image(request).await)
+        }
         "/provider/status" => provider_status_value(),
+        "/plugin-cache/repair-install" => plugin_cache_repair_install_value(payload.clone()),
         "/codex-model-catalog" | "/codex-config-model" => ctx.runtime.codex_model_catalog().await,
         "/diagnostics/log" => diagnostic_log_value(payload.clone()),
         "/delete" => result_value(ctx.data.delete(session_from_payload(&payload)).await),
@@ -527,6 +540,18 @@ fn diagnostic_log_value(payload: Value) -> anyhow::Result<Value> {
     }))
 }
 
+fn image_status_value() -> anyhow::Result<Value> {
+    let store = crate::image::ImageGenerationStore::default();
+    let config = store.load()?;
+    Ok(json!({
+        "status": if config.api_key.trim().is_empty() { "missing" } else { "ok" },
+        "message": if config.api_key.trim().is_empty() { "生图 API Key 未配置" } else { "生图配置已就绪" },
+        "config": config.public(),
+        "configPath": store.path().to_string_lossy(),
+        "outputDir": crate::paths::default_generated_images_dir().to_string_lossy()
+    }))
+}
+
 fn provider_status_value() -> anyhow::Result<Value> {
     let config_path = codex_home_dir().join("config.toml");
     let current_provider = read_current_provider(&config_path);
@@ -542,6 +567,23 @@ fn provider_status_value() -> anyhow::Result<Value> {
         "config_mtime_ms": config_mtime_ms,
         "path": config_path.to_string_lossy()
     }))
+}
+
+fn plugin_cache_repair_install_value(payload: Value) -> anyhow::Result<Value> {
+    let marketplace = payload
+        .get("marketplace")
+        .and_then(Value::as_str)
+        .or_else(|| payload.get("marketplaceName").and_then(Value::as_str))
+        .unwrap_or_default();
+    let plugin = payload
+        .get("plugin")
+        .and_then(Value::as_str)
+        .or_else(|| payload.get("pluginName").and_then(Value::as_str))
+        .unwrap_or_default();
+    result_value(crate::plugin_cache::repair_plugin_cache_for_install(
+        marketplace,
+        plugin,
+    ))
 }
 
 fn codex_home_dir() -> PathBuf {

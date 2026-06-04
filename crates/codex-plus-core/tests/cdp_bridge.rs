@@ -59,7 +59,7 @@ fn injection_script_marks_diagnostic_build_and_reports_script_loaded() {
 fn injection_script_keeps_bundled_marketplace_name_for_default_filter() {
     let script = assets::injection_script(57321);
 
-    assert!(script.contains("codexPluginMarketplaceUnlockVersion = \"10\""));
+    assert!(script.contains("codexPluginMarketplaceUnlockVersion = \"11\""));
     assert!(script.contains("if (name === \"openai-bundled\") return \"\""));
     assert!(!script.contains("if (name === \"openai-bundled\") return \"dex-openai-bundled\""));
     assert!(script.contains("if (name === \"openai-bundled\" || name === \"dex-openai-bundled\") return \"OpenAI Plugins 1 (Dex)\""));
@@ -104,8 +104,24 @@ fn injection_script_restores_official_marketplace_names_for_plugin_install() {
     assert!(script.contains("requestRemoteMarketplaceName"));
     assert!(script.contains("plugin_install_request_debug"));
     assert!(script.contains("plugin_install_request_failed"));
+    assert!(script.contains("pluginInstallNeedsCacheRepair"));
+    assert!(script.contains("repairPluginCacheForInstall"));
+    assert!(script.contains("postJson(\"/plugin-cache/repair-install\""));
+    assert!(script.contains("plugin_install_retry_after_cache_repair"));
     assert!(script.contains("plugin_marketplace_response_debug"));
     assert!(script.contains("pluginMarketplaceCounts"));
+}
+
+#[test]
+fn injection_script_keeps_plugin_list_requests_scoped_to_selected_marketplace() {
+    let script = assets::injection_script(57321);
+
+    assert!(
+        script.contains("const originalMarketplaceKinds = Array.isArray(next.marketplaceKinds)")
+    );
+    assert!(script.contains("next.marketplaceKinds = Array.from(new Set(restoredKinds))"));
+    assert!(!script.contains("if (hadMarketplaceKinds) delete next.marketplaceKinds"));
+    assert!(script.contains("resolvedMarketplaceKinds"));
 }
 
 #[test]

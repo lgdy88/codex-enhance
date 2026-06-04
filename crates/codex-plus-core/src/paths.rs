@@ -4,6 +4,9 @@ const APP_STATE_DIR: &str = ".codex-session-delete";
 const SETTINGS_FILE: &str = "settings.json";
 const LATEST_STATUS_FILE: &str = "latest-status.json";
 const DIAGNOSTIC_LOG_FILE: &str = "codex-plus.log";
+const IMAGE_CONFIG_FILE: &str = "image.json";
+const GENERATED_IMAGES_DIR: &str = "generated-images";
+const PLUGIN_CACHE_BACKUPS_DIR: &str = "plugin-cache-backups";
 const REMOTE_CONFIG_FILE: &str = "remote.json";
 const REMOTE_BOT_STATE_FILE: &str = "remote-bot-state.json";
 const REMOTE_INVENTORY_FILE: &str = "remote-inventory.json";
@@ -20,6 +23,18 @@ pub fn default_app_state_dir() -> PathBuf {
 
 pub fn default_settings_path() -> PathBuf {
     default_app_state_dir().join(SETTINGS_FILE)
+}
+
+pub fn default_image_config_path() -> PathBuf {
+    default_app_state_dir().join(IMAGE_CONFIG_FILE)
+}
+
+pub fn default_generated_images_dir() -> PathBuf {
+    default_app_state_dir().join(GENERATED_IMAGES_DIR)
+}
+
+pub fn default_plugin_cache_backups_dir() -> PathBuf {
+    default_app_state_dir().join(PLUGIN_CACHE_BACKUPS_DIR)
 }
 
 pub fn default_remote_config_path() -> PathBuf {
@@ -66,6 +81,15 @@ mod tests {
         let path = default_remote_config_path();
 
         assert!(path.ends_with(".codex-session-delete/remote.json"));
+    }
+
+    #[test]
+    fn default_image_paths_use_app_state_directory() {
+        let config = default_image_config_path();
+        let output = default_generated_images_dir();
+
+        assert!(config.ends_with(".codex-session-delete/image.json"));
+        assert!(output.ends_with(".codex-session-delete/generated-images"));
     }
 
     #[test]

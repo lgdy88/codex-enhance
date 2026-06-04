@@ -39,7 +39,8 @@
   const codexArchiveRowActionsVersion = "1";
   const codexArchiveDeleteAllVersion = "2";
   const codexConversationTimelineVersion = "2";
-  const codexPluginMarketplaceUnlockVersion = "10";
+  const codexPluginMarketplaceUnlockVersion = "11";
+  const codexImageGenerationVersion = "1";
   const codexPlusVersion = window.__CODEX_PLUS_VERSION__ || "dev";
   const codexPlusDisplayName = "Dex";
   const codexPlusSettingsKey = "codexPlusSettings";
@@ -853,6 +854,31 @@
       codexPlusBackendStatus = { status: "failed", message: "后端修复失败" };
     }
     renderBackendStatus();
+  }
+
+  async function generateImageFromPrompt(prompt, source = "prompt-prefix") {
+    const normalized = String(prompt || "").trim();
+    if (!normalized) {
+      showToast("生图提示词不能为空", null);
+      return null;
+    }
+    try {
+      const result = await postJson("/image/generate", { prompt: normalized });
+      if (result?.status !== "ok") throw new Error(result?.message || "生图失败");
+      const message = result.path ? `图片已生成：${result.path}` : (result.message || "图片已生成");
+      showToast(message, null);
+      sendCodexPlusDiagnostic("image_generation_success", { source, has_path: !!result.path });
+      return result;
+    } catch (error) {
+      const message = `生图失败：${error?.message || error}`;
+      showToast(message, null);
+      sendCodexPlusDiagnostic("image_generation_failed", { source, error: summarizeError(error) });
+      return null;
+    }
+  }
+
+  function summarizeError(error) {
+    return String(error?.message || error || "unknown").slice(0, 180);
   }
 
   function scheduleBackendHeartbeat() {
@@ -1856,9 +1882,18 @@
     if (method !== "list-plugins" || !params || typeof params !== "object") return params;
     const next = { ...params };
     const hadMarketplaceKinds = Object.prototype.hasOwnProperty.call(next, "marketplaceKinds");
-    if (hadMarketplaceKinds) delete next.marketplaceKinds;
+    const originalMarketplaceKinds = Array.isArray(next.marketplaceKinds) ? next.marketplaceKinds.map(String) : [];
+    if (originalMarketplaceKinds.length) {
+      const restoredKinds = originalMarketplaceKinds.map((kind) => {
+        if (kind === "remote:openai-curated") return "openai-curated";
+        return restorePluginMarketplaceName(kind);
+      });
+      next.marketplaceKinds = Array.from(new Set(restoredKinds));
+    }
     sendCodexPlusDiagnostic("plugin_marketplace_request_expanded", {
       hadMarketplaceKinds,
+      marketplaceKinds: originalMarketplaceKinds,
+      resolvedMarketplaceKinds: Array.isArray(next.marketplaceKinds) ? next.marketplaceKinds : [],
       cwdCount: Array.isArray(next.cwds) ? next.cwds.length : 0,
     });
     return next;
@@ -1913,6 +1948,55 @@
   function codexPluginOfficialMarketplaceName(name) {
     const restored = restorePluginMarketplaceName(name);
     return restored === "openai-bundled" || restored === "openai-curated" || restored === "openai-primary-runtime";
+  }
+
+  function marketplaceNameFromInstallRequest(params) {
+    if (!params || typeof params !== "object") return "";
+    if (params.remoteMarketplaceName) return restorePluginMarketplaceName(params.remoteMarketplaceName);
+    if (typeof params.marketplacePath === "string") {
+      const remotePrefix = "remote:";
+      if (params.marketplacePath.startsWith(remotePrefix)) {
+        return restorePluginMarketplaceName(params.marketplacePath.slice(remotePrefix.length));
+      }
+      const normalized = params.marketplacePath.replace(/\\/g, "/");
+      const marker = "/bundled-marketplaces/";
+      const markerIndex = normalized.indexOf(marker);
+      if (markerIndex >= 0) {
+        const rest = normalized.slice(markerIndex + marker.length);
+        return restorePluginMarketplaceName(rest.split("/")[0] || "");
+      }
+      const agentsMarker = "/marketplaces/";
+      const agentsIndex = normalized.indexOf(agentsMarker);
+      if (agentsIndex >= 0) {
+        const rest = normalized.slice(agentsIndex + agentsMarker.length);
+        return restorePluginMarketplaceName(rest.split("/")[0] || "");
+      }
+    }
+    return "";
+  }
+
+  function pluginInstallNeedsCacheRepair(error) {
+    const message = String(error?.message || error || "").toLowerCase();
+    return message.includes("failed to back up plugin cache entry")
+      || message.includes("os error 5")
+      || message.includes("拒绝访问");
+  }
+
+  async function repairPluginCacheForInstall(requestParams) {
+    const marketplace = marketplaceNameFromInstallRequest(requestParams);
+    const plugin = requestParams?.pluginName || "";
+    if (!marketplace || !plugin || !codexPluginOfficialMarketplaceName(marketplace)) {
+      return { status: "skipped", message: "插件缓存修复参数不足", marketplace, plugin };
+    }
+    const result = await postJson("/plugin-cache/repair-install", { marketplace, plugin });
+    sendCodexPlusDiagnostic("plugin_install_cache_repair", {
+      marketplace,
+      plugin,
+      status: result?.status || "",
+      moved: !!result?.moved,
+      message: result?.message || "",
+    });
+    return result;
   }
 
   function isCodexPluginBuildFlavorFilter(callback, sample) {
@@ -2070,6 +2154,28 @@
             errorName: error?.name || "",
             errorMessage: error?.message || String(error),
           });
+          if (pluginInstallNeedsCacheRepair(error)) {
+            const repairResult = await repairPluginCacheForInstall(requestParams).catch((repairError) => {
+              sendCodexPlusDiagnostic("plugin_install_cache_repair_failed", {
+                requestMarketplacePath: requestParams?.marketplacePath || null,
+                requestRemoteMarketplaceName: requestParams?.remoteMarketplaceName || null,
+                requestPluginName: requestParams?.pluginName || null,
+                errorName: repairError?.name || "",
+                errorMessage: repairError?.message || String(repairError),
+              });
+              return null;
+            });
+            if (repairResult?.status === "ok") {
+              sendCodexPlusDiagnostic("plugin_install_retry_after_cache_repair", {
+                requestMarketplacePath: requestParams?.marketplacePath || null,
+                requestRemoteMarketplaceName: requestParams?.remoteMarketplaceName || null,
+                requestPluginName: requestParams?.pluginName || null,
+                moved: !!repairResult.moved,
+              });
+              const retryResult = await originalSendRequest(method, requestParams, options);
+              return patchPluginMarketplaceResult(requestMethod, retryResult);
+            }
+          }
         }
         throw error;
       }
@@ -2237,6 +2343,54 @@
       return { status: "failed", message: "桥接不可用，请重启启动器" };
     }
     return await __codexSessionDeleteBridge(path, payload);
+  }
+
+  function extractImagePromptCommand(text) {
+    const normalized = String(text || "").trim();
+    const match = normalized.match(/^(?:生图|画图|生成图片)\s*[:：]\s*([\s\S]+)$/i) || normalized.match(/^\/(?:image|img)\s+([\s\S]+)$/i);
+    return match ? match[1].trim() : "";
+  }
+
+  function activePromptElement() {
+    const element = document.activeElement;
+    if (!element || isExtensionUiNode(element)) return null;
+    if (element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement) return element;
+    if (element.isContentEditable) return element;
+    return null;
+  }
+
+  function promptElementText(element) {
+    if (!element) return "";
+    if ("value" in element) return element.value || "";
+    return element.textContent || "";
+  }
+
+  function clearPromptElement(element) {
+    if (!element) return;
+    if ("value" in element) {
+      element.value = "";
+      element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward", data: null }));
+      return;
+    }
+    element.textContent = "";
+    element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward", data: null }));
+  }
+
+  function installImagePromptCommandHandler() {
+    if (window.__codexImagePromptCommandVersion === codexImageGenerationVersion) return;
+    window.__codexImagePromptCommandVersion = codexImageGenerationVersion;
+    document.addEventListener("keydown", async (event) => {
+      if (event.defaultPrevented || event.key !== "Enter" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
+      const input = activePromptElement();
+      const prompt = extractImagePromptCommand(promptElementText(input));
+      if (!prompt) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation?.();
+      showToast("Dex 正在生成图片…", null);
+      const result = await generateImageFromPrompt(prompt, "prompt-prefix");
+      if (result?.status === "ok") clearPromptElement(input);
+    }, true);
   }
 
   function sendCodexPlusDiagnostic(event, detail = {}) {
@@ -4436,6 +4590,7 @@
   function scanLightweight() {
     installStyle();
     installCodexPlusMenu();
+    installImagePromptCommandHandler();
     scheduleBackendHeartbeat();
     scheduleProviderWatcher();
     installDeleteButtonEventDelegation();
@@ -4491,6 +4646,8 @@
     selectors.appHeader,
     selectors.archiveNav,
     selectors.disabledInstallButton,
+    "textarea",
+    "[contenteditable='true']",
   ].join(", ");
 
   function nodeSelfOrAncestorMatchesScanRelevance(node) {

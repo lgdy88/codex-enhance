@@ -10,6 +10,7 @@ import {
   AboutScreen,
   EnhanceScreen,
   LogsScreen,
+  ImageGenerationScreen,
   MaintenanceScreen,
   OverviewScreen,
   ProviderSyncScreen,
@@ -23,6 +24,8 @@ export function App() {
     busy,
     launchForm,
     logs,
+    imageForm,
+    imageGeneration,
     navigate,
     notice,
     overview,
@@ -40,6 +43,7 @@ export function App() {
     setNotice,
     setRemoteBotForm,
     setRemoteForm,
+    setImageForm,
     setRemoveOwnedData,
     setSettingsForm,
     settings,
@@ -114,6 +118,14 @@ export function App() {
           {route === "userScripts" ? <UserScriptsScreen settings={settings} actions={actions} /> : null}
           {route === "providerSync" ? (
             <ProviderSyncScreen settings={settings} form={settingsForm} result={providerResult} onFormChange={setSettingsForm} actions={actions} />
+          ) : null}
+          {route === "imageGeneration" ? (
+            <ImageGenerationScreen
+              settings={imageGeneration}
+              form={imageForm}
+              onFormChange={setImageForm}
+              actions={actions}
+            />
           ) : null}
           {route === "remoteControl" ? (
             <RemoteControlScreen

@@ -11,6 +11,7 @@ import {
   handleRemoteBotMessage,
   installEntrypoints as installEntrypointsCommand,
   launchCodexPlus,
+  loadImageGeneration,
   loadOverview,
   loadRemoteControl,
   loadRemoteInventory,
@@ -27,6 +28,7 @@ import {
   runProviderAction,
   runWatcherAction,
   saveBackendSettings,
+  saveImageGenerationConfig,
   saveRemoteControl as saveRemoteControlCommand,
   startRemoteBridge as startRemoteBridgeCommand,
   startupOptions,
@@ -38,6 +40,8 @@ import type {
   Actions,
   BackendSettings,
   DiagnosticsResult,
+  ImageGenerationForm,
+  ImageGenerationSettingsResult,
   LaunchForm,
   LogsResult,
   Notice,
@@ -80,6 +84,7 @@ export function useAppController() {
   const [remoteInventory, setRemoteInventory] = useState<RemoteInventoryResult | null>(null);
   const [remoteBotResult, setRemoteBotResult] = useState<RemoteBotMessageResult | null>(null);
   const [remoteBridge, setRemoteBridge] = useState<RemoteBridgeResult | null>(null);
+  const [imageGeneration, setImageGeneration] = useState<ImageGenerationSettingsResult | null>(null);
   const [launchForm, setLaunchForm] = useState<LaunchForm>({
     appPath: "",
     debugPort: "9229",
@@ -92,6 +97,7 @@ export function useAppController() {
     userId: "dex-preview-user",
     text: "/项目",
   });
+  const [imageForm, setImageForm] = useState<ImageGenerationForm>(defaultImageGenerationForm());
   const [removeOwnedData, setRemoveOwnedData] = useState(false);
 
   const showNotice = (title: string, message: string, status?: Status) => setNotice({ title, message, status });
@@ -161,6 +167,19 @@ export function useAppController() {
     if (!silent) showNotice("移动/远程", result.message, result.status);
   };
 
+  const refreshImageGeneration = async (silent = false) => {
+    const result = await run(loadImageGeneration);
+    if (!result) return;
+    setImageGeneration(result);
+    setImageForm((current) => ({
+      ...current,
+      baseUrl: result.config.baseUrl,
+      apiKey: "",
+      model: result.config.model,
+    }));
+    if (!silent) showNotice("生图配置", result.message, result.status);
+  };
+
   const refreshRouteData = async (next: Route) => {
     const routeLoaders: Record<Route, Array<() => Promise<void>>> = {
       overview: [() => refreshOverview(true)],
@@ -168,6 +187,7 @@ export function useAppController() {
       conversationEnhance: [() => refreshSettings(true)],
       userScripts: [() => refreshSettings(true)],
       providerSync: [() => refreshSettings(true)],
+      imageGeneration: [() => refreshImageGeneration(true)],
       remoteControl: [() => refreshRemoteControl(true)],
       maintenance: [() => refreshOverview(true), () => refreshWatcher(true), () => refreshLogs(true)],
       about: [() => refreshOverview(true)],
@@ -324,6 +344,20 @@ export function useAppController() {
     showNotice("飞书命令路由", result.message, result.status);
   };
 
+  const saveImageGeneration = async () => {
+    const keepExistingApiKey = imageGeneration?.config.apiKeyConfigured === true && imageForm.apiKey.trim().length === 0;
+    const result = await run(() => saveImageGenerationConfig(imageForm, keepExistingApiKey));
+    if (!result) return;
+    setImageGeneration(result);
+    setImageForm((current) => ({
+      ...current,
+      baseUrl: result.config.baseUrl,
+      apiKey: "",
+      model: result.config.model,
+    }));
+    showNotice("生图配置", result.message, result.status);
+  };
+
   const installEntrypoints = async () => {
     const result = await run(installEntrypointsCommand);
     if (!result) return;
@@ -471,6 +505,7 @@ export function useAppController() {
       await refreshOverview(true);
       await refreshSettings(true);
       await refreshRemoteControl(true);
+      await refreshImageGeneration(true);
     })();
   }, []);
 
@@ -517,6 +552,7 @@ export function useAppController() {
       refreshRemoteBridge,
       startRemoteBridge,
       stopRemoteBridge,
+      saveImageGeneration,
       openExternalUrl,
       refreshLogs,
       refreshDiagnostics,
@@ -534,7 +570,7 @@ export function useAppController() {
       disableWatcher: () => watcherAction("disable_watcher"),
       toggleTheme: () => setTheme((current) => (current === "dark" ? "light" : "dark")),
     }),
-    [route, launchForm, settingsForm, remoteForm, remoteBotForm, removeOwnedData, update, logs, diagnostics, theme],
+    [route, launchForm, settingsForm, remoteForm, remoteBotForm, imageForm, imageGeneration, removeOwnedData, update, logs, diagnostics, theme],
   );
 
   return {
@@ -543,6 +579,8 @@ export function useAppController() {
     diagnostics,
     launchForm,
     logs,
+    imageForm,
+    imageGeneration,
     navigate,
     notice,
     overview,
@@ -560,6 +598,7 @@ export function useAppController() {
     setNotice,
     setRemoteBotForm,
     setRemoteForm,
+    setImageForm,
     setRemoveOwnedData,
     setSettingsForm,
     settings,
@@ -567,6 +606,14 @@ export function useAppController() {
     theme,
     update,
     watcher,
+  };
+}
+
+function defaultImageGenerationForm(): ImageGenerationForm {
+  return {
+    baseUrl: "https://api.openai.com",
+    apiKey: "",
+    model: "gpt-image-2",
   };
 }
 
@@ -588,6 +635,7 @@ function routeFromHash(): Route | null {
   const aliases: Record<string, Route> = {
     enhance: "pluginUnlock",
     syncRemote: "providerSync",
+    image: "imageGeneration",
     logs: "maintenance",
   };
   if (aliases[hashRoute]) return aliases[hashRoute];
@@ -602,7 +650,7 @@ function syncLocationHash(route: Route) {
 }
 
 function isRoute(value: string): value is Route {
-  return ["overview", "pluginUnlock", "conversationEnhance", "userScripts", "providerSync", "remoteControl", "maintenance", "about"].includes(value);
+  return ["overview", "pluginUnlock", "conversationEnhance", "userScripts", "providerSync", "imageGeneration", "remoteControl", "maintenance", "about"].includes(value);
 }
 
 function shouldShowUpdateNotice(result: UpdateResult, silent: boolean): boolean {

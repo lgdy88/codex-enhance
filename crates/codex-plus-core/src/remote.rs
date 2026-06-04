@@ -199,6 +199,9 @@ fn normalize_config(config: &RemoteControlConfig) -> RemoteControlConfig {
     next.thread_id = next.thread_id.trim().to_string();
     next.feishu_chat_id = next.feishu_chat_id.trim().to_string();
     next.feishu_user_id = next.feishu_user_id.trim().to_string();
+    if next.enabled && next.feishu_chat_id.is_empty() && next.feishu_user_id.is_empty() {
+        next.auto_bind_p2p = true;
+    }
     next.app_server_port = normalize_port(next.app_server_port);
     next.bind_host = normalize_bind_host(&next.bind_host);
     next.approval_policy = normalize_approval_policy(&next.approval_policy);
@@ -572,6 +575,7 @@ mod tests {
         assert_eq!(saved.lark_encrypt_key, "enc");
         assert_eq!(saved.lark_verification_token, "token");
         assert_eq!(saved.thread_name, DEFAULT_THREAD_NAME);
+        assert!(saved.auto_bind_p2p);
         assert_eq!(saved.app_server_port, DEFAULT_APP_SERVER_PORT);
         assert_eq!(saved.bind_host, "127.0.0.1");
         assert_eq!(saved.approval_policy, SAFE_APPROVAL_POLICY);
@@ -580,7 +584,30 @@ mod tests {
     }
 
     #[test]
-    fn status_requires_workspace_and_route_when_enabled() {
+    fn enabled_unbound_config_uses_private_chat_auto_bind() {
+        let dir = temp_dir();
+        let config = RemoteControlConfig {
+            enabled: true,
+            workspace_path: dir.to_string_lossy().to_string(),
+            ..RemoteControlConfig::default()
+        };
+
+        let status = build_status(&config, Path::new("remote.json"));
+
+        assert_eq!(status.status, STATUS_ENABLED_READY);
+        assert!(status.workspace_ready);
+        assert_eq!(status.route_key, "feishu:auto-bind-p2p");
+        assert!(
+            status
+                .commands
+                .feishu_bridge_env
+                .iter()
+                .any(|value| value == "FEISHU_CODEX_AUTO_BIND=1")
+        );
+    }
+
+    #[test]
+    fn status_uses_fixed_chat_route_when_configured() {
         let dir = temp_dir();
         let config = RemoteControlConfig {
             enabled: true,
@@ -592,7 +619,6 @@ mod tests {
         let status = build_status(&config, Path::new("remote.json"));
 
         assert_eq!(status.status, STATUS_ENABLED_READY);
-        assert!(status.workspace_ready);
         assert_eq!(status.route_key, "feishu:chat:chat-1");
     }
 

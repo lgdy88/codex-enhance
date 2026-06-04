@@ -6,6 +6,8 @@ import type {
   BackendSettings,
   CommandResult,
   DiagnosticsResult,
+  ImageGenerationForm,
+  ImageGenerationSettingsResult,
   InstallResult,
   LogsResult,
   OverviewResult,
@@ -87,6 +89,18 @@ export const stopRemoteBridge = () => call<RemoteBridgeResult>("stop_remote_brid
 
 export const readRemoteBridgeLog = () => call<RemoteBridgeResult>("read_remote_bridge_log");
 
+export const loadImageGeneration = () => call<ImageGenerationSettingsResult>("load_image_generation");
+
+export const saveImageGenerationConfig = (form: ImageGenerationForm, keepExistingApiKey: boolean) =>
+  call<ImageGenerationSettingsResult>("save_image_generation", {
+    config: {
+      baseUrl: form.baseUrl,
+      apiKey: form.apiKey,
+      model: form.model,
+      keepExistingApiKey,
+    },
+  });
+
 export const installEntrypoints = () => call<InstallResult>("install_entrypoints");
 
 export const uninstallEntrypoints = (removeOwnedData: boolean) => call<InstallResult>("uninstall_entrypoints", { options: { removeOwnedData } });
@@ -119,6 +133,28 @@ function savePreviewSettings(settings: BackendSettings) {
   window.localStorage.setItem("dex-preview-settings", JSON.stringify(settings));
 }
 
+function previewImageConfig() {
+  const raw = window.localStorage.getItem("dex-preview-image") || "{}";
+  const saved = JSON.parse(raw) as Partial<ImageGenerationForm> & { apiKeyConfigured?: boolean; apiKeyHint?: string };
+  const apiKeyConfigured = Boolean(saved.apiKeyConfigured || saved.apiKey);
+  return {
+    baseUrl: saved.baseUrl || "https://api.openai.com",
+    model: saved.model || "gpt-image-2",
+    apiKeyConfigured,
+    apiKeyHint: apiKeyConfigured ? "已配置，尾号 demo" : "",
+  };
+}
+
+function previewImagePayload(message: string) {
+  return {
+    status: "ok",
+    message,
+    config: previewImageConfig(),
+    configPath: "Web preview",
+    outputDir: "Web preview",
+  };
+}
+
 function previewCommand(command: string, args?: Record<string, unknown>) {
   const settings = previewSettings();
   if (command === "save_settings") {
@@ -136,6 +172,24 @@ function previewCommand(command: string, args?: Record<string, unknown>) {
   if (command === "startup_options") {
     return { status: "ok", message: "Web 预览启动参数已读取。", showUpdate: false };
   }
+  if (command === "load_image_generation") {
+    return previewImagePayload("Web 预览生图配置已加载。");
+  }
+  if (command === "save_image_generation") {
+    const config = args?.config as Partial<ImageGenerationForm> & { keepExistingApiKey?: boolean };
+    const current = previewImageConfig();
+    const apiKeyConfigured = Boolean(config.apiKey || (config.keepExistingApiKey && current.apiKeyConfigured));
+    window.localStorage.setItem(
+      "dex-preview-image",
+      JSON.stringify({
+        baseUrl: config.baseUrl || current.baseUrl,
+        model: config.model || current.model,
+        apiKeyConfigured,
+        apiKeyHint: apiKeyConfigured ? "已配置，尾号 demo" : "",
+      }),
+    );
+    return previewImagePayload("Web 预览生图配置已保存。");
+  }
   if (command === "load_overview") {
     return {
       status: "ok",
@@ -145,7 +199,7 @@ function previewCommand(command: string, args?: Record<string, unknown>) {
       silent_shortcut: { status: "preview", path: null },
       management_shortcut: { status: "preview", path: null },
       latest_launch: null,
-      current_version: "1.3.2",
+      current_version: "1.4.0",
       update_status: "preview",
       settings_path: "Web preview",
       logs_path: "Web preview",
@@ -161,7 +215,7 @@ function previewCommand(command: string, args?: Record<string, unknown>) {
     return { status: "ok", message: "Web 预览诊断已生成。", report: "Web preview diagnostics" };
   }
   if (command === "check_update") {
-    return { status: "ok", message: "Web 预览不检查更新。", currentVersion: "1.3.2", latestVersion: null, updateAvailable: false, progress: 0 };
+    return { status: "ok", message: "Web 预览不检查更新。", currentVersion: "1.4.0", latestVersion: null, updateAvailable: false, progress: 0 };
   }
   if (command === "launch_codex_plus" || command === "restart_codex_plus") {
     return { status: "accepted", message: "Web 预览不会启动桌面 Codex。", debugPort: 9229, helperPort: 57321 };
@@ -210,7 +264,7 @@ function previewCommand(command: string, args?: Record<string, unknown>) {
     return { status: "ok", message: "Web 预览不会改动 Watcher。", enabled: false, disabled_flag: "Web preview" };
   }
   if (command === "perform_update") {
-    return { status: "failed", message: "Web 预览不安装更新。", currentVersion: "1.3.2", latestVersion: null, updateAvailable: false, progress: 0 };
+    return { status: "failed", message: "Web 预览不安装更新。", currentVersion: "1.4.0", latestVersion: null, updateAvailable: false, progress: 0 };
   }
   return { status: "ok", message: "Web 预览命令已忽略。" };
 }

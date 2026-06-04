@@ -1,4 +1,4 @@
-import { FileCode2, Hammer, Info, LayoutDashboard, Link2, MessageSquareMore, Wrench, type LucideIcon } from "lucide-react";
+import { FileCode2, Hammer, Image, Info, LayoutDashboard, Link2, MessageSquareMore, Wrench, type LucideIcon } from "lucide-react";
 
 import type { Route } from "@/types";
 
@@ -8,6 +8,7 @@ export const routes: Array<{ id: Route; label: string; icon: LucideIcon }> = [
   { id: "conversationEnhance", label: "对话增强", icon: MessageSquareMore },
   { id: "userScripts", label: "脚本", icon: FileCode2 },
   { id: "providerSync", label: "供应商同步", icon: Link2 },
+  { id: "imageGeneration", label: "生图", icon: Image },
   { id: "remoteControl", label: "移动/远程", icon: MessageSquareMore },
   { id: "maintenance", label: "维护", icon: Wrench },
   { id: "about", label: "关于", icon: Info },
@@ -24,7 +25,8 @@ export function routeSubtitle(route: Route) {
     conversationEnhance: "对话删除、导出、移动和时间线开关",
     userScripts: "内置和用户自定义脚本清单",
     providerSync: "供应商切换后保持历史会话可见和可续聊",
-    remoteControl: "移动端入口、飞书桥接和远程安全预检",
+    imageGeneration: "配置 Images API，并在 Codex App 中用明确提示触发生图",
+    remoteControl: "移动端入口、飞书 Channel 配置和桥接启动",
     maintenance: "入口安装、修复、Watcher、手动启动与日志",
     about: "版本信息、项目链接与 GitHub Release 更新",
   };

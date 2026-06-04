@@ -17,6 +17,7 @@ use serde_json::{Value, json};
 
 use crate::install::{self, InstallActionResult};
 
+pub mod image;
 pub mod maintenance;
 pub mod remote;
 pub mod settings;
@@ -150,6 +151,24 @@ pub struct RemoteBotMessagePayload {
 pub struct RemoteBridgePayload {
     pub bridge: RemoteBridgeStatus,
     pub log: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageGenerationPayload {
+    pub config: codex_plus_core::image::ImageGenerationPublicConfig,
+    pub config_path: String,
+    pub output_dir: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageGeneratedPayload {
+    pub path: String,
+    pub model: String,
+    pub size: String,
+    pub output_format: String,
+    pub created_at_ms: u64,
 }
 
 #[tauri::command]

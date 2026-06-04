@@ -206,6 +206,25 @@ export type RemoteBridgeResult = CommandResult<{
   log: string;
 }>;
 
+export type ImageGenerationConfig = {
+  baseUrl: string;
+  model: string;
+  apiKeyConfigured: boolean;
+  apiKeyHint: string;
+};
+
+export type ImageGenerationForm = {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+};
+
+export type ImageGenerationSettingsResult = CommandResult<{
+  config: ImageGenerationConfig;
+  configPath: string;
+  outputDir: string;
+}>;
+
 export type InstallResult = CommandResult<{
   silent_shortcut: { installed: boolean; path: string | null };
   management_shortcut: { installed: boolean; path: string | null };
@@ -238,6 +257,7 @@ export type Route =
   | "conversationEnhance"
   | "userScripts"
   | "providerSync"
+  | "imageGeneration"
   | "remoteControl"
   | "maintenance"
   | "about";
@@ -313,6 +333,7 @@ export type Actions = {
   refreshRemoteBridge: () => Promise<void>;
   startRemoteBridge: () => Promise<void>;
   stopRemoteBridge: () => Promise<void>;
+  saveImageGeneration: () => Promise<void>;
   openExternalUrl: (url: string) => Promise<void>;
   refreshLogs: () => Promise<void>;
   refreshDiagnostics: () => Promise<void>;
