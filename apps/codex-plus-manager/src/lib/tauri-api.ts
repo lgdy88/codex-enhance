@@ -199,7 +199,7 @@ function previewCommand(command: string, args?: Record<string, unknown>) {
       silent_shortcut: { status: "preview", path: null },
       management_shortcut: { status: "preview", path: null },
       latest_launch: null,
-      current_version: "1.4.0",
+      current_version: "1.4.1",
       update_status: "preview",
       settings_path: "Web preview",
       logs_path: "Web preview",
@@ -215,7 +215,7 @@ function previewCommand(command: string, args?: Record<string, unknown>) {
     return { status: "ok", message: "Web 预览诊断已生成。", report: "Web preview diagnostics" };
   }
   if (command === "check_update") {
-    return { status: "ok", message: "Web 预览不检查更新。", currentVersion: "1.4.0", latestVersion: null, updateAvailable: false, progress: 0 };
+    return { status: "ok", message: "Web 预览不检查更新。", currentVersion: "1.4.1", latestVersion: null, updateAvailable: false, progress: 0 };
   }
   if (command === "launch_codex_plus" || command === "restart_codex_plus") {
     return { status: "accepted", message: "Web 预览不会启动桌面 Codex。", debugPort: 9229, helperPort: 57321 };
@@ -264,7 +264,7 @@ function previewCommand(command: string, args?: Record<string, unknown>) {
     return { status: "ok", message: "Web 预览不会改动 Watcher。", enabled: false, disabled_flag: "Web preview" };
   }
   if (command === "perform_update") {
-    return { status: "failed", message: "Web 预览不安装更新。", currentVersion: "1.4.0", latestVersion: null, updateAvailable: false, progress: 0 };
+    return { status: "failed", message: "Web 预览不安装更新。", currentVersion: "1.4.1", latestVersion: null, updateAvailable: false, progress: 0 };
   }
   return { status: "ok", message: "Web 预览命令已忽略。" };
 }

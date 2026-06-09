@@ -221,17 +221,13 @@ pub async fn generate_image_with(
     ));
     validate_generation_options(&size, &quality, &output_format)?;
 
-    let payload = json!({
-        "model": config.model,
-        "prompt": prompt,
-        "n": 1,
-        "size": size,
-        "quality": quality,
-        "response_format": "b64_json",
-        "background": "auto",
-        "moderation": "auto",
-        "output_format": output_format
-    });
+    let uses_minimal_payload = uses_minimal_image_payload(&config.model);
+    let payload = generation_payload(&config, prompt, &size, &quality, &output_format);
+    let saved_output_format = if uses_minimal_payload {
+        DEFAULT_FORMAT.to_string()
+    } else {
+        output_format
+    };
     let url = build_api_url(&config.base_url, "/images/generations");
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(600))
@@ -259,7 +255,7 @@ pub async fn generate_image_with(
         "{}-{}.{}",
         created_at_ms,
         slugify(prompt),
-        output_format
+        saved_output_format
     ));
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).with_context(|| {
@@ -275,9 +271,40 @@ pub async fn generate_image_with(
         path: path.to_string_lossy().to_string(),
         model: config.model,
         size,
-        output_format,
+        output_format: saved_output_format,
         created_at_ms,
     })
+}
+
+fn generation_payload(
+    config: &ImageGenerationConfig,
+    prompt: &str,
+    size: &str,
+    quality: &str,
+    output_format: &str,
+) -> Value {
+    if uses_minimal_image_payload(&config.model) {
+        return json!({
+            "model": config.model,
+            "prompt": prompt,
+        });
+    }
+
+    json!({
+        "model": config.model,
+        "prompt": prompt,
+        "n": 1,
+        "size": size,
+        "quality": quality,
+        "response_format": "b64_json",
+        "background": "auto",
+        "moderation": "auto",
+        "output_format": output_format
+    })
+}
+
+fn uses_minimal_image_payload(model: &str) -> bool {
+    model.trim().eq_ignore_ascii_case("gpt-image-2")
 }
 
 pub fn build_api_url(base_url: &str, endpoint: &str) -> String {
@@ -505,6 +532,51 @@ mod tests {
         let payload = json!({"data":[{"b64_json":"abc"}]});
 
         assert_eq!(first_b64_image(&payload).unwrap(), "abc");
+    }
+
+    #[test]
+    fn generation_payload_uses_minimal_shape_for_gpt_image_2() {
+        let config = ImageGenerationConfig {
+            model: "gpt-image-2".to_string(),
+            ..ImageGenerationConfig::default()
+        };
+
+        let payload =
+            generation_payload(&config, "draw a red square", "1024x1024", "medium", "png");
+
+        assert_eq!(
+            payload,
+            json!({
+                "model": "gpt-image-2",
+                "prompt": "draw a red square",
+            })
+        );
+    }
+
+    #[test]
+    fn generation_payload_keeps_extended_shape_for_other_models() {
+        let config = ImageGenerationConfig {
+            model: "dall-e-3".to_string(),
+            ..ImageGenerationConfig::default()
+        };
+
+        let payload =
+            generation_payload(&config, "draw a red square", "1024x1024", "medium", "png");
+
+        assert_eq!(
+            payload,
+            json!({
+                "model": "dall-e-3",
+                "prompt": "draw a red square",
+                "n": 1,
+                "size": "1024x1024",
+                "quality": "medium",
+                "response_format": "b64_json",
+                "background": "auto",
+                "moderation": "auto",
+                "output_format": "png",
+            })
+        );
     }
 
     #[tokio::test]
