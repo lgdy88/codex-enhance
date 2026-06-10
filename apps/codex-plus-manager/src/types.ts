@@ -219,10 +219,25 @@ export type ImageGenerationForm = {
   model: string;
 };
 
+export type ImageGenerationRequest = {
+  prompt: string;
+  size: string;
+  quality: string;
+  outputFormat: string;
+};
+
 export type ImageGenerationSettingsResult = CommandResult<{
   config: ImageGenerationConfig;
   configPath: string;
   outputDir: string;
+}>;
+
+export type ImageGeneratedResult = CommandResult<{
+  path: string;
+  model: string;
+  size: string;
+  outputFormat: string;
+  createdAtMs: number;
 }>;
 
 export type InstallResult = CommandResult<{
@@ -334,6 +349,7 @@ export type Actions = {
   startRemoteBridge: () => Promise<void>;
   stopRemoteBridge: () => Promise<void>;
   saveImageGeneration: () => Promise<void>;
+  generateImage: () => Promise<void>;
   openExternalUrl: (url: string) => Promise<void>;
   refreshLogs: () => Promise<void>;
   refreshDiagnostics: () => Promise<void>;

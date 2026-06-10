@@ -4,6 +4,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
 use base64::Engine;
+use reqwest::Url;
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue, USER_AGENT};
 use serde_json::{Value, json};
 
@@ -181,6 +182,7 @@ impl ImageGenerationStore {
             output_format: input.output_format,
         }
         .normalized();
+        validate_image_config_boundary(&config, Some(&self.path))?;
         let bytes = serde_json::to_vec_pretty(&config)?;
         crate::settings::atomic_write(&self.path, &bytes)?;
         Ok(config)
@@ -205,6 +207,7 @@ pub async fn generate_image_with(
     output_dir: PathBuf,
 ) -> anyhow::Result<ImageGenerationResult> {
     let config = config.clone().normalized();
+    validate_image_config_boundary(&config, None)?;
     if config.api_key.trim().is_empty() {
         anyhow::bail!("生图 API Key 未配置");
     }
@@ -359,6 +362,41 @@ fn validate_generation_options(
     }
     if !["png", "jpeg", "webp"].contains(&output_format) {
         anyhow::bail!("outputFormat 只能是 png、jpeg 或 webp");
+    }
+    Ok(())
+}
+
+fn validate_image_config_boundary(
+    config: &ImageGenerationConfig,
+    store_path: Option<&Path>,
+) -> anyhow::Result<()> {
+    validate_base_url(&config.base_url)?;
+    if let Some(path) = store_path {
+        ensure_image_config_path_isolated(path)?;
+    }
+    Ok(())
+}
+
+fn validate_base_url(base_url: &str) -> anyhow::Result<()> {
+    let parsed = Url::parse(base_url).with_context(|| "生图请求地址必须是完整的 http/https URL")?;
+    if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+        anyhow::bail!("生图请求地址必须是完整的 http/https URL");
+    }
+    Ok(())
+}
+
+fn ensure_image_config_path_isolated(path: &Path) -> anyhow::Result<()> {
+    let normalized = path
+        .to_string_lossy()
+        .replace('\\', "/")
+        .to_ascii_lowercase();
+    let forbidden = normalized.contains("/.codex/plugins/")
+        || normalized.ends_with("/.codex/config.toml")
+        || normalized.contains("/.codex/chrome-native-hosts")
+        || normalized.contains("/.codex/computer-use/")
+        || normalized.contains("/.codex/browser/");
+    if forbidden {
+        anyhow::bail!("生图配置只能写入 Dex 自己的 image.json，不能写入 Codex 插件或运行时配置");
     }
     Ok(())
 }
@@ -579,6 +617,56 @@ mod tests {
         );
     }
 
+    #[test]
+    fn save_input_rejects_non_http_base_url() {
+        let dir = temp_dir();
+        let store = ImageGenerationStore::new(dir.join("image.json"));
+
+        let error = store
+            .save_input(ImageGenerationConfigInput {
+                base_url: "C:/Users/Lenovo/.codex/plugins".to_string(),
+                api_key: "sk-test".to_string(),
+                model: "gpt-image-2".to_string(),
+                size: "1024x1024".to_string(),
+                quality: "medium".to_string(),
+                output_format: "png".to_string(),
+                keep_existing_api_key: false,
+            })
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("http/https URL"));
+        assert!(!dir.join("image.json").exists());
+    }
+
+    #[test]
+    fn save_input_rejects_codex_plugin_cache_path() {
+        let dir = temp_dir();
+        let store = ImageGenerationStore::new(
+            dir.join(".codex")
+                .join("plugins")
+                .join("cache")
+                .join("openai-bundled")
+                .join("chrome")
+                .join("image.json"),
+        );
+
+        let error = store
+            .save_input(ImageGenerationConfigInput {
+                base_url: "https://api.example.test".to_string(),
+                api_key: "sk-test".to_string(),
+                model: "gpt-image-2".to_string(),
+                size: "1024x1024".to_string(),
+                quality: "medium".to_string(),
+                output_format: "png".to_string(),
+                keep_existing_api_key: false,
+            })
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("不能写入 Codex 插件"));
+    }
+
     #[tokio::test]
     async fn generate_image_rejects_missing_key() {
         let result = generate_image_with(
@@ -594,5 +682,26 @@ mod tests {
         .await;
 
         assert!(result.unwrap_err().to_string().contains("API Key"));
+    }
+
+    #[tokio::test]
+    async fn generate_image_rejects_non_http_base_url_before_request() {
+        let result = generate_image_with(
+            &ImageGenerationConfig {
+                base_url: "file:///C:/Users/Lenovo/.codex/config.toml".to_string(),
+                api_key: "sk-test".to_string(),
+                ..ImageGenerationConfig::default()
+            },
+            ImageGenerationRequest {
+                prompt: "画一张海报".to_string(),
+                size: String::new(),
+                quality: String::new(),
+                output_format: String::new(),
+            },
+            temp_dir(),
+        )
+        .await;
+
+        assert!(result.unwrap_err().to_string().contains("http/https URL"));
     }
 }

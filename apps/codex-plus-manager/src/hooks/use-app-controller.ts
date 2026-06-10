@@ -8,6 +8,7 @@ import {
   checkUpdate as checkUpdateCommand,
   copyDiagnostics as copyDiagnosticsCommand,
   deleteUserScript as deleteUserScriptCommand,
+  generateImage as generateImageCommand,
   handleRemoteBotMessage,
   installEntrypoints as installEntrypointsCommand,
   launchCodexPlus,
@@ -40,6 +41,7 @@ import type {
   Actions,
   BackendSettings,
   DiagnosticsResult,
+  ImageGeneratedResult,
   ImageGenerationForm,
   ImageGenerationSettingsResult,
   LaunchForm,
@@ -85,6 +87,9 @@ export function useAppController() {
   const [remoteBotResult, setRemoteBotResult] = useState<RemoteBotMessageResult | null>(null);
   const [remoteBridge, setRemoteBridge] = useState<RemoteBridgeResult | null>(null);
   const [imageGeneration, setImageGeneration] = useState<ImageGenerationSettingsResult | null>(null);
+  const [imageGenerationPrompt, setImageGenerationPrompt] = useState("");
+  const [imageGenerationResult, setImageGenerationResult] = useState<ImageGeneratedResult | null>(null);
+  const [imageGenerating, setImageGenerating] = useState(false);
   const [launchForm, setLaunchForm] = useState<LaunchForm>({
     appPath: "",
     debugPort: "9229",
@@ -344,10 +349,9 @@ export function useAppController() {
     showNotice("飞书命令路由", result.message, result.status);
   };
 
-  const saveImageGeneration = async () => {
+  const persistImageGenerationConfig = async () => {
     const keepExistingApiKey = imageGeneration?.config.apiKeyConfigured === true && imageForm.apiKey.trim().length === 0;
-    const result = await run(() => saveImageGenerationConfig(imageForm, keepExistingApiKey));
-    if (!result) return;
+    const result = await saveImageGenerationConfig(imageForm, keepExistingApiKey);
     setImageGeneration(result);
     setImageForm((current) => ({
       ...current,
@@ -355,7 +359,52 @@ export function useAppController() {
       apiKey: "",
       model: result.config.model,
     }));
+    return result;
+  };
+
+  const saveImageGeneration = async () => {
+    const result = await run(persistImageGenerationConfig);
+    if (!result) return;
     showNotice("生图配置", result.message, result.status);
+  };
+
+  const generateImage = async () => {
+    const prompt = imageGenerationPrompt.trim();
+    if (!prompt) {
+      showNotice("直接生图", "先输入提示词。", "failed");
+      return;
+    }
+
+    const startedAt = Date.now();
+    setBusy(true);
+    setImageGenerating(true);
+    setImageGenerationResult(null);
+    try {
+      const saved = await persistImageGenerationConfig();
+      if (saved.status === "failed") {
+        showNotice("生图配置", saved.message, saved.status);
+        return;
+      }
+      const result = await generateImageCommand({
+        prompt,
+        size: "",
+        quality: "",
+        outputFormat: "",
+      });
+      setImageGenerationResult(result);
+      if (result.status === "failed") {
+        showNotice("直接生图", result.message, result.status);
+      }
+      if (result.status !== "failed") {
+        setImageGenerationPrompt("");
+      }
+    } catch (error) {
+      showNotice("直接生图", stringifyError(error), "failed");
+    } finally {
+      await waitForMinimumLoading(startedAt, 450);
+      setImageGenerating(false);
+      setBusy(false);
+    }
   };
 
   const installEntrypoints = async () => {
@@ -553,6 +602,7 @@ export function useAppController() {
       startRemoteBridge,
       stopRemoteBridge,
       saveImageGeneration,
+      generateImage,
       openExternalUrl,
       refreshLogs,
       refreshDiagnostics,
@@ -570,7 +620,7 @@ export function useAppController() {
       disableWatcher: () => watcherAction("disable_watcher"),
       toggleTheme: () => setTheme((current) => (current === "dark" ? "light" : "dark")),
     }),
-    [route, launchForm, settingsForm, remoteForm, remoteBotForm, imageForm, imageGeneration, removeOwnedData, update, logs, diagnostics, theme],
+    [route, launchForm, settingsForm, remoteForm, remoteBotForm, imageForm, imageGeneration, imageGenerationPrompt, removeOwnedData, update, logs, diagnostics, theme],
   );
 
   return {
@@ -580,6 +630,9 @@ export function useAppController() {
     launchForm,
     logs,
     imageForm,
+    imageGenerating,
+    imageGenerationPrompt,
+    imageGenerationResult,
     imageGeneration,
     navigate,
     notice,
@@ -599,6 +652,7 @@ export function useAppController() {
     setRemoteBotForm,
     setRemoteForm,
     setImageForm,
+    setImageGenerationPrompt,
     setRemoveOwnedData,
     setSettingsForm,
     settings,
@@ -615,6 +669,12 @@ function defaultImageGenerationForm(): ImageGenerationForm {
     apiKey: "",
     model: "gpt-image-2",
   };
+}
+
+function waitForMinimumLoading(startedAt: number, minimumMs: number) {
+  const remaining = minimumMs - (Date.now() - startedAt);
+  if (remaining <= 0) return Promise.resolve();
+  return new Promise((resolve) => window.setTimeout(resolve, remaining));
 }
 
 function loadInitialTheme(): Theme {

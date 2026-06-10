@@ -43,6 +43,7 @@
   .grid.two,
   .form-row,
   .setting-grid,
+  .image-result-ready,
   .hero-layout {
     grid-template-columns: 1fr;
   }

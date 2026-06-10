@@ -7,7 +7,9 @@ import type {
   CommandResult,
   DiagnosticsResult,
   ImageGenerationForm,
+  ImageGenerationRequest,
   ImageGenerationSettingsResult,
+  ImageGeneratedResult,
   InstallResult,
   LogsResult,
   OverviewResult,
@@ -101,6 +103,11 @@ export const saveImageGenerationConfig = (form: ImageGenerationForm, keepExistin
     },
   });
 
+export const generateImage = (request: ImageGenerationRequest) =>
+  call<ImageGeneratedResult>("generate_image", {
+    request,
+  });
+
 export const installEntrypoints = () => call<InstallResult>("install_entrypoints");
 
 export const uninstallEntrypoints = (removeOwnedData: boolean) => call<InstallResult>("uninstall_entrypoints", { options: { removeOwnedData } });
@@ -190,6 +197,19 @@ function previewCommand(command: string, args?: Record<string, unknown>) {
     );
     return previewImagePayload("Web 预览生图配置已保存。");
   }
+  if (command === "generate_image") {
+    const request = args?.request as Partial<ImageGenerationRequest>;
+    const prompt = request.prompt?.trim() || "Dex web preview";
+    return {
+      status: "ok",
+      message: "Web 预览已模拟生成。桌面版会保存真实图片文件。",
+      path: previewImageDataUrl(prompt),
+      model: previewImageConfig().model,
+      size: request.size || "1024x1024",
+      outputFormat: request.outputFormat || "png",
+      createdAtMs: Date.now(),
+    };
+  }
   if (command === "load_overview") {
     return {
       status: "ok",
@@ -267,6 +287,16 @@ function previewCommand(command: string, args?: Record<string, unknown>) {
     return { status: "failed", message: "Web 预览不安装更新。", currentVersion: "1.4.2", latestVersion: null, updateAvailable: false, progress: 0 };
   }
   return { status: "ok", message: "Web 预览命令已忽略。" };
+}
+
+function previewImageDataUrl(prompt: string) {
+  const title = prompt.length > 52 ? `${prompt.slice(0, 52)}...` : prompt;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#dff8f3"/><stop offset="1" stop-color="#fff2cf"/></linearGradient></defs><rect width="1024" height="1024" fill="url(#g)"/><rect x="80" y="80" width="864" height="864" rx="40" fill="rgba(255,255,255,.72)" stroke="rgba(13,148,136,.45)" stroke-width="8"/><text x="512" y="462" text-anchor="middle" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="48" font-weight="700" fill="#0f766e">Dex Preview</text><text x="512" y="536" text-anchor="middle" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="30" fill="#525252">${escapeSvgText(title)}</text></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+function escapeSvgText(value: string) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function settingsPayload(message: string, settings: BackendSettings) {

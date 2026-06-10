@@ -25,7 +25,7 @@ export function routeSubtitle(route: Route) {
     conversationEnhance: "对话删除、导出、移动和时间线开关",
     userScripts: "内置和用户自定义脚本清单",
     providerSync: "供应商切换后保持历史会话可见和可续聊",
-    imageGeneration: "配置 Images API，并在 Codex App 中用明确提示触发生图",
+    imageGeneration: "配置 Images API，并在 Dex 内直接输入提示词生成图片",
     remoteControl: "移动端入口、飞书 Channel 配置和桥接启动",
     maintenance: "入口安装、修复、Watcher、手动启动与日志",
     about: "版本信息、项目链接与 GitHub Release 更新",

@@ -25,6 +25,9 @@ export function App() {
     launchForm,
     logs,
     imageForm,
+    imageGenerating,
+    imageGenerationPrompt,
+    imageGenerationResult,
     imageGeneration,
     navigate,
     notice,
@@ -44,6 +47,7 @@ export function App() {
     setRemoteBotForm,
     setRemoteForm,
     setImageForm,
+    setImageGenerationPrompt,
     setRemoveOwnedData,
     setSettingsForm,
     settings,
@@ -123,7 +127,11 @@ export function App() {
             <ImageGenerationScreen
               settings={imageGeneration}
               form={imageForm}
+              prompt={imageGenerationPrompt}
+              result={imageGenerationResult}
+              generating={imageGenerating}
               onFormChange={setImageForm}
+              onPromptChange={setImageGenerationPrompt}
               actions={actions}
             />
           ) : null}

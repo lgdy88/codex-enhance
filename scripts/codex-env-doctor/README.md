@@ -15,7 +15,8 @@ powershell -ExecutionPolicy Bypass -File scripts\codex-env-doctor\codex-env-doct
 ```
 
 Use repair mode only after the read-only report shows missing `latest\scripts`,
-missing `browser-client.mjs`, or stale native-host runtime paths:
+missing `browser-client.mjs`, missing bundled `docs`, or stale native-host
+runtime paths:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\codex-env-doctor\codex-env-doctor.ps1 -Repair
@@ -25,6 +26,7 @@ Repair mode only performs these actions:
 
 - backs up `%LOCALAPPDATA%\OpenAI\Codex\chrome-native-hosts.json`
 - backs up `%LOCALAPPDATA%\OpenAI\extension\com.openai.codexextension.json`
+- restores missing Chrome plugin `docs` from the bundled Browser plugin docs
 - repoints `%USERPROFILE%\.codex\plugins\cache\openai-bundled\chrome\latest`
   to the newest versioned bundled Chrome plugin directory
 - runs the bundled `installManifest.mjs` with the detected `codex.exe`,
