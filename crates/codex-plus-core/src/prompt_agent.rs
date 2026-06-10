@@ -7,7 +7,7 @@ use reqwest::Url;
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue, USER_AGENT};
 use serde_json::{Value, json};
 
-const DEFAULT_BASE_URL: &str = "https://www.xiavier.com/v1";
+const DEFAULT_BASE_URL: &str = "https://www.xiavier.com";
 const DEFAULT_MODEL: &str = "gpt-5.5";
 const DEFAULT_USER_AGENT: &str = "curl/8.0";
 

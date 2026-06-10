@@ -30,7 +30,7 @@ export function PromptAgentScreen({
           <div className="setting-grid">
             <Field label="请求地址">
               <Input
-                placeholder="https://www.xiavier.com/v1 或 OpenAI-compatible 地址"
+                placeholder="https://www.xiavier.com 或 OpenAI-compatible 地址"
                 value={form.baseUrl}
                 onChange={(event) => onFormChange({ ...form, baseUrl: event.currentTarget.value })}
               />

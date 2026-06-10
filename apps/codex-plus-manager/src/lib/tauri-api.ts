@@ -179,7 +179,7 @@ function previewImageConfig() {
   const saved = JSON.parse(raw) as Partial<ImageGenerationForm> & { apiKeyConfigured?: boolean; apiKeyHint?: string };
   const apiKeyConfigured = Boolean(saved.apiKeyConfigured || saved.apiKey);
   return {
-    baseUrl: saved.baseUrl || "https://api.openai.com",
+    baseUrl: saved.baseUrl || "https://www.xiavier.com",
     model: saved.model || "gpt-image-2",
     size: saved.size || "1024x1024",
     quality: saved.quality || "medium",
@@ -194,7 +194,7 @@ function previewPromptAgentConfig() {
   const saved = JSON.parse(raw) as Partial<PromptAgentForm> & { apiKeyConfigured?: boolean; apiKeyHint?: string };
   const apiKeyConfigured = Boolean(saved.apiKeyConfigured || saved.apiKey);
   return {
-    baseUrl: saved.baseUrl || "https://www.xiavier.com/v1",
+    baseUrl: saved.baseUrl || "https://www.xiavier.com",
     model: saved.model || "gpt-5.5",
     apiKeyConfigured,
     apiKeyHint: apiKeyConfigured ? "已配置，尾号 demo" : "",

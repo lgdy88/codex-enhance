@@ -96,7 +96,7 @@ export function ImageGenerationScreen({
           <div className="setting-grid">
             <Field label="请求地址">
               <Input
-                placeholder="https://api.openai.com 或兼容代理地址"
+                placeholder="https://www.xiavier.com 或 OpenAI-compatible 地址"
                 value={form.baseUrl}
                 onChange={(event) => onFormChange({ ...form, baseUrl: event.currentTarget.value })}
               />

@@ -793,7 +793,7 @@ export function useAppController() {
 
 function defaultImageGenerationForm(): ImageGenerationForm {
   return {
-    baseUrl: "https://api.openai.com",
+    baseUrl: "https://www.xiavier.com",
     apiKey: "",
     model: "gpt-image-2",
     size: "1024x1024",
@@ -804,7 +804,7 @@ function defaultImageGenerationForm(): ImageGenerationForm {
 
 function defaultPromptAgentForm(): PromptAgentForm {
   return {
-    baseUrl: "https://www.xiavier.com/v1",
+    baseUrl: "https://www.xiavier.com",
     apiKey: "",
     model: "gpt-5.5",
   };

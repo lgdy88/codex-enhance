@@ -8,7 +8,7 @@ use reqwest::Url;
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue, USER_AGENT};
 use serde_json::{Value, json};
 
-const DEFAULT_BASE_URL: &str = "https://api.openai.com";
+const DEFAULT_BASE_URL: &str = "https://www.xiavier.com";
 const DEFAULT_MODEL: &str = "gpt-image-2";
 const DEFAULT_SIZE: &str = "1024x1024";
 const DEFAULT_QUALITY: &str = "medium";
