@@ -32,6 +32,7 @@ pub async fn generate_image(
             &result.message,
             ImageGeneratedPayload {
                 path: result.path,
+                preview_data_url: result.preview_data_url,
                 model: result.model,
                 size: result.size,
                 output_format: result.output_format,
@@ -42,6 +43,7 @@ pub async fn generate_image(
             &format!("生图失败：{error}"),
             ImageGeneratedPayload {
                 path: String::new(),
+                preview_data_url: String::new(),
                 model: String::new(),
                 size: String::new(),
                 output_format: String::new(),

@@ -165,6 +165,7 @@ pub struct ImageGenerationPayload {
 #[serde(rename_all = "camelCase")]
 pub struct ImageGeneratedPayload {
     pub path: String,
+    pub preview_data_url: String,
     pub model: String,
     pub size: String,
     pub output_format: String,

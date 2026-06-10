@@ -81,6 +81,7 @@ pub struct ImageGenerationResult {
     pub status: String,
     pub message: String,
     pub path: String,
+    pub preview_data_url: String,
     pub model: String,
     pub size: String,
     pub output_format: String,
@@ -253,6 +254,7 @@ pub async fn generate_image_with(
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(image)
         .context("生图响应不是有效 base64 图片")?;
+    let preview_data_url = image_data_url(&bytes, &saved_output_format);
     let created_at_ms = now_ms();
     let path = output_dir.join(format!(
         "{}-{}.{}",
@@ -265,13 +267,14 @@ pub async fn generate_image_with(
             format!("failed to create generated image dir {}", parent.display())
         })?;
     }
-    fs::write(&path, bytes)
+    fs::write(&path, &bytes)
         .with_context(|| format!("failed to write generated image {}", path.display()))?;
 
     Ok(ImageGenerationResult {
         status: "ok".to_string(),
         message: "图片已生成。".to_string(),
         path: path.to_string_lossy().to_string(),
+        preview_data_url,
         model: config.model,
         size,
         output_format: saved_output_format,
@@ -347,6 +350,19 @@ fn first_b64_image(value: &Value) -> anyhow::Result<&str> {
                 .and_then(Value::as_str)
         })
         .ok_or_else(|| anyhow::anyhow!("生图响应缺少 b64_json"))
+}
+
+fn image_data_url(bytes: &[u8], output_format: &str) -> String {
+    let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+    format!("data:{};base64,{}", image_mime_type(output_format), encoded)
+}
+
+fn image_mime_type(output_format: &str) -> &'static str {
+    match output_format {
+        "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        _ => "image/png",
+    }
 }
 
 fn validate_generation_options(
@@ -570,6 +586,19 @@ mod tests {
         let payload = json!({"data":[{"b64_json":"abc"}]});
 
         assert_eq!(first_b64_image(&payload).unwrap(), "abc");
+    }
+
+    #[test]
+    fn image_data_url_uses_output_format_mime_type() {
+        assert_eq!(image_data_url(b"png", "png"), "data:image/png;base64,cG5n");
+        assert_eq!(
+            image_data_url(b"jpeg", "jpeg"),
+            "data:image/jpeg;base64,anBlZw=="
+        );
+        assert_eq!(
+            image_data_url(b"webp", "webp"),
+            "data:image/webp;base64,d2VicA=="
+        );
     }
 
     #[test]

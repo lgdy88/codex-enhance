@@ -200,10 +200,12 @@ function previewCommand(command: string, args?: Record<string, unknown>) {
   if (command === "generate_image") {
     const request = args?.request as Partial<ImageGenerationRequest>;
     const prompt = request.prompt?.trim() || "Dex web preview";
+    const previewDataUrl = previewImageDataUrl(prompt);
     return {
       status: "ok",
       message: "Web 预览已模拟生成。桌面版会保存真实图片文件。",
-      path: previewImageDataUrl(prompt),
+      path: previewDataUrl,
+      previewDataUrl,
       model: previewImageConfig().model,
       size: request.size || "1024x1024",
       outputFormat: request.outputFormat || "png",

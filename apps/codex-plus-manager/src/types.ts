@@ -234,6 +234,7 @@ export type ImageGenerationSettingsResult = CommandResult<{
 
 export type ImageGeneratedResult = CommandResult<{
   path: string;
+  previewDataUrl: string;
   model: string;
   size: string;
   outputFormat: string;

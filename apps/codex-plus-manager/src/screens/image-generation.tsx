@@ -149,7 +149,7 @@ function ImageResult({ result, generating }: { result: ImageGeneratedResult | nu
     copyInFlight.current = true;
     setCopyMessage("正在复制图片...");
     try {
-      const message = await copyImageToClipboard(result.path);
+      const message = await copyImageToClipboard(result);
       setCopyMessage(message);
     } catch (error) {
       const fallback = await copyTextFallback(result.path);
@@ -169,7 +169,7 @@ function ImageResult({ result, generating }: { result: ImageGeneratedResult | nu
     <div className="image-result-card image-result-ready">
       <div className="image-result-preview">
         <img
-          src={imageSource(result.path)}
+          src={imageSource(result)}
           alt="生成结果"
           onContextMenu={(event) => void copyImage(event)}
           onAuxClick={copyImageOnRightMouseDown}
@@ -198,7 +198,8 @@ function ImageResult({ result, generating }: { result: ImageGeneratedResult | nu
   );
 }
 
-function imageSource(path: string) {
+function imageSource(result: ImageGeneratedResult) {
+  const path = result.previewDataUrl || result.path;
   if (/^(data:|https?:|blob:|asset:)/i.test(path)) return path;
   try {
     return convertFileSrc(path);
@@ -207,21 +208,21 @@ function imageSource(path: string) {
   }
 }
 
-async function copyImageToClipboard(path: string) {
+async function copyImageToClipboard(result: ImageGeneratedResult) {
   const clipboard = navigator.clipboard;
   if (!clipboard?.write || typeof ClipboardItem === "undefined") {
-    const copied = await copyTextFallback(path);
+    const copied = await copyTextFallback(result.path);
     return copied ? "当前环境不支持复制图片，已复制路径。" : "当前环境不支持复制图片。";
   }
 
-  const blob = await fetchImageBlob(path);
+  const blob = await fetchImageBlob(result);
   const pngBlob = blob.type === "image/png" ? blob : await convertBlobToPng(blob);
   await clipboard.write([new ClipboardItem({ "image/png": pngBlob })]);
   return "图片已复制。";
 }
 
-async function fetchImageBlob(path: string) {
-  const source = imageSource(path);
+async function fetchImageBlob(result: ImageGeneratedResult) {
+  const source = imageSource(result);
   const response = await fetch(source);
   if (!response.ok) throw new Error(`failed to read generated image: ${response.status}`);
   return response.blob();
