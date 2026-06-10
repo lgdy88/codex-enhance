@@ -4,21 +4,25 @@ import { numberOrDefault, stringifyError } from "@/lib/format";
 import { defaultRemoteControl, remoteConfigToForm, remoteFormToConfig } from "@/lib/remote-control";
 import { defaultSettings, normalizeSettings } from "@/lib/settings";
 import {
+  checkOfficialPlugins as checkOfficialPluginsCommand,
   checkRemoteDependencies as checkRemoteDependenciesCommand,
   checkUpdate as checkUpdateCommand,
   copyDiagnostics as copyDiagnosticsCommand,
   deleteUserScript as deleteUserScriptCommand,
+  enhanceImagePrompt as enhanceImagePromptCommand,
   generateImage as generateImageCommand,
   handleRemoteBotMessage,
   installEntrypoints as installEntrypointsCommand,
   launchCodexPlus,
   loadImageGeneration,
   loadOverview,
+  loadPromptAgent,
   loadRemoteControl,
   loadRemoteInventory,
   loadSettings,
   loadWatcherState,
   openExternalUrl as openExternalUrlCommand,
+  openGeneratedImage as openGeneratedImageCommand,
   performUpdate as performUpdateCommand,
   readLatestLogs,
   readRemoteBridgeLog,
@@ -29,7 +33,9 @@ import {
   runProviderAction,
   runWatcherAction,
   saveBackendSettings,
+  saveGeneratedImageAs as saveGeneratedImageAsCommand,
   saveImageGenerationConfig,
+  savePromptAgentConfig,
   saveRemoteControl as saveRemoteControlCommand,
   startRemoteBridge as startRemoteBridgeCommand,
   startupOptions,
@@ -47,8 +53,11 @@ import type {
   LaunchForm,
   LogsResult,
   Notice,
+  OfficialPluginHealthResult,
   OverviewResult,
   ProviderActionResult,
+  PromptAgentForm,
+  PromptAgentSettingsResult,
   RemoteBotForm,
   RemoteBotMessageResult,
   RemoteBridgeResult,
@@ -64,7 +73,7 @@ import type {
   UpdateResult,
   WatcherResult,
 } from "@/types";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import type { Update } from "@tauri-apps/plugin-updater";
 
 export function useAppController() {
@@ -78,6 +87,7 @@ export function useAppController() {
   const [logs, setLogs] = useState<LogsResult | null>(null);
   const [diagnostics, setDiagnostics] = useState<DiagnosticsResult | null>(null);
   const [watcher, setWatcher] = useState<WatcherResult | null>(null);
+  const [officialPluginHealth, setOfficialPluginHealth] = useState<OfficialPluginHealthResult | null>(null);
   const [update, setUpdate] = useState<UpdateResult | null>(null);
   const [updateHandle, setUpdateHandle] = useState<Update | null>(null);
   const [updateRelease, setUpdateRelease] = useState<UpdateRelease | null>(null);
@@ -89,7 +99,12 @@ export function useAppController() {
   const [imageGeneration, setImageGeneration] = useState<ImageGenerationSettingsResult | null>(null);
   const [imageGenerationPrompt, setImageGenerationPrompt] = useState("");
   const [imageGenerationResult, setImageGenerationResult] = useState<ImageGeneratedResult | null>(null);
+  const [imageGenerationResults, setImageGenerationResults] = useState<ImageGeneratedResult[]>(() => loadStoredImageResults());
   const [imageGenerating, setImageGenerating] = useState(false);
+  const [imageGenerationStartedAtMs, setImageGenerationStartedAtMs] = useState<number | null>(null);
+  const [promptAgent, setPromptAgent] = useState<PromptAgentSettingsResult | null>(null);
+  const [promptAgentForm, setPromptAgentForm] = useState<PromptAgentForm>(defaultPromptAgentForm());
+  const [promptEnhancing, setPromptEnhancing] = useState(false);
   const [launchForm, setLaunchForm] = useState<LaunchForm>({
     appPath: "",
     debugPort: "9229",
@@ -160,6 +175,13 @@ export function useAppController() {
     if (!silent) showNotice("Watcher 状态", result.message, result.status);
   };
 
+  const refreshOfficialPlugins = async (silent = false) => {
+    const result = await run(checkOfficialPluginsCommand);
+    if (!result) return;
+    setOfficialPluginHealth(result);
+    if (!silent) showNotice("官方插件健康", result.message, result.status);
+  };
+
   const refreshRemoteControl = async (silent = false) => {
     const result = await run(loadRemoteControl);
     if (!result) return;
@@ -181,8 +203,24 @@ export function useAppController() {
       baseUrl: result.config.baseUrl,
       apiKey: "",
       model: result.config.model,
+      size: result.config.size,
+      quality: result.config.quality,
+      outputFormat: result.config.outputFormat,
     }));
     if (!silent) showNotice("生图配置", result.message, result.status);
+  };
+
+  const refreshPromptAgent = async (silent = false) => {
+    const result = await run(loadPromptAgent);
+    if (!result) return;
+    setPromptAgent(result);
+    setPromptAgentForm((current) => ({
+      ...current,
+      baseUrl: result.config.baseUrl,
+      apiKey: "",
+      model: result.config.model,
+    }));
+    if (!silent) showNotice("Agent 增强配置", result.message, result.status);
   };
 
   const refreshRouteData = async (next: Route) => {
@@ -192,9 +230,10 @@ export function useAppController() {
       conversationEnhance: [() => refreshSettings(true)],
       userScripts: [() => refreshSettings(true)],
       providerSync: [() => refreshSettings(true)],
-      imageGeneration: [() => refreshImageGeneration(true)],
+      imageGeneration: [() => refreshImageGeneration(true), () => refreshPromptAgent(true)],
+      promptAgent: [() => refreshPromptAgent(true)],
       remoteControl: [() => refreshRemoteControl(true)],
-      maintenance: [() => refreshOverview(true), () => refreshWatcher(true), () => refreshLogs(true)],
+      maintenance: [() => refreshOverview(true), () => refreshWatcher(true), () => refreshOfficialPlugins(true), () => refreshLogs(true)],
       about: [() => refreshOverview(true)],
     };
 
@@ -368,6 +407,52 @@ export function useAppController() {
     showNotice("生图配置", result.message, result.status);
   };
 
+  const persistPromptAgentConfig = async () => {
+    const keepExistingApiKey = promptAgent?.config.apiKeyConfigured === true && promptAgentForm.apiKey.trim().length === 0;
+    const result = await savePromptAgentConfig(promptAgentForm, keepExistingApiKey);
+    setPromptAgent(result);
+    setPromptAgentForm((current) => ({
+      ...current,
+      baseUrl: result.config.baseUrl,
+      apiKey: "",
+      model: result.config.model,
+    }));
+    return result;
+  };
+
+  const savePromptAgent = async () => {
+    const result = await run(persistPromptAgentConfig);
+    if (!result) return;
+    showNotice("Agent 增强配置", result.message, result.status);
+  };
+
+  const enhanceImagePrompt = async () => {
+    const prompt = imageGenerationPrompt.trim();
+    if (!prompt) {
+      showNotice("Agent 增强", "先输入需要润色的提示词。", "failed");
+      return;
+    }
+    setPromptEnhancing(true);
+    try {
+      const saved = await persistPromptAgentConfig();
+      if (saved.status === "failed") {
+        showNotice("Agent 增强配置", saved.message, saved.status);
+        return;
+      }
+      const result = await enhanceImagePromptCommand(prompt);
+      if (result.status === "failed") {
+        showNotice("Agent 增强", result.message, result.status);
+        return;
+      }
+      setImageGenerationPrompt(result.prompt);
+      showNotice("Agent 增强", `${result.model} 已润色提示词。`, result.status);
+    } catch (error) {
+      showNotice("Agent 增强", stringifyError(error), "failed");
+    } finally {
+      setPromptEnhancing(false);
+    }
+  };
+
   const generateImage = async () => {
     const prompt = imageGenerationPrompt.trim();
     if (!prompt) {
@@ -377,34 +462,62 @@ export function useAppController() {
 
     const startedAt = Date.now();
     setBusy(true);
+    setImageGenerationStartedAtMs(startedAt);
     setImageGenerating(true);
     setImageGenerationResult(null);
     try {
       const saved = await persistImageGenerationConfig();
       if (saved.status === "failed") {
+        setImageGenerationResult(failedImageResult(saved.message, startedAt));
         showNotice("生图配置", saved.message, saved.status);
         return;
       }
       const result = await generateImageCommand({
         prompt,
-        size: "",
-        quality: "",
-        outputFormat: "",
+        size: imageForm.size,
+        quality: imageForm.quality,
+        outputFormat: imageForm.outputFormat,
       });
-      setImageGenerationResult(result);
+      const finished = { ...result, durationMs: Date.now() - startedAt };
+      setImageGenerationResult(finished);
       if (result.status === "failed") {
         showNotice("直接生图", result.message, result.status);
       }
       if (result.status !== "failed") {
+        setImageGenerationResults((current) => storeImageResult(finished, current));
         setImageGenerationPrompt("");
       }
     } catch (error) {
-      showNotice("直接生图", stringifyError(error), "failed");
+      const message = stringifyError(error);
+      setImageGenerationResult(failedImageResult(message, startedAt));
+      showNotice("直接生图", message, "failed");
     } finally {
       await waitForMinimumLoading(startedAt, 450);
       setImageGenerating(false);
+      setImageGenerationStartedAtMs(null);
       setBusy(false);
     }
+  };
+
+  const openGeneratedImage = async (path: string) => {
+    const result = await run(() => openGeneratedImageCommand(path));
+    if (!result) return;
+    showNotice("打开图片", result.message, result.status);
+  };
+
+  const saveGeneratedImageAs = async (result: ImageGeneratedResult) => {
+    if (!hasTauriRuntime()) {
+      showNotice("另存图片", "Web 预览不会另存本地图片。", "ok");
+      return;
+    }
+    const targetPath = await saveDialog({
+      defaultPath: imageFileName(result) || `dex-image-${Date.now()}.${result.outputFormat || "png"}`,
+      filters: [{ name: "Image", extensions: ["png", "jpg", "jpeg", "webp"] }],
+    });
+    if (!targetPath) return;
+    const saved = await run(() => saveGeneratedImageAsCommand(result.path, targetPath));
+    if (!saved) return;
+    showNotice("另存图片", saved.message, saved.status);
   };
 
   const installEntrypoints = async () => {
@@ -555,6 +668,8 @@ export function useAppController() {
       await refreshSettings(true);
       await refreshRemoteControl(true);
       await refreshImageGeneration(true);
+      await refreshPromptAgent(true);
+      await refreshRouteData(route);
     })();
   }, []);
 
@@ -586,6 +701,7 @@ export function useAppController() {
       installEntrypoints,
       uninstallEntrypoints,
       repairShortcuts,
+      checkOfficialPlugins: () => refreshOfficialPlugins(false),
       checkUpdate: () => checkUpdate(false, true),
       performUpdate,
       saveSettings,
@@ -602,7 +718,11 @@ export function useAppController() {
       startRemoteBridge,
       stopRemoteBridge,
       saveImageGeneration,
+      savePromptAgent,
+      enhanceImagePrompt,
       generateImage,
+      openGeneratedImage,
+      saveGeneratedImageAs,
       openExternalUrl,
       refreshLogs,
       refreshDiagnostics,
@@ -612,7 +732,8 @@ export function useAppController() {
       checkHealth: async () => {
         await refreshOverview(true);
         await refreshWatcher(true);
-        showNotice("检查完成", "已刷新 Codex 应用、Dex 入口和 Watcher 状态。", "ok");
+        await refreshOfficialPlugins(true);
+        showNotice("检查完成", "已刷新 Codex 应用、Dex 入口、Watcher 和官方插件健康。", "ok");
       },
       installWatcher: () => watcherAction("install_watcher"),
       uninstallWatcher: () => watcherAction("uninstall_watcher"),
@@ -620,20 +741,26 @@ export function useAppController() {
       disableWatcher: () => watcherAction("disable_watcher"),
       toggleTheme: () => setTheme((current) => (current === "dark" ? "light" : "dark")),
     }),
-    [route, launchForm, settingsForm, remoteForm, remoteBotForm, imageForm, imageGeneration, imageGenerationPrompt, removeOwnedData, update, logs, diagnostics, theme],
+    [route, launchForm, settingsForm, remoteForm, remoteBotForm, imageForm, imageGeneration, imageGenerationPrompt, promptAgent, promptAgentForm, removeOwnedData, update, logs, diagnostics, theme],
   );
 
   return {
     actions,
     busy,
     diagnostics,
+    officialPluginHealth,
     launchForm,
     logs,
     imageForm,
     imageGenerating,
+    imageGenerationResults,
+    imageGenerationStartedAtMs,
     imageGenerationPrompt,
     imageGenerationResult,
     imageGeneration,
+    promptAgent,
+    promptAgentForm,
+    promptEnhancing,
     navigate,
     notice,
     overview,
@@ -653,6 +780,7 @@ export function useAppController() {
     setRemoteForm,
     setImageForm,
     setImageGenerationPrompt,
+    setPromptAgentForm,
     setRemoveOwnedData,
     setSettingsForm,
     settings,
@@ -668,7 +796,66 @@ function defaultImageGenerationForm(): ImageGenerationForm {
     baseUrl: "https://api.openai.com",
     apiKey: "",
     model: "gpt-image-2",
+    size: "1024x1024",
+    quality: "medium",
+    outputFormat: "png",
   };
+}
+
+function defaultPromptAgentForm(): PromptAgentForm {
+  return {
+    baseUrl: "https://www.xiavier.com/v1",
+    apiKey: "",
+    model: "gpt-5.5",
+  };
+}
+
+function failedImageResult(message: string, startedAt: number): ImageGeneratedResult {
+  return {
+    status: "failed",
+    message,
+    path: "",
+    previewDataUrl: "",
+    model: "",
+    size: "",
+    outputFormat: "",
+    createdAtMs: Date.now(),
+    durationMs: Date.now() - startedAt,
+  };
+}
+
+const IMAGE_RESULTS_KEY = "dex-image-generation-results";
+
+function loadStoredImageResults(): ImageGeneratedResult[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(IMAGE_RESULTS_KEY) || "[]");
+    return Array.isArray(stored) ? stored.slice(0, 24) : [];
+  } catch {
+    return [];
+  }
+}
+
+function storeImageResult(result: ImageGeneratedResult, current: ImageGeneratedResult[]) {
+  const next = [result, ...current.filter((item) => item.path !== result.path)].slice(0, 24);
+  try {
+    window.localStorage.setItem(
+      IMAGE_RESULTS_KEY,
+      JSON.stringify(next.map((item) => ({ ...item, previewDataUrl: "" }))),
+    );
+  } catch {
+    // LocalStorage is best-effort; the generated image is already saved on disk.
+  }
+  return next;
+}
+
+function imageFileName(result: ImageGeneratedResult) {
+  const normalized = result.path.replace(/\\/g, "/");
+  return normalized.split("/").filter(Boolean).pop() || "";
+}
+
+function hasTauriRuntime() {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
 function waitForMinimumLoading(startedAt: number, minimumMs: number) {
@@ -710,7 +897,7 @@ function syncLocationHash(route: Route) {
 }
 
 function isRoute(value: string): value is Route {
-  return ["overview", "pluginUnlock", "conversationEnhance", "userScripts", "providerSync", "imageGeneration", "remoteControl", "maintenance", "about"].includes(value);
+  return ["overview", "pluginUnlock", "conversationEnhance", "userScripts", "providerSync", "imageGeneration", "promptAgent", "remoteControl", "maintenance", "about"].includes(value);
 }
 
 function shouldShowUpdateNotice(result: UpdateResult, silent: boolean): boolean {

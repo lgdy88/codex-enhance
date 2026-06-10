@@ -3,9 +3,37 @@ use serde_json::{Value, json};
 use crate::install::{self, InstallActionResult, InstallOptions};
 
 use super::{
-    CommandResult, DiagnosticsPayload, LogRequest, LogsPayload, WatcherPayload, default_debug_port,
-    diagnostics_report, failed, install_background_failure, ok, read_tail, watcher_payload,
+    CommandResult, DiagnosticsPayload, LogRequest, LogsPayload, OfficialPluginHealthPayload,
+    WatcherPayload, default_debug_port, diagnostics_report, failed, install_background_failure, ok,
+    read_tail, watcher_payload,
 };
+
+#[tauri::command]
+pub async fn check_official_plugins() -> CommandResult<OfficialPluginHealthPayload> {
+    let report = tauri::async_runtime::spawn_blocking(
+        codex_plus_core::official_plugin_doctor::check_official_plugins,
+    )
+    .await;
+    match report {
+        Ok(report) => CommandResult {
+            status: report.status.clone(),
+            message: report.message.clone(),
+            payload: OfficialPluginHealthPayload { health: report },
+        },
+        Err(error) => {
+            let report = codex_plus_core::official_plugin_doctor::OfficialPluginHealthReport {
+                status: "failed".to_string(),
+                message: format!("官方插件检查后台任务失败：{error}"),
+                codex_home: String::new(),
+                bundled_cache_root: String::new(),
+                checks: Vec::new(),
+                repair_notes: Vec::new(),
+            };
+            let message = report.message.clone();
+            failed(&message, OfficialPluginHealthPayload { health: report })
+        }
+    }
+}
 
 #[tauri::command]
 pub fn open_external_url(url: String) -> CommandResult<Value> {

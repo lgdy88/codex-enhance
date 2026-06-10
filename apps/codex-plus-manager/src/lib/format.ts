@@ -11,6 +11,8 @@ export function statusLabel(status: string) {
     disabled: "已禁用",
     ready: "已就绪",
     incomplete: "待完善",
+    needs_repair: "需修复",
+    partial: "部分检查",
     unknown: "未知",
   };
   return labels[status] ?? status;

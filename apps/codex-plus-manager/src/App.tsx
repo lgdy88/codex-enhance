@@ -13,6 +13,7 @@ import {
   ImageGenerationScreen,
   MaintenanceScreen,
   OverviewScreen,
+  PromptAgentScreen,
   ProviderSyncScreen,
   RemoteControlScreen,
   UserScriptsScreen,
@@ -24,11 +25,17 @@ export function App() {
     busy,
     launchForm,
     logs,
+    officialPluginHealth,
     imageForm,
     imageGenerating,
     imageGenerationPrompt,
     imageGenerationResult,
+    imageGenerationResults,
+    imageGenerationStartedAtMs,
     imageGeneration,
+    promptAgent,
+    promptAgentForm,
+    promptEnhancing,
     navigate,
     notice,
     overview,
@@ -48,6 +55,7 @@ export function App() {
     setRemoteForm,
     setImageForm,
     setImageGenerationPrompt,
+    setPromptAgentForm,
     setRemoveOwnedData,
     setSettingsForm,
     settings,
@@ -129,11 +137,18 @@ export function App() {
               form={imageForm}
               prompt={imageGenerationPrompt}
               result={imageGenerationResult}
+              results={imageGenerationResults}
               generating={imageGenerating}
+              promptEnhancing={promptEnhancing}
+              promptAgentConfigured={promptAgent?.config.apiKeyConfigured === true}
+              startedAtMs={imageGenerationStartedAtMs}
               onFormChange={setImageForm}
               onPromptChange={setImageGenerationPrompt}
               actions={actions}
             />
+          ) : null}
+          {route === "promptAgent" ? (
+            <PromptAgentScreen settings={promptAgent} form={promptAgentForm} onFormChange={setPromptAgentForm} actions={actions} />
           ) : null}
           {route === "remoteControl" ? (
             <RemoteControlScreen
@@ -154,6 +169,7 @@ export function App() {
               <MaintenanceScreen
                 overview={overview}
                 watcher={watcher}
+                officialPluginHealth={officialPluginHealth}
                 settings={settings}
                 settingsForm={settingsForm}
                 launchForm={launchForm}

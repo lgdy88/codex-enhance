@@ -6,14 +6,19 @@ import type {
   BackendSettings,
   CommandResult,
   DiagnosticsResult,
+  ImageFileActionResult,
   ImageGenerationForm,
   ImageGenerationRequest,
   ImageGenerationSettingsResult,
   ImageGeneratedResult,
   InstallResult,
   LogsResult,
+  OfficialPluginHealthResult,
   OverviewResult,
   ProviderActionResult,
+  PromptAgentForm,
+  PromptAgentSettingsResult,
+  PromptEnhancedResult,
   RemoteControlConfig,
   RemoteControlResult,
   RemoteDependencyResult,
@@ -48,6 +53,8 @@ export const readLatestLogs = (lines = 240) => call<LogsResult>("read_latest_log
 export const copyDiagnostics = () => call<DiagnosticsResult>("copy_diagnostics");
 
 export const loadWatcherState = () => call<WatcherResult>("load_watcher_state");
+
+export const checkOfficialPlugins = () => call<OfficialPluginHealthResult>("check_official_plugins");
 
 export const launchCodexPlus = (
   command: "launch_codex_plus" | "restart_codex_plus",
@@ -93,8 +100,23 @@ export const readRemoteBridgeLog = () => call<RemoteBridgeResult>("read_remote_b
 
 export const loadImageGeneration = () => call<ImageGenerationSettingsResult>("load_image_generation");
 
+export const loadPromptAgent = () => call<PromptAgentSettingsResult>("load_prompt_agent");
+
 export const saveImageGenerationConfig = (form: ImageGenerationForm, keepExistingApiKey: boolean) =>
   call<ImageGenerationSettingsResult>("save_image_generation", {
+    config: {
+      baseUrl: form.baseUrl,
+      apiKey: form.apiKey,
+      model: form.model,
+      size: form.size,
+      quality: form.quality,
+      outputFormat: form.outputFormat,
+      keepExistingApiKey,
+    },
+  });
+
+export const savePromptAgentConfig = (form: PromptAgentForm, keepExistingApiKey: boolean) =>
+  call<PromptAgentSettingsResult>("save_prompt_agent", {
     config: {
       baseUrl: form.baseUrl,
       apiKey: form.apiKey,
@@ -103,9 +125,21 @@ export const saveImageGenerationConfig = (form: ImageGenerationForm, keepExistin
     },
   });
 
+export const enhanceImagePrompt = (prompt: string) =>
+  call<PromptEnhancedResult>("enhance_image_prompt", {
+    request: { prompt },
+  });
+
 export const generateImage = (request: ImageGenerationRequest) =>
   call<ImageGeneratedResult>("generate_image", {
     request,
+  });
+
+export const openGeneratedImage = (path: string) => call<ImageFileActionResult>("open_generated_image", { path });
+
+export const saveGeneratedImageAs = (sourcePath: string, targetPath: string) =>
+  call<ImageFileActionResult>("save_generated_image_as", {
+    request: { sourcePath, targetPath },
   });
 
 export const installEntrypoints = () => call<InstallResult>("install_entrypoints");
@@ -147,6 +181,21 @@ function previewImageConfig() {
   return {
     baseUrl: saved.baseUrl || "https://api.openai.com",
     model: saved.model || "gpt-image-2",
+    size: saved.size || "1024x1024",
+    quality: saved.quality || "medium",
+    outputFormat: saved.outputFormat || "png",
+    apiKeyConfigured,
+    apiKeyHint: apiKeyConfigured ? "已配置，尾号 demo" : "",
+  };
+}
+
+function previewPromptAgentConfig() {
+  const raw = window.localStorage.getItem("dex-preview-prompt-agent") || "{}";
+  const saved = JSON.parse(raw) as Partial<PromptAgentForm> & { apiKeyConfigured?: boolean; apiKeyHint?: string };
+  const apiKeyConfigured = Boolean(saved.apiKeyConfigured || saved.apiKey);
+  return {
+    baseUrl: saved.baseUrl || "https://www.xiavier.com/v1",
+    model: saved.model || "gpt-5.5",
     apiKeyConfigured,
     apiKeyHint: apiKeyConfigured ? "已配置，尾号 demo" : "",
   };
@@ -159,6 +208,15 @@ function previewImagePayload(message: string) {
     config: previewImageConfig(),
     configPath: "Web preview",
     outputDir: "Web preview",
+  };
+}
+
+function previewPromptAgentPayload(message: string) {
+  return {
+    status: "ok",
+    message,
+    config: previewPromptAgentConfig(),
+    configPath: "Web preview",
   };
 }
 
@@ -182,6 +240,9 @@ function previewCommand(command: string, args?: Record<string, unknown>) {
   if (command === "load_image_generation") {
     return previewImagePayload("Web 预览生图配置已加载。");
   }
+  if (command === "load_prompt_agent") {
+    return previewPromptAgentPayload("Web 预览 Agent 增强配置已加载。");
+  }
   if (command === "save_image_generation") {
     const config = args?.config as Partial<ImageGenerationForm> & { keepExistingApiKey?: boolean };
     const current = previewImageConfig();
@@ -191,11 +252,40 @@ function previewCommand(command: string, args?: Record<string, unknown>) {
       JSON.stringify({
         baseUrl: config.baseUrl || current.baseUrl,
         model: config.model || current.model,
+        size: config.size || current.size,
+        quality: config.quality || current.quality,
+        outputFormat: config.outputFormat || current.outputFormat,
         apiKeyConfigured,
         apiKeyHint: apiKeyConfigured ? "已配置，尾号 demo" : "",
       }),
     );
     return previewImagePayload("Web 预览生图配置已保存。");
+  }
+  if (command === "save_prompt_agent") {
+    const config = args?.config as Partial<PromptAgentForm> & { keepExistingApiKey?: boolean };
+    const current = previewPromptAgentConfig();
+    const apiKeyConfigured = Boolean(config.apiKey || (config.keepExistingApiKey && current.apiKeyConfigured));
+    window.localStorage.setItem(
+      "dex-preview-prompt-agent",
+      JSON.stringify({
+        baseUrl: config.baseUrl || current.baseUrl,
+        model: config.model || current.model,
+        apiKeyConfigured,
+        apiKeyHint: apiKeyConfigured ? "已配置，尾号 demo" : "",
+      }),
+    );
+    return previewPromptAgentPayload("Web 预览 Agent 增强配置已保存。");
+  }
+  if (command === "enhance_image_prompt") {
+    const request = args?.request as { prompt?: string } | undefined;
+    const prompt = request?.prompt?.trim() || "需要生成的主体";
+    return {
+      status: "ok",
+      message: "Web 预览已模拟 Agent 增强。",
+      prompt: `${prompt}，专业商业视觉，主体清晰，构图完整，柔和光线，真实材质，高分辨率，无文字，无水印。`,
+      model: previewPromptAgentConfig().model,
+      createdAtMs: Date.now(),
+    };
   }
   if (command === "generate_image") {
     const request = args?.request as Partial<ImageGenerationRequest>;
@@ -207,10 +297,17 @@ function previewCommand(command: string, args?: Record<string, unknown>) {
       path: previewDataUrl,
       previewDataUrl,
       model: previewImageConfig().model,
-      size: request.size || "1024x1024",
-      outputFormat: request.outputFormat || "png",
+      size: request.size || previewImageConfig().size,
+      outputFormat: request.outputFormat || previewImageConfig().outputFormat,
       createdAtMs: Date.now(),
     };
+  }
+  if (command === "open_generated_image") {
+    return { status: "ok", message: "Web 预览不会打开本地图片。", path: String(args?.path || "") };
+  }
+  if (command === "save_generated_image_as") {
+    const request = args?.request as { targetPath?: string } | undefined;
+    return { status: "ok", message: "Web 预览不会另存本地图片。", path: request?.targetPath || "Web preview" };
   }
   if (command === "load_overview") {
     return {
@@ -229,6 +326,24 @@ function previewCommand(command: string, args?: Record<string, unknown>) {
   }
   if (command === "load_watcher_state") {
     return { status: "ok", message: "Web 预览 Watcher 状态。", enabled: false, disabled_flag: "Web preview" };
+  }
+  if (command === "check_official_plugins") {
+    return {
+      status: "partial",
+      message: "Web 预览官方插件检查。",
+      health: {
+        status: "partial",
+        message: "Web 预览不会读取本地 Codex 插件缓存。",
+        codexHome: "Web preview",
+        bundledCacheRoot: "Web preview",
+        checks: [
+          { key: "browser-plugin", label: "Browser 插件", status: "ok", detail: "Web 预览模拟已找到。", path: "Web preview" },
+          { key: "computer-use-plugin", label: "Computer Use 插件", status: "ok", detail: "Web 预览模拟已找到。", path: "Web preview" },
+          { key: "runtime-node-repl", label: "node_repl runtime", status: "not_checked", detail: "桌面版会检查真实 runtime。", path: "Web preview" },
+        ],
+        repairNotes: ["桌面版检查不会修改 auth.json、config.toml、Chrome 用户数据或 Windows 注册表。"],
+      },
+    };
   }
   if (command === "read_latest_logs") {
     return { status: "ok", message: "Web 预览日志已加载。", path: "Web preview", text: "Web 预览模式：桌面原生命令未连接。", lines: 1 };

@@ -5,6 +5,7 @@ const SETTINGS_FILE: &str = "settings.json";
 const LATEST_STATUS_FILE: &str = "latest-status.json";
 const DIAGNOSTIC_LOG_FILE: &str = "codex-plus.log";
 const IMAGE_CONFIG_FILE: &str = "image.json";
+const PROMPT_AGENT_CONFIG_FILE: &str = "prompt-agent.json";
 const GENERATED_IMAGES_DIR: &str = "generated-images";
 const PLUGIN_CACHE_BACKUPS_DIR: &str = "plugin-cache-backups";
 const REMOTE_CONFIG_FILE: &str = "remote.json";
@@ -27,6 +28,10 @@ pub fn default_settings_path() -> PathBuf {
 
 pub fn default_image_config_path() -> PathBuf {
     default_app_state_dir().join(IMAGE_CONFIG_FILE)
+}
+
+pub fn default_prompt_agent_config_path() -> PathBuf {
+    default_app_state_dir().join(PROMPT_AGENT_CONFIG_FILE)
 }
 
 pub fn default_generated_images_dir() -> PathBuf {
@@ -86,9 +91,11 @@ mod tests {
     #[test]
     fn default_image_paths_use_app_state_directory() {
         let config = default_image_config_path();
+        let prompt_agent = default_prompt_agent_config_path();
         let output = default_generated_images_dir();
 
         assert!(config.ends_with(".codex-session-delete/image.json"));
+        assert!(prompt_agent.ends_with(".codex-session-delete/prompt-agent.json"));
         assert!(output.ends_with(".codex-session-delete/generated-images"));
     }
 

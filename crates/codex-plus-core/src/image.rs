@@ -250,24 +250,21 @@ pub async fn generate_image_with(
     }
 
     let value: Value = serde_json::from_str(&body).context("生图响应不是有效 JSON")?;
-    let image = first_b64_image(&value)?;
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(image)
-        .context("生图响应不是有效 base64 图片")?;
-    let preview_data_url = image_data_url(&bytes, &saved_output_format);
+    let image = read_first_image(&client, &value, &saved_output_format).await?;
+    let preview_data_url = image_data_url(&image.bytes, &image.output_format);
     let created_at_ms = now_ms();
     let path = output_dir.join(format!(
         "{}-{}.{}",
         created_at_ms,
         slugify(prompt),
-        saved_output_format
+        image.output_format
     ));
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).with_context(|| {
             format!("failed to create generated image dir {}", parent.display())
         })?;
     }
-    fs::write(&path, &bytes)
+    fs::write(&path, &image.bytes)
         .with_context(|| format!("failed to write generated image {}", path.display()))?;
 
     Ok(ImageGenerationResult {
@@ -277,7 +274,7 @@ pub async fn generate_image_with(
         preview_data_url,
         model: config.model,
         size,
-        output_format: saved_output_format,
+        output_format: image.output_format,
         created_at_ms,
     })
 }
@@ -337,19 +334,166 @@ fn build_headers(api_key: &str) -> anyhow::Result<HeaderMap> {
     Ok(headers)
 }
 
-fn first_b64_image(value: &Value) -> anyhow::Result<&str> {
+struct GeneratedImageBytes {
+    bytes: Vec<u8>,
+    output_format: String,
+}
+
+enum ImageResponseSource<'a> {
+    Base64(&'a str),
+    DataUrl(&'a str),
+    Url(&'a str),
+}
+
+async fn read_first_image(
+    client: &reqwest::Client,
+    value: &Value,
+    fallback_output_format: &str,
+) -> anyhow::Result<GeneratedImageBytes> {
+    match first_image_source(value)? {
+        ImageResponseSource::Base64(encoded) => {
+            decode_base64_image(encoded, fallback_output_format)
+        }
+        ImageResponseSource::DataUrl(data_url) => decode_data_url(data_url, fallback_output_format),
+        ImageResponseSource::Url(url) => download_image(client, url, fallback_output_format).await,
+    }
+}
+
+fn first_image_source(value: &Value) -> anyhow::Result<ImageResponseSource<'_>> {
     let items = value
         .get("data")
         .and_then(Value::as_array)
         .ok_or_else(|| anyhow::anyhow!("生图响应缺少 data 数组"))?;
     items
         .iter()
-        .find_map(|item| {
-            item.get("b64_json")
-                .or_else(|| item.get("result"))
-                .and_then(Value::as_str)
-        })
-        .ok_or_else(|| anyhow::anyhow!("生图响应缺少 b64_json"))
+        .find_map(image_source_from_item)
+        .ok_or_else(|| anyhow::anyhow!("生图响应缺少 b64_json 或 url"))
+}
+
+fn image_source_from_item(item: &Value) -> Option<ImageResponseSource<'_>> {
+    if let Some(value) = item.get("b64_json").and_then(Value::as_str) {
+        return Some(ImageResponseSource::Base64(value));
+    }
+    if let Some(value) = item.get("result").and_then(Value::as_str) {
+        return Some(image_source_from_text(value, true));
+    }
+    if let Some(value) = item.get("url").and_then(Value::as_str) {
+        return Some(image_source_from_text(value, false));
+    }
+    item.get("image")
+        .and_then(Value::as_str)
+        .map(|value| image_source_from_text(value, true))
+}
+
+fn image_source_from_text(value: &str, base64_fallback: bool) -> ImageResponseSource<'_> {
+    let trimmed = value.trim();
+    let lowered = trimmed.to_ascii_lowercase();
+    if lowered.starts_with("data:image/") {
+        return ImageResponseSource::DataUrl(trimmed);
+    }
+    if lowered.starts_with("http://") || lowered.starts_with("https://") {
+        return ImageResponseSource::Url(trimmed);
+    }
+    if base64_fallback {
+        ImageResponseSource::Base64(trimmed)
+    } else {
+        ImageResponseSource::Url(trimmed)
+    }
+}
+
+fn decode_base64_image(
+    encoded: &str,
+    fallback_output_format: &str,
+) -> anyhow::Result<GeneratedImageBytes> {
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(encoded.trim())
+        .context("生图响应不是有效 base64 图片")?;
+    Ok(GeneratedImageBytes {
+        bytes,
+        output_format: normalize_output_format(fallback_output_format),
+    })
+}
+
+fn decode_data_url(
+    data_url: &str,
+    fallback_output_format: &str,
+) -> anyhow::Result<GeneratedImageBytes> {
+    let (meta, encoded) = data_url
+        .split_once(',')
+        .ok_or_else(|| anyhow::anyhow!("生图响应 data URL 格式无效"))?;
+    if !meta.to_ascii_lowercase().contains(";base64") {
+        anyhow::bail!("生图响应 data URL 不是 base64 图片");
+    }
+    let mut image = decode_base64_image(encoded, fallback_output_format)?;
+    image.output_format = image_format_from_content_type(meta)
+        .unwrap_or_else(|| normalize_output_format(fallback_output_format));
+    Ok(image)
+}
+
+async fn download_image(
+    client: &reqwest::Client,
+    url: &str,
+    fallback_output_format: &str,
+) -> anyhow::Result<GeneratedImageBytes> {
+    let parsed = Url::parse(url).context("生图响应图片 URL 无效")?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        anyhow::bail!("生图响应图片 URL 只能是 http/https");
+    }
+    let response = client
+        .get(parsed)
+        .send()
+        .await
+        .context("生图图片下载失败")?;
+    let status = response.status();
+    if !status.is_success() {
+        anyhow::bail!("生图图片下载失败：HTTP {status}");
+    }
+    let content_type = response
+        .headers()
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string);
+    let bytes = response.bytes().await.context("生图图片读取失败")?.to_vec();
+    if bytes.is_empty() {
+        anyhow::bail!("生图图片内容为空");
+    }
+    let output_format = content_type
+        .as_deref()
+        .and_then(image_format_from_content_type)
+        .or_else(|| image_format_from_url(url))
+        .unwrap_or_else(|| normalize_output_format(fallback_output_format));
+    Ok(GeneratedImageBytes {
+        bytes,
+        output_format,
+    })
+}
+
+fn image_format_from_content_type(content_type: &str) -> Option<String> {
+    let lowered = content_type.to_ascii_lowercase();
+    if lowered.contains("image/png") {
+        return Some("png".to_string());
+    }
+    if lowered.contains("image/jpeg") || lowered.contains("image/jpg") {
+        return Some("jpeg".to_string());
+    }
+    if lowered.contains("image/webp") {
+        return Some("webp".to_string());
+    }
+    None
+}
+
+fn image_format_from_url(url: &str) -> Option<String> {
+    let path = Url::parse(url).ok()?.path().to_ascii_lowercase();
+    if path.ends_with(".png") {
+        return Some("png".to_string());
+    }
+    if path.ends_with(".jpg") || path.ends_with(".jpeg") {
+        return Some("jpeg".to_string());
+    }
+    if path.ends_with(".webp") {
+        return Some("webp".to_string());
+    }
+    None
 }
 
 fn image_data_url(bytes: &[u8], output_format: &str) -> String {
@@ -582,10 +726,33 @@ mod tests {
     }
 
     #[test]
-    fn first_b64_image_reads_images_payload() {
+    fn first_image_source_reads_b64_payload() {
         let payload = json!({"data":[{"b64_json":"abc"}]});
 
-        assert_eq!(first_b64_image(&payload).unwrap(), "abc");
+        match first_image_source(&payload).unwrap() {
+            ImageResponseSource::Base64(value) => assert_eq!(value, "abc"),
+            _ => panic!("expected base64 image source"),
+        }
+    }
+
+    #[test]
+    fn first_image_source_reads_url_payload() {
+        let payload = json!({"data":[{"url":"https://example.test/generated.png"}]});
+
+        match first_image_source(&payload).unwrap() {
+            ImageResponseSource::Url(value) => {
+                assert_eq!(value, "https://example.test/generated.png");
+            }
+            _ => panic!("expected url image source"),
+        }
+    }
+
+    #[test]
+    fn decode_data_url_detects_image_format() {
+        let image = decode_data_url("data:image/webp;base64,d2VicA==", "png").unwrap();
+
+        assert_eq!(image.bytes, b"webp");
+        assert_eq!(image.output_format, "webp");
     }
 
     #[test]

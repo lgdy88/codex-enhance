@@ -86,6 +86,25 @@ export type WatcherResult = CommandResult<{
   disabled_flag: string;
 }>;
 
+export type OfficialPluginHealthCheck = {
+  key: string;
+  label: string;
+  status: string;
+  detail: string;
+  path: string | null;
+};
+
+export type OfficialPluginHealthResult = CommandResult<{
+  health: {
+    status: string;
+    message: string;
+    codexHome: string;
+    bundledCacheRoot: string;
+    checks: OfficialPluginHealthCheck[];
+    repairNotes: string[];
+  };
+}>;
+
 export type RemoteControlConfig = {
   enabled: boolean;
   channel: "feishu" | string;
@@ -209,11 +228,30 @@ export type RemoteBridgeResult = CommandResult<{
 export type ImageGenerationConfig = {
   baseUrl: string;
   model: string;
+  size: string;
+  quality: string;
+  outputFormat: string;
   apiKeyConfigured: boolean;
   apiKeyHint: string;
 };
 
 export type ImageGenerationForm = {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  size: string;
+  quality: string;
+  outputFormat: string;
+};
+
+export type PromptAgentConfig = {
+  baseUrl: string;
+  model: string;
+  apiKeyConfigured: boolean;
+  apiKeyHint: string;
+};
+
+export type PromptAgentForm = {
   baseUrl: string;
   apiKey: string;
   model: string;
@@ -232,12 +270,28 @@ export type ImageGenerationSettingsResult = CommandResult<{
   outputDir: string;
 }>;
 
+export type PromptAgentSettingsResult = CommandResult<{
+  config: PromptAgentConfig;
+  configPath: string;
+}>;
+
 export type ImageGeneratedResult = CommandResult<{
   path: string;
   previewDataUrl: string;
   model: string;
   size: string;
   outputFormat: string;
+  createdAtMs: number;
+  durationMs?: number;
+}>;
+
+export type ImageFileActionResult = CommandResult<{
+  path: string;
+}>;
+
+export type PromptEnhancedResult = CommandResult<{
+  prompt: string;
+  model: string;
   createdAtMs: number;
 }>;
 
@@ -274,6 +328,7 @@ export type Route =
   | "userScripts"
   | "providerSync"
   | "imageGeneration"
+  | "promptAgent"
   | "remoteControl"
   | "maintenance"
   | "about";
@@ -334,6 +389,7 @@ export type Actions = {
   installEntrypoints: () => Promise<void>;
   uninstallEntrypoints: () => Promise<void>;
   repairShortcuts: () => Promise<void>;
+  checkOfficialPlugins: () => Promise<void>;
   checkUpdate: () => Promise<void>;
   performUpdate: () => Promise<void>;
   saveSettings: () => Promise<void>;
@@ -350,7 +406,11 @@ export type Actions = {
   startRemoteBridge: () => Promise<void>;
   stopRemoteBridge: () => Promise<void>;
   saveImageGeneration: () => Promise<void>;
+  savePromptAgent: () => Promise<void>;
+  enhanceImagePrompt: () => Promise<void>;
   generateImage: () => Promise<void>;
+  openGeneratedImage: (path: string) => Promise<void>;
+  saveGeneratedImageAs: (result: ImageGeneratedResult) => Promise<void>;
   openExternalUrl: (url: string) => Promise<void>;
   refreshLogs: () => Promise<void>;
   refreshDiagnostics: () => Promise<void>;

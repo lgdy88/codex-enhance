@@ -727,10 +727,26 @@
   }
 
   function defaultCodexPlusSettings() {
-    return { pluginMarketplaceUnlock: true, pluginEntryUnlock: true, forcePluginInstall: true, modelWhitelistUnlock: false, sessionDelete: true, markdownExport: true, projectMove: true, conversationTimeline: true, nativeMenuPlacement: true };
+    return { enhancementsEnabled: true, pluginMarketplaceUnlock: true, pluginEntryUnlock: true, forcePluginInstall: true, modelWhitelistUnlock: false, sessionDelete: true, markdownExport: true, projectMove: true, conversationTimeline: true, nativeMenuPlacement: true };
   }
 
-  function codexPlusSettings() {
+  function gateCodexPlusEnhancements(settings) {
+    if (settings.enhancementsEnabled !== false) return settings;
+    return {
+      ...settings,
+      pluginMarketplaceUnlock: false,
+      pluginEntryUnlock: false,
+      forcePluginInstall: false,
+      modelWhitelistUnlock: false,
+      sessionDelete: false,
+      markdownExport: false,
+      projectMove: false,
+      conversationTimeline: false,
+      nativeMenuPlacement: false,
+    };
+  }
+
+  function rawCodexPlusSettings() {
     try {
       const settings = { ...defaultCodexPlusSettings(), ...JSON.parse(localStorage.getItem(codexPlusSettingsKey) || "{}") };
       if (settings.pluginMarketplaceUnlock === undefined && settings.pluginEntryUnlock !== undefined) {
@@ -742,8 +758,12 @@
     }
   }
 
+  function codexPlusSettings() {
+    return gateCodexPlusEnhancements(rawCodexPlusSettings());
+  }
+
   function setCodexPlusSetting(key, value) {
-    const next = { ...codexPlusSettings(), [key]: value };
+    const next = { ...rawCodexPlusSettings(), [key]: value };
     if (key === "pluginMarketplaceUnlock") next.pluginEntryUnlock = value;
     localStorage.setItem(codexPlusSettingsKey, JSON.stringify(next));
     renderCodexPlusMenu();
@@ -751,6 +771,7 @@
   }
 
   const codexPlusBackendManagedSettingKeys = [
+    "enhancementsEnabled",
     "pluginMarketplaceUnlock",
     "forcePluginInstall",
     "sessionDelete",
@@ -761,7 +782,7 @@
 
   function syncCodexPlusSettingsFromBackend(settings) {
     if (!settings || typeof settings !== "object") return;
-    const current = codexPlusSettings();
+    const current = rawCodexPlusSettings();
     let next = current;
     const ensureNext = () => {
       if (next === current) next = { ...current };
@@ -1919,16 +1940,67 @@
     return String(method || "");
   }
 
+  const unifiedPluginMarketplaceName = "openai-bundled";
+  const unifiedPluginMarketplaceDisplayName = "openai-bundled";
+  const officialPluginMarketplaceNames = ["openai-bundled", "openai-curated", "openai-primary-runtime"];
+
+  function pluginMarketplaceOrigins() {
+    if (!window.__codexPlusPluginMarketplaceOrigins || typeof window.__codexPlusPluginMarketplaceOrigins !== "object") {
+      window.__codexPlusPluginMarketplaceOrigins = {};
+    }
+    return window.__codexPlusPluginMarketplaceOrigins;
+  }
+
+  function resetPluginMarketplaceOrigins() {
+    window.__codexPlusPluginMarketplaceOrigins = {};
+  }
+
+  function rememberPluginMarketplaceOrigin(plugin, marketplace, marketplaceName) {
+    const pluginName = plugin?.name || plugin?.pluginName || "";
+    if (!pluginName) return;
+    const next = {
+      marketplaceName,
+      marketplacePath: marketplace?.path || "",
+      remoteMarketplaceName: marketplace?.remoteMarketplaceName || "",
+    };
+    const origins = pluginMarketplaceOrigins();
+    const current = origins[pluginName];
+    if (current && !samePluginMarketplaceOrigin(current, next)) {
+      origins[pluginName] = { ambiguous: true };
+      sendCodexPlusDiagnostic("plugin_marketplace_origin_ambiguous", { pluginName });
+      return;
+    }
+    origins[pluginName] = next;
+  }
+
+  function pluginMarketplaceOriginForName(pluginName) {
+    if (!pluginName) return null;
+    const origin = pluginMarketplaceOrigins()[pluginName] || null;
+    return origin?.ambiguous ? null : origin;
+  }
+
+  function samePluginMarketplaceOrigin(left, right) {
+    return left.marketplaceName === right.marketplaceName
+      && left.marketplacePath === right.marketplacePath
+      && left.remoteMarketplaceName === right.remoteMarketplaceName;
+  }
+
+  function expandedPluginMarketplaceKinds(kind) {
+    const rawKind = String(kind || "");
+    const normalizedKind = rawKind.startsWith("remote:") ? rawKind.slice("remote:".length) : rawKind;
+    if (codexPluginOfficialMarketplaceName(normalizedKind)) {
+      return officialPluginMarketplaceNames;
+    }
+    return [restorePluginMarketplaceName(rawKind)];
+  }
+
   function patchPluginMarketplaceRequestParams(method, params) {
     if (method !== "list-plugins" || !params || typeof params !== "object") return params;
     const next = { ...params };
     const hadMarketplaceKinds = Object.prototype.hasOwnProperty.call(next, "marketplaceKinds");
     const originalMarketplaceKinds = Array.isArray(next.marketplaceKinds) ? next.marketplaceKinds.map(String) : [];
     if (originalMarketplaceKinds.length) {
-      const restoredKinds = originalMarketplaceKinds.map((kind) => {
-        if (kind === "remote:openai-curated") return "openai-curated";
-        return restorePluginMarketplaceName(kind);
-      });
+      const restoredKinds = originalMarketplaceKinds.flatMap((kind) => expandedPluginMarketplaceKinds(kind));
       next.marketplaceKinds = Array.from(new Set(restoredKinds));
     }
     sendCodexPlusDiagnostic("plugin_marketplace_request_expanded", {
@@ -1941,16 +2013,12 @@
   }
 
   function pluginMarketplaceAliasForName(name) {
-    if (name === "openai-bundled") return "";
-    if (name === "openai-curated") return "dex-openai-curated";
-    if (name === "openai-primary-runtime") return "dex-openai-primary-runtime";
+    if (codexPluginOfficialMarketplaceName(name)) return unifiedPluginMarketplaceName;
     return "";
   }
 
   function displayNameForPluginMarketplaceName(name, fallback) {
-    if (name === "openai-bundled" || name === "dex-openai-bundled") return "OpenAI Plugins 1 (Dex)";
-    if (name === "openai-curated" || name === "dex-openai-curated") return "OpenAI Plugins 2 (Dex)";
-    if (name === "openai-primary-runtime" || name === "dex-openai-primary-runtime") return "OpenAI Plugins 3 (Dex)";
+    if (name === unifiedPluginMarketplaceName || codexPluginOfficialMarketplaceName(name)) return unifiedPluginMarketplaceDisplayName;
     return fallback;
   }
 
@@ -1988,7 +2056,7 @@
 
   function codexPluginOfficialMarketplaceName(name) {
     const restored = restorePluginMarketplaceName(name);
-    return restored === "openai-bundled" || restored === "openai-curated" || restored === "openai-primary-runtime";
+    return officialPluginMarketplaceNames.includes(restored);
   }
 
   function marketplaceNameFromInstallRequest(params) {
@@ -2102,10 +2170,7 @@
     if (!params || typeof params !== "object") return params;
     let next = params;
     if (Array.isArray(params.marketplaceKinds)) {
-      const nextKinds = params.marketplaceKinds.map((kind) => {
-        if (kind === "remote:openai-curated") return "openai-curated";
-        return restorePluginMarketplaceName(kind);
-      });
+      const nextKinds = params.marketplaceKinds.flatMap((kind) => expandedPluginMarketplaceKinds(kind));
       next = { ...next, marketplaceKinds: Array.from(new Set(nextKinds)) };
     }
     if (method === "install-plugin") {
@@ -2116,8 +2181,58 @@
         delete next.marketplacePath;
         next.remoteMarketplaceName = restorePluginMarketplaceName(remoteMarketplaceName);
       }
+      const origin = pluginMarketplaceOriginForName(next.pluginName || "");
+      if (origin) {
+        if (origin.marketplacePath) {
+          next.marketplacePath = origin.marketplacePath;
+          delete next.remoteMarketplaceName;
+        } else if (origin.remoteMarketplaceName || origin.marketplaceName) {
+          next.remoteMarketplaceName = restorePluginMarketplaceName(origin.remoteMarketplaceName || origin.marketplaceName);
+        }
+      }
     }
     return next;
+  }
+
+  function mergedOfficialPluginMarketplace(marketplaces) {
+    const officialMarketplaces = marketplaces.filter((marketplace) => codexPluginOfficialMarketplaceName(marketplace?.name));
+    if (officialMarketplaces.length === 0) return null;
+
+    const base = officialMarketplaces[0];
+    const plugins = [];
+    officialMarketplaces.forEach((marketplace) => {
+      const marketplaceName = restorePluginMarketplaceName(marketplace?.name || "");
+      if (!Array.isArray(marketplace?.plugins)) return;
+      marketplace.plugins.forEach((plugin) => {
+        if (plugin && typeof plugin === "object") {
+          rememberPluginMarketplaceOrigin(plugin, marketplace, marketplaceName);
+          plugin.__codexPlusOriginalMarketplaceName = marketplaceName;
+          plugin.__codexPlusOriginalMarketplacePath = marketplace?.path || "";
+          plugin.marketplaceName = unifiedPluginMarketplaceName;
+          plugin.remoteMarketplaceName = unifiedPluginMarketplaceName;
+        }
+        plugins.push(plugin);
+      });
+    });
+
+    return {
+      ...base,
+      name: unifiedPluginMarketplaceName,
+      displayName: unifiedPluginMarketplaceDisplayName,
+      title: unifiedPluginMarketplaceDisplayName,
+      label: unifiedPluginMarketplaceDisplayName,
+      remoteMarketplaceName: unifiedPluginMarketplaceName,
+      interface: {
+        ...(base.interface && typeof base.interface === "object" ? base.interface : {}),
+        displayName: unifiedPluginMarketplaceDisplayName,
+        name: unifiedPluginMarketplaceDisplayName,
+        title: unifiedPluginMarketplaceDisplayName,
+        label: unifiedPluginMarketplaceDisplayName,
+      },
+      plugins,
+      __codexPlusMarketplaceUnlockPatched: true,
+      __codexPlusMergedOfficialMarketplace: true,
+    };
   }
 
   function patchPluginMarketplaceResult(method, result) {
@@ -2126,10 +2241,17 @@
     try {
       const pluginMarketplaceCounts = {};
       if (Array.isArray(result?.marketplaces)) {
+        resetPluginMarketplaceOrigins();
+        const mergedMarketplace = mergedOfficialPluginMarketplace(result.marketplaces);
+        if (mergedMarketplace) {
+          const nonOfficialMarketplaces = result.marketplaces.filter((marketplace) => !codexPluginOfficialMarketplaceName(marketplace?.name));
+          result.marketplaces = [mergedMarketplace, ...nonOfficialMarketplaces];
+          patchedCount += 1;
+        }
         result.marketplaces.forEach((marketplace) => {
           if (Array.isArray(marketplace?.plugins)) {
             marketplace.plugins.forEach((plugin) => {
-              const name = plugin?.marketplaceName || marketplace?.name || "";
+              const name = plugin?.__codexPlusOriginalMarketplaceName || plugin?.marketplaceName || marketplace?.name || "";
               if (name) pluginMarketplaceCounts[name] = (pluginMarketplaceCounts[name] || 0) + 1;
             });
           }

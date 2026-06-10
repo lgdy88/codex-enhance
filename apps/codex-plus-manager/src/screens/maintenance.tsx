@@ -1,16 +1,17 @@
 import { FileSearch, FolderOpen } from "lucide-react";
 
-import { CardHead, Field, Panel, StatusRow, Toolbar } from "@/components/app";
+import { Badge, CardHead, Field, Panel, StatusRow, Toolbar } from "@/components/app";
 import { Button } from "@/components/ui/button";
 import { CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { codexExtraArgsToInput, inputToCodexExtraArgs } from "@/lib/settings";
-import type { Actions, BackendSettings, LaunchForm, OverviewResult, SettingsResult, WatcherResult } from "@/types";
+import type { Actions, BackendSettings, LaunchForm, OfficialPluginHealthResult, OverviewResult, SettingsResult, WatcherResult } from "@/types";
 
 export function MaintenanceScreen({
   overview,
   watcher,
+  officialPluginHealth,
   settings,
   settingsForm,
   launchForm,
@@ -22,6 +23,7 @@ export function MaintenanceScreen({
 }: {
   overview: OverviewResult | null;
   watcher: WatcherResult | null;
+  officialPluginHealth: OfficialPluginHealthResult | null;
   settings: SettingsResult | null;
   settingsForm: BackendSettings;
   launchForm: LaunchForm;
@@ -52,6 +54,53 @@ export function MaintenanceScreen({
             <Button onClick={() => void actions.checkHealth()}>检查</Button>
             <Button variant="secondary" onClick={() => void actions.repairShortcuts()}>修复快捷方式</Button>
             <Button variant="secondary" onClick={() => void actions.repairBackend()}>修复后端</Button>
+          </Toolbar>
+        </CardContent>
+      </Panel>
+      <Panel>
+        <CardHead title="官方插件健康" detail={officialPluginHealth?.message ?? "检查 Browser / Computer Use / Chrome / node_repl"} />
+        <CardContent>
+          {officialPluginHealth?.health ? (
+            <>
+              <div className="metric-list official-plugin-roots">
+                <div>
+                  <span>状态</span>
+                  <strong>
+                    <Badge status={officialPluginHealth.health.status} />
+                  </strong>
+                </div>
+                <div>
+                  <span>Codex HOME</span>
+                  <strong>{officialPluginHealth.health.codexHome || "-"}</strong>
+                </div>
+                <div>
+                  <span>bundled cache</span>
+                  <strong>{officialPluginHealth.health.bundledCacheRoot || "-"}</strong>
+                </div>
+              </div>
+              <div className="official-plugin-checks">
+                {officialPluginHealth.health.checks.map((check) => (
+                  <div className="official-plugin-check" key={check.key}>
+                    <div>
+                      <strong>{check.label}</strong>
+                      <span>{check.detail}</span>
+                      {check.path ? <code>{check.path}</code> : null}
+                    </div>
+                    <Badge status={check.status} />
+                  </div>
+                ))}
+              </div>
+              <div className="warning-list official-plugin-notes">
+                {officialPluginHealth.health.repairNotes.map((note) => (
+                  <div className="warning-item" key={note}>{note}</div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="empty">还没有检查官方插件健康。</div>
+          )}
+          <Toolbar>
+            <Button variant="secondary" onClick={() => void actions.checkOfficialPlugins()}>检查官方插件</Button>
           </Toolbar>
         </CardContent>
       </Panel>

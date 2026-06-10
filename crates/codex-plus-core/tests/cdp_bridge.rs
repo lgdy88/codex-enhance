@@ -97,18 +97,43 @@ fn injection_script_renders_dex_image_generation_result_card() {
 }
 
 #[test]
-fn injection_script_keeps_bundled_marketplace_name_for_default_filter() {
+fn injection_script_merges_official_marketplaces_for_display() {
     let script = assets::injection_script(57321);
 
     assert!(script.contains("codexPluginMarketplaceUnlockVersion = \"11\""));
-    assert!(script.contains("if (name === \"openai-bundled\") return \"\""));
-    assert!(!script.contains("if (name === \"openai-bundled\") return \"dex-openai-bundled\""));
-    assert!(script.contains("if (name === \"openai-bundled\" || name === \"dex-openai-bundled\") return \"OpenAI Plugins 1 (Dex)\""));
+    assert!(script.contains("unifiedPluginMarketplaceName = \"openai-bundled\""));
+    assert!(script.contains("unifiedPluginMarketplaceDisplayName = \"openai-bundled\""));
     assert!(script.contains(
-        "if (!alias && !codexPluginOfficialMarketplaceName(marketplace.name)) return false"
+        "if (codexPluginOfficialMarketplaceName(name)) return unifiedPluginMarketplaceName"
     ));
+    assert!(script.contains("mergedOfficialPluginMarketplace"));
+    assert!(script.contains("__codexPlusMergedOfficialMarketplace"));
+    assert!(script.contains("plugin.marketplaceName = unifiedPluginMarketplaceName"));
+    assert!(script.contains("plugin.remoteMarketplaceName = unifiedPluginMarketplaceName"));
+    assert!(!script.contains("OpenAI Plugins 1 (Dex)"));
+    assert!(!script.contains("OpenAI Plugins 2 (Dex)"));
+    assert!(!script.contains("OpenAI Plugins 3 (Dex)"));
+    assert!(!script.contains("OpenAI Plugins (Dex)"));
     assert!(!script.contains("codexPluginMarketplacePathAliasForName"));
     assert!(!script.contains("marketplace.path ="));
+}
+
+#[test]
+fn injection_script_respects_enhancements_enabled_master_switch() {
+    let script = assets::injection_script(57321);
+
+    assert!(script.contains("enhancementsEnabled: true"));
+    assert!(script.contains("\"enhancementsEnabled\""));
+    assert!(script.contains("function gateCodexPlusEnhancements(settings)"));
+    assert!(script.contains("function rawCodexPlusSettings()"));
+    assert!(script.contains("if (settings.enhancementsEnabled !== false) return settings"));
+    assert!(script.contains("return gateCodexPlusEnhancements(rawCodexPlusSettings())"));
+    assert!(script.contains("const next = { ...rawCodexPlusSettings(), [key]: value }"));
+    assert!(script.contains("const current = rawCodexPlusSettings()"));
+    assert!(script.contains("pluginMarketplaceUnlock: false"));
+    assert!(script.contains("pluginEntryUnlock: false"));
+    assert!(script.contains("forcePluginInstall: false"));
+    assert!(script.contains("nativeMenuPlacement: false"));
 }
 
 #[test]
@@ -137,6 +162,10 @@ fn injection_script_restores_official_marketplace_names_for_plugin_install() {
     assert!(script.contains("restorePluginMarketplaceName"));
     assert!(script.contains("if (name === \"dex-openai-curated\") return \"openai-curated\""));
     assert!(script.contains("method === \"install-plugin\""));
+    assert!(script.contains("pluginMarketplaceOriginForName"));
+    assert!(script.contains("next.marketplacePath = origin.marketplacePath"));
+    assert!(script.contains("delete next.remoteMarketplaceName"));
+    assert!(script.contains("plugin_marketplace_origin_ambiguous"));
     assert!(script.contains(
         "next.remoteMarketplaceName = restorePluginMarketplaceName(next.remoteMarketplaceName)"
     ));
@@ -154,12 +183,17 @@ fn injection_script_restores_official_marketplace_names_for_plugin_install() {
 }
 
 #[test]
-fn injection_script_keeps_plugin_list_requests_scoped_to_selected_marketplace() {
+fn injection_script_expands_unified_plugin_list_requests_to_all_official_marketplaces() {
     let script = assets::injection_script(57321);
 
     assert!(
         script.contains("const originalMarketplaceKinds = Array.isArray(next.marketplaceKinds)")
     );
+    assert!(script.contains("expandedPluginMarketplaceKinds"));
+    assert!(script.contains("const rawKind = String(kind || \"\")"));
+    assert!(script.contains("if (codexPluginOfficialMarketplaceName(normalizedKind))"));
+    assert!(script.contains("return officialPluginMarketplaceNames"));
+    assert!(script.contains("const restoredKinds = originalMarketplaceKinds.flatMap"));
     assert!(script.contains("next.marketplaceKinds = Array.from(new Set(restoredKinds))"));
     assert!(!script.contains("if (hadMarketplaceKinds) delete next.marketplaceKinds"));
     assert!(script.contains("resolvedMarketplaceKinds"));

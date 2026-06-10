@@ -106,6 +106,12 @@ pub struct WatcherPayload {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct OfficialPluginHealthPayload {
+    pub health: codex_plus_core::official_plugin_doctor::OfficialPluginHealthReport,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StartupPayload {
     pub show_update: bool,
 }
@@ -170,6 +176,34 @@ pub struct ImageGeneratedPayload {
     pub size: String,
     pub output_format: String,
     pub created_at_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageFileActionPayload {
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PromptAgentPayload {
+    pub config: codex_plus_core::prompt_agent::PromptAgentPublicConfig,
+    pub config_path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PromptEnhancedPayload {
+    pub prompt: String,
+    pub model: String,
+    pub created_at_ms: u64,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveGeneratedImageRequest {
+    pub source_path: String,
+    pub target_path: String,
 }
 
 #[tauri::command]
@@ -490,6 +524,7 @@ pub(crate) fn diagnostics_report() -> String {
     let remote_store = RemoteControlStore::default();
     let remote_config = remote_store.load().unwrap_or_default();
     let remote_status = codex_plus_core::remote::build_status(&remote_config, remote_store.path());
+    let official_plugin_health = codex_plus_core::official_plugin_doctor::check_official_plugins();
     let generated_at_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -507,6 +542,7 @@ pub(crate) fn diagnostics_report() -> String {
             "status": remote_status.status,
             "warnings": remote_status.warnings
         },
+        "officialPluginHealth": official_plugin_health,
         "logs": {
             "diagnosticLogPath": codex_plus_core::paths::default_diagnostic_log_path(),
             "latestStatusPath": codex_plus_core::paths::default_latest_status_path()
