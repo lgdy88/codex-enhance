@@ -56,6 +56,47 @@ fn injection_script_marks_diagnostic_build_and_reports_script_loaded() {
 }
 
 #[test]
+fn injection_script_intercepts_image_prompt_from_enter_submit_and_send_button() {
+    let script = assets::injection_script(57321);
+
+    assert!(script.contains("const codexImageGenerationVersion = \"2\""));
+    assert!(script.contains(
+        "document.addEventListener(\"keydown\", window.__codexImagePromptKeydownHandler, true)"
+    ));
+    assert!(script.contains(
+        "document.addEventListener(\"submit\", window.__codexImagePromptSubmitHandler, true)"
+    ));
+    assert!(script.contains(
+        "document.addEventListener(\"pointerdown\", window.__codexImagePromptPointerHandler, true)"
+    ));
+    assert!(script.contains(
+        "document.addEventListener(\"click\", window.__codexImagePromptClickHandler, true)"
+    ));
+    assert!(script.contains("function imageSendControl(target)"));
+    assert!(script.contains(
+        "function imagePromptContext(target = document.activeElement, preferActive = true)"
+    ));
+    assert!(
+        script.contains("handleImagePromptCommand(event, \"prompt-submit\", event.target, false)")
+    );
+    assert!(
+        script.contains("handleImagePromptCommand(event, \"send-button\", event.target, false)")
+    );
+    assert!(script.contains("postJson(\"/image/generate\", { prompt: normalized })"));
+}
+
+#[test]
+fn injection_script_renders_dex_image_generation_result_card() {
+    let script = assets::injection_script(57321);
+
+    assert!(script.contains("function renderImageGenerationResult(result, prompt)"));
+    assert!(script.contains("codex-image-generation-result"));
+    assert!(script.contains("Dex 图片已生成"));
+    assert!(script.contains("复制图片路径"));
+    assert!(script.contains("file:///"));
+}
+
+#[test]
 fn injection_script_keeps_bundled_marketplace_name_for_default_filter() {
     let script = assets::injection_script(57321);
 

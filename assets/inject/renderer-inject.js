@@ -40,7 +40,7 @@
   const codexArchiveDeleteAllVersion = "2";
   const codexConversationTimelineVersion = "2";
   const codexPluginMarketplaceUnlockVersion = "11";
-  const codexImageGenerationVersion = "1";
+  const codexImageGenerationVersion = "2";
   const codexPlusVersion = window.__CODEX_PLUS_VERSION__ || "dev";
   const codexPlusDisplayName = "Dex";
   const codexPlusSettingsKey = "codexPlusSettings";
@@ -273,6 +273,46 @@
         pointer-events: none;
       }
       .codex-delete-toast button { margin-left: 10px; pointer-events: auto; }
+      .codex-image-generation-result {
+        width: min(680px, calc(100% - 32px));
+        margin: 12px auto;
+        border: 1px solid rgba(16,163,127,.28);
+        border-radius: 8px;
+        background: #ffffff;
+        color: #111827;
+        font: 13px system-ui, sans-serif;
+        box-shadow: 0 8px 26px rgba(15,23,42,.12);
+        padding: 12px;
+      }
+      .codex-image-generation-result-title { font-weight: 650; color: #047857; }
+      .codex-image-generation-result-meta { margin-top: 4px; color: #4b5563; }
+      .codex-image-generation-result-path {
+        margin-top: 8px;
+        padding: 7px 8px;
+        border-radius: 6px;
+        background: #f3f4f6;
+        color: #374151;
+        font: 12px ui-monospace, SFMono-Regular, Consolas, monospace;
+        word-break: break-all;
+      }
+      .codex-image-generation-result img {
+        display: block;
+        width: min(256px, 100%);
+        height: auto;
+        margin-top: 10px;
+        border-radius: 8px;
+        border: 1px solid #e5e7eb;
+      }
+      .codex-image-generation-result button {
+        margin-top: 10px;
+        border: 1px solid #10a37f;
+        border-radius: 7px;
+        background: #ecfdf5;
+        color: #065f46;
+        font: 12px system-ui, sans-serif;
+        padding: 5px 8px;
+        cursor: pointer;
+      }
       .codex-delete-confirm-overlay {
         position: fixed;
         inset: 0;
@@ -867,6 +907,7 @@
       if (result?.status !== "ok") throw new Error(result?.message || "生图失败");
       const message = result.path ? `图片已生成：${result.path}` : (result.message || "图片已生成");
       showToast(message, null);
+      renderImageGenerationResult(result, normalized);
       sendCodexPlusDiagnostic("image_generation_success", { source, has_path: !!result.path });
       return result;
     } catch (error) {
@@ -2351,12 +2392,27 @@
     return match ? match[1].trim() : "";
   }
 
+  function isEditablePromptElement(element) {
+    if (!element || isExtensionUiNode(element)) return false;
+    if (element instanceof HTMLTextAreaElement) return true;
+    if (element instanceof HTMLInputElement) return !["button", "checkbox", "file", "hidden", "radio", "reset", "submit"].includes(element.type);
+    return element.isContentEditable || element.getAttribute?.("role") === "textbox";
+  }
+
+  function visiblePromptElement(element) {
+    if (!isEditablePromptElement(element) || element.disabled || element.readOnly) return false;
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+  }
+
+  function promptCandidates(root = document) {
+    return Array.from(root.querySelectorAll('textarea, input, [contenteditable="true"], [role="textbox"], .ProseMirror')).filter(visiblePromptElement);
+  }
+
   function activePromptElement() {
     const element = document.activeElement;
-    if (!element || isExtensionUiNode(element)) return null;
-    if (element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement) return element;
-    if (element.isContentEditable) return element;
-    return null;
+    return visiblePromptElement(element) ? element : null;
   }
 
   function promptElementText(element) {
@@ -2376,21 +2432,79 @@
     element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward", data: null }));
   }
 
+  function promptSearchRoot(target) {
+    const element = target?.nodeType === Node.ELEMENT_NODE ? target : target?.parentElement;
+    return element?.closest?.('form, [role="form"], [data-testid*="composer"], [class*="composer"], [class*="Composer"], footer') || document;
+  }
+
+  function imagePromptContext(target = document.activeElement, preferActive = true) {
+    const root = promptSearchRoot(target);
+    const candidate = promptCandidates(root).find((input) => extractImagePromptCommand(promptElementText(input)));
+    if (candidate) return { input: candidate, prompt: extractImagePromptCommand(promptElementText(candidate)) };
+    const active = activePromptElement();
+    const activePrompt = extractImagePromptCommand(promptElementText(active));
+    if (activePrompt && (preferActive || root.contains?.(active))) return { input: active, prompt: activePrompt };
+    return null;
+  }
+
+  function imageSendControl(target) {
+    const control = target?.closest?.('button, [role="button"], input[type="submit"]');
+    if (!control || isExtensionUiNode(control) || control.disabled || control.getAttribute("aria-disabled") === "true") return null;
+    if (control.matches?.('button[type="submit"], input[type="submit"]')) return control;
+    const label = `${control.getAttribute("aria-label") || ""} ${control.title || ""} ${control.textContent || ""} ${control.getAttribute("data-testid") || ""}`;
+    return /(send|submit|发送|提交|composer.*send|send.*button|arrow-?up|paper-?airplane)/i.test(label) ? control : null;
+  }
+
+  async function handleImagePromptCommand(event, source, target, preferActive = true) {
+    const context = imagePromptContext(target, preferActive);
+    if (!context?.prompt) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation?.();
+    const now = Date.now();
+    const recent = window.__codexImagePromptCommandLastHandled;
+    if (recent?.prompt === context.prompt && now - recent.timeMs < 1500) return true;
+    if (window.__codexImagePromptCommandInFlight) return true;
+    window.__codexImagePromptCommandInFlight = true;
+    window.__codexImagePromptCommandLastHandled = { prompt: context.prompt, timeMs: now };
+    try {
+      showToast("Dex 正在生成图片…", null);
+      const result = await generateImageFromPrompt(context.prompt, source);
+      if (result?.status === "ok") clearPromptElement(context.input);
+    } finally {
+      window.__codexImagePromptCommandInFlight = false;
+    }
+    return true;
+  }
+
   function installImagePromptCommandHandler() {
     if (window.__codexImagePromptCommandVersion === codexImageGenerationVersion) return;
+    removeImagePromptCommandHandlers();
     window.__codexImagePromptCommandVersion = codexImageGenerationVersion;
-    document.addEventListener("keydown", async (event) => {
+    window.__codexImagePromptKeydownHandler = (event) => {
       if (event.defaultPrevented || event.key !== "Enter" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
-      const input = activePromptElement();
-      const prompt = extractImagePromptCommand(promptElementText(input));
-      if (!prompt) return;
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation?.();
-      showToast("Dex 正在生成图片…", null);
-      const result = await generateImageFromPrompt(prompt, "prompt-prefix");
-      if (result?.status === "ok") clearPromptElement(input);
-    }, true);
+      handleImagePromptCommand(event, "prompt-enter", event.target);
+    };
+    window.__codexImagePromptSubmitHandler = (event) => {
+      if (!event.defaultPrevented) handleImagePromptCommand(event, "prompt-submit", event.target, false);
+    };
+    window.__codexImagePromptPointerHandler = (event) => {
+      if (!event.defaultPrevented && imageSendControl(event.target)) handleImagePromptCommand(event, "send-button", event.target, false);
+    };
+    window.__codexImagePromptClickHandler = (event) => {
+      if (!event.defaultPrevented && imageSendControl(event.target)) handleImagePromptCommand(event, "send-button", event.target, false);
+    };
+    document.addEventListener("keydown", window.__codexImagePromptKeydownHandler, true);
+    document.addEventListener("submit", window.__codexImagePromptSubmitHandler, true);
+    document.addEventListener("pointerdown", window.__codexImagePromptPointerHandler, true);
+    document.addEventListener("click", window.__codexImagePromptClickHandler, true);
+  }
+
+  function removeImagePromptCommandHandlers() {
+    if (window.__codexImagePromptKeydownHandler) document.removeEventListener("keydown", window.__codexImagePromptKeydownHandler, true);
+    if (window.__codexImagePromptSubmitHandler) document.removeEventListener("submit", window.__codexImagePromptSubmitHandler, true);
+    if (window.__codexImagePromptPointerHandler) document.removeEventListener("pointerdown", window.__codexImagePromptPointerHandler, true);
+    if (window.__codexImagePromptClickHandler) document.removeEventListener("click", window.__codexImagePromptClickHandler, true);
   }
 
   function sendCodexPlusDiagnostic(event, detail = {}) {
@@ -3739,6 +3853,52 @@
     setTimeout(() => toast.remove(), 10000);
   }
 
+  function localFileUrl(path) {
+    const normalized = String(path || "").replaceAll("\\", "/");
+    if (!normalized) return "";
+    if (/^[a-z]:\//i.test(normalized)) return `file:///${encodeURI(normalized)}`;
+    if (normalized.startsWith("/")) return `file://${encodeURI(normalized)}`;
+    return "";
+  }
+
+  function imageResultMount() {
+    return conversationTimelineRoot?.() || document.querySelector("main") || document.body;
+  }
+
+  function renderImageGenerationResult(result, prompt) {
+    if (!result?.path) return;
+    document.querySelectorAll(".codex-image-generation-result").forEach((node) => node.remove());
+    const card = document.createElement("div");
+    card.className = "codex-image-generation-result";
+    card.innerHTML = `<div class="codex-image-generation-result-title">Dex 图片已生成</div><div class="codex-image-generation-result-meta"></div><div class="codex-image-generation-result-path"></div>`;
+    card.querySelector(".codex-image-generation-result-meta").textContent = `${result.model || "image"} · ${prompt}`;
+    card.querySelector(".codex-image-generation-result-path").textContent = result.path;
+    const url = localFileUrl(result.path);
+    if (url) card.appendChild(imagePreviewElement(url));
+    card.appendChild(copyImagePathButton(result.path));
+    imageResultMount().appendChild(card);
+    card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  function imagePreviewElement(url) {
+    const image = document.createElement("img");
+    image.alt = "Dex generated image";
+    image.src = url;
+    image.addEventListener("error", () => image.remove(), { once: true });
+    return image;
+  }
+
+  function copyImagePathButton(path) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "复制图片路径";
+    button.addEventListener("click", async () => {
+      await navigator.clipboard?.writeText?.(path);
+      showToast("图片路径已复制", null);
+    });
+    return button;
+  }
+
   function escapeHtml(value) {
     return String(value)
       .replaceAll("&", "&amp;")
@@ -4627,7 +4787,7 @@
   }
 
   function isExtensionUiNode(node) {
-    return !!node?.closest?.(`.codex-delete-toast, .codex-delete-confirm-overlay, .codex-plus-modal-overlay, .${projectMoveOverlayClass}, .${moreMenuClass}, .${timelineClass}, .codex-conversation-timeline, #codex-plus-menu`);
+    return !!node?.closest?.(`.codex-delete-toast, .codex-delete-confirm-overlay, .codex-image-generation-result, .codex-plus-modal-overlay, .${projectMoveOverlayClass}, .${moreMenuClass}, .${timelineClass}, .codex-conversation-timeline, #codex-plus-menu`);
   }
 
   const scanRelevantSelector = [
