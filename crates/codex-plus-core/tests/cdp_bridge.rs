@@ -137,6 +137,26 @@ fn injection_script_respects_enhancements_enabled_master_switch() {
 }
 
 #[test]
+fn injection_script_installs_dex_voice_input_without_logging_transcripts() {
+    let script = assets::injection_script(57321);
+
+    assert!(script.contains("const codexVoiceInputVersion = \"1\""));
+    assert!(script.contains("voiceInput: true"));
+    assert!(script.contains("voiceInput: false"));
+    assert!(script.contains("Dex 语音输入 Beta"));
+    assert!(script.contains("window.SpeechRecognition || window.webkitSpeechRecognition"));
+    assert!(script.contains("recognition.lang = voiceInputLanguage()"));
+    assert!(
+        script.contains(
+            "insertPromptText(window.__codexVoiceTarget || currentPromptElement(), text)"
+        )
+    );
+    assert!(script.contains("data-codex-voice-button"));
+    assert!(!script.contains("sendCodexPlusDiagnostic(\"voice"));
+    assert!(!script.contains("postJson(\"/voice"));
+}
+
+#[test]
 fn injection_script_bypasses_plugin_marketplace_build_flavor_filters() {
     let script = assets::injection_script(57321);
 
@@ -180,6 +200,17 @@ fn injection_script_restores_official_marketplace_names_for_plugin_install() {
     assert!(script.contains("plugin_install_retry_after_cache_repair"));
     assert!(script.contains("plugin_marketplace_response_debug"));
     assert!(script.contains("pluginMarketplaceCounts"));
+}
+
+#[test]
+fn injection_script_exposes_official_plugin_cache_refresh() {
+    let script = assets::injection_script(57321);
+
+    assert!(script.contains("data-codex-plugin-cache-refresh=\"true\""));
+    assert!(script.contains("function approveOfficialPluginCacheRefresh()"));
+    assert!(script.contains("postJson(\"/plugin-cache/refresh-official\", { confirm: true })"));
+    assert!(script.contains("Browser / Chrome / Computer Use"));
+    assert!(script.contains("不会修改 auth.json、config.toml、Chrome 用户数据或注册表"));
 }
 
 #[test]

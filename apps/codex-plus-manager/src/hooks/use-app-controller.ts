@@ -28,6 +28,7 @@ import {
   readRemoteBridgeLog,
   remoteBridgeStatus,
   repairBackend as repairBackendCommand,
+  refreshOfficialPluginCache as refreshOfficialPluginCacheCommand,
   repairShortcuts as repairShortcutsCommand,
   resetBackendSettings,
   runProviderAction,
@@ -180,6 +181,15 @@ export function useAppController() {
     if (!result) return;
     setOfficialPluginHealth(result);
     if (!silent) showNotice("官方插件健康", result.message, result.status);
+  };
+
+  const refreshOfficialPluginCache = async () => {
+    const accepted = window.confirm("这会备份并刷新 Browser / Chrome / Computer Use 官方插件缓存。不会修改 auth.json、config.toml、Chrome 用户数据或注册表。继续后请重启 Codex。");
+    if (!accepted) return;
+    const result = await run(refreshOfficialPluginCacheCommand);
+    if (!result) return;
+    showNotice("官方插件缓存", `${result.message} 请重启 Codex 后再检查插件页。`, result.status);
+    await refreshOfficialPlugins(true);
   };
 
   const refreshRemoteControl = async (silent = false) => {
@@ -702,6 +712,7 @@ export function useAppController() {
       uninstallEntrypoints,
       repairShortcuts,
       checkOfficialPlugins: () => refreshOfficialPlugins(false),
+      refreshOfficialPluginCache,
       checkUpdate: () => checkUpdate(false, true),
       performUpdate,
       saveSettings,

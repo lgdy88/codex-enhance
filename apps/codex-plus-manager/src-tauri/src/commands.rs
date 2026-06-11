@@ -110,6 +110,19 @@ pub struct OfficialPluginHealthPayload {
     pub health: codex_plus_core::official_plugin_doctor::OfficialPluginHealthReport,
 }
 
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OfficialPluginCacheRefreshRequest {
+    #[serde(default)]
+    pub confirm: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OfficialPluginCacheRefreshPayload {
+    pub refresh: codex_plus_core::plugin_cache::OfficialPluginCacheRefreshResult,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StartupPayload {

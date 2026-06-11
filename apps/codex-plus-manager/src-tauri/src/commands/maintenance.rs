@@ -3,9 +3,10 @@ use serde_json::{Value, json};
 use crate::install::{self, InstallActionResult, InstallOptions};
 
 use super::{
-    CommandResult, DiagnosticsPayload, LogRequest, LogsPayload, OfficialPluginHealthPayload,
-    WatcherPayload, default_debug_port, diagnostics_report, failed, install_background_failure, ok,
-    read_tail, watcher_payload,
+    CommandResult, DiagnosticsPayload, LogRequest, LogsPayload, OfficialPluginCacheRefreshPayload,
+    OfficialPluginCacheRefreshRequest, OfficialPluginHealthPayload, WatcherPayload,
+    default_debug_port, diagnostics_report, failed, install_background_failure, ok, read_tail,
+    watcher_payload,
 };
 
 #[tauri::command]
@@ -32,6 +33,56 @@ pub async fn check_official_plugins() -> CommandResult<OfficialPluginHealthPaylo
             let message = report.message.clone();
             failed(&message, OfficialPluginHealthPayload { health: report })
         }
+    }
+}
+
+#[tauri::command]
+pub async fn refresh_official_plugin_cache(
+    request: OfficialPluginCacheRefreshRequest,
+) -> CommandResult<OfficialPluginCacheRefreshPayload> {
+    if !request.confirm {
+        return failed(
+            "刷新官方插件缓存需要显式确认。",
+            OfficialPluginCacheRefreshPayload {
+                refresh: failed_refresh_result("confirm=false"),
+            },
+        );
+    }
+    let result = tauri::async_runtime::spawn_blocking(
+        codex_plus_core::plugin_cache::refresh_official_plugin_cache,
+    )
+    .await;
+    match result {
+        Ok(Ok(refresh)) => CommandResult {
+            status: refresh.status.clone(),
+            message: refresh.message.clone(),
+            payload: OfficialPluginCacheRefreshPayload { refresh },
+        },
+        Ok(Err(error)) => failed(
+            &format!("刷新官方插件缓存失败：{error}"),
+            OfficialPluginCacheRefreshPayload {
+                refresh: failed_refresh_result(&format!("{error}")),
+            },
+        ),
+        Err(error) => failed(
+            &format!("刷新官方插件缓存后台任务失败：{error}"),
+            OfficialPluginCacheRefreshPayload {
+                refresh: failed_refresh_result(&format!("{error}")),
+            },
+        ),
+    }
+}
+
+fn failed_refresh_result(
+    message: &str,
+) -> codex_plus_core::plugin_cache::OfficialPluginCacheRefreshResult {
+    codex_plus_core::plugin_cache::OfficialPluginCacheRefreshResult {
+        status: "failed".to_string(),
+        message: message.to_string(),
+        codex_home: String::new(),
+        cache_root: String::new(),
+        backup_root: String::new(),
+        plugins: Vec::new(),
     }
 }
 

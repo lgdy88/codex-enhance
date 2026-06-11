@@ -52,6 +52,7 @@ pub fn run() {
             commands::sync_providers_now,
             commands::repair_provider_paths,
             commands::maintenance::check_official_plugins,
+            commands::maintenance::refresh_official_plugin_cache,
             commands::maintenance::open_external_url,
             commands::maintenance::install_entrypoints,
             commands::maintenance::uninstall_entrypoints,

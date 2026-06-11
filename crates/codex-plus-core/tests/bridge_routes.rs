@@ -38,6 +38,7 @@ async fn bridge_routes_cover_all_current_paths() {
             "/plugin-cache/repair-install",
             json!({"marketplace": "bad/path", "plugin": "chrome"}),
         ),
+        ("/plugin-cache/refresh-official", json!({"confirm": false})),
         ("/codex-model-catalog", json!({})),
         ("/codex-config-model", json!({})),
         ("/delete", json!({"session_id": "s1", "title": "First"})),
@@ -89,6 +90,20 @@ async fn plugin_cache_repair_route_rejects_path_segments() {
             .as_str()
             .unwrap_or_default()
             .contains("插件缓存参数")
+    );
+}
+
+#[tokio::test]
+async fn plugin_cache_refresh_official_route_requires_confirm() {
+    let result =
+        handle_bridge_request(test_context(), "/plugin-cache/refresh-official", json!({})).await;
+
+    assert_eq!(result["status"], "failed");
+    assert!(
+        result["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("confirm=true")
     );
 }
 

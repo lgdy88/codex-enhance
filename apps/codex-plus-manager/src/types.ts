@@ -105,6 +105,27 @@ export type OfficialPluginHealthResult = CommandResult<{
   };
 }>;
 
+export type PluginCacheRepairResult = {
+  status: string;
+  message: string;
+  marketplace: string;
+  plugin: string;
+  cache_path: string;
+  backup_path: string;
+  moved: boolean;
+};
+
+export type OfficialPluginCacheRefreshResult = CommandResult<{
+  refresh: {
+    status: string;
+    message: string;
+    codexHome: string;
+    cacheRoot: string;
+    backupRoot: string;
+    plugins: PluginCacheRepairResult[];
+  };
+}>;
+
 export type RemoteControlConfig = {
   enabled: boolean;
   channel: "feishu" | string;
@@ -390,6 +411,7 @@ export type Actions = {
   uninstallEntrypoints: () => Promise<void>;
   repairShortcuts: () => Promise<void>;
   checkOfficialPlugins: () => Promise<void>;
+  refreshOfficialPluginCache: () => Promise<void>;
   checkUpdate: () => Promise<void>;
   performUpdate: () => Promise<void>;
   saveSettings: () => Promise<void>;

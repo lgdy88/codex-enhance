@@ -13,6 +13,7 @@ import type {
   ImageGeneratedResult,
   InstallResult,
   LogsResult,
+  OfficialPluginCacheRefreshResult,
   OfficialPluginHealthResult,
   OverviewResult,
   ProviderActionResult,
@@ -55,6 +56,8 @@ export const copyDiagnostics = () => call<DiagnosticsResult>("copy_diagnostics")
 export const loadWatcherState = () => call<WatcherResult>("load_watcher_state");
 
 export const checkOfficialPlugins = () => call<OfficialPluginHealthResult>("check_official_plugins");
+
+export const refreshOfficialPluginCache = () => call<OfficialPluginCacheRefreshResult>("refresh_official_plugin_cache", { request: { confirm: true } });
 
 export const launchCodexPlus = (
   command: "launch_codex_plus" | "restart_codex_plus",
@@ -318,7 +321,7 @@ function previewCommand(command: string, args?: Record<string, unknown>) {
       silent_shortcut: { status: "preview", path: null },
       management_shortcut: { status: "preview", path: null },
       latest_launch: null,
-      current_version: "1.4.5",
+      current_version: "1.4.6",
       update_status: "preview",
       settings_path: "Web preview",
       logs_path: "Web preview",
@@ -345,6 +348,39 @@ function previewCommand(command: string, args?: Record<string, unknown>) {
       },
     };
   }
+  if (command === "refresh_official_plugin_cache") {
+    const request = args?.request as { confirm?: boolean } | undefined;
+    if (request?.confirm !== true) {
+      return {
+        status: "failed",
+        message: "刷新官方插件缓存需要显式确认。",
+        refresh: {
+          status: "failed",
+          message: "confirm=false",
+          codexHome: "Web preview",
+          cacheRoot: "Web preview",
+          backupRoot: "Web preview",
+          plugins: [],
+        },
+      };
+    }
+    return {
+      status: "accepted",
+      message: "Web 预览不会修改本地 Codex 插件缓存。",
+      refresh: {
+        status: "accepted",
+        message: "桌面版会备份 Browser / Chrome / Computer Use 官方缓存。",
+        codexHome: "Web preview",
+        cacheRoot: "Web preview",
+        backupRoot: "Web preview",
+        plugins: [
+          { status: "accepted", message: "Web 预览未执行。", marketplace: "openai-bundled", plugin: "browser", cache_path: "Web preview", backup_path: "", moved: false },
+          { status: "accepted", message: "Web 预览未执行。", marketplace: "openai-bundled", plugin: "chrome", cache_path: "Web preview", backup_path: "", moved: false },
+          { status: "accepted", message: "Web 预览未执行。", marketplace: "openai-bundled", plugin: "computer-use", cache_path: "Web preview", backup_path: "", moved: false },
+        ],
+      },
+    };
+  }
   if (command === "read_latest_logs") {
     return { status: "ok", message: "Web 预览日志已加载。", path: "Web preview", text: "Web 预览模式：桌面原生命令未连接。", lines: 1 };
   }
@@ -352,7 +388,7 @@ function previewCommand(command: string, args?: Record<string, unknown>) {
     return { status: "ok", message: "Web 预览诊断已生成。", report: "Web preview diagnostics" };
   }
   if (command === "check_update") {
-    return { status: "ok", message: "Web 预览不检查更新。", currentVersion: "1.4.5", latestVersion: null, updateAvailable: false, progress: 0 };
+    return { status: "ok", message: "Web 预览不检查更新。", currentVersion: "1.4.6", latestVersion: null, updateAvailable: false, progress: 0 };
   }
   if (command === "launch_codex_plus" || command === "restart_codex_plus") {
     return { status: "accepted", message: "Web 预览不会启动桌面 Codex。", debugPort: 9229, helperPort: 57321 };
@@ -401,7 +437,7 @@ function previewCommand(command: string, args?: Record<string, unknown>) {
     return { status: "ok", message: "Web 预览不会改动 Watcher。", enabled: false, disabled_flag: "Web preview" };
   }
   if (command === "perform_update") {
-    return { status: "failed", message: "Web 预览不安装更新。", currentVersion: "1.4.5", latestVersion: null, updateAvailable: false, progress: 0 };
+    return { status: "failed", message: "Web 预览不安装更新。", currentVersion: "1.4.6", latestVersion: null, updateAvailable: false, progress: 0 };
   }
   return { status: "ok", message: "Web 预览命令已忽略。" };
 }

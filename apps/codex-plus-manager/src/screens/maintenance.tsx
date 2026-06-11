@@ -101,6 +101,7 @@ export function MaintenanceScreen({
           )}
           <Toolbar>
             <Button variant="secondary" onClick={() => void actions.checkOfficialPlugins()}>检查官方插件</Button>
+            <Button variant="secondary" onClick={() => void actions.refreshOfficialPluginCache()}>刷新官方插件缓存</Button>
           </Toolbar>
         </CardContent>
       </Panel>

@@ -28,7 +28,7 @@
   const projectThreadVisibleLimit = 5;
   const providerStartupPathRepairDelayMs = 1500;
   const styleId = "codex-delete-style";
-  const codexDeleteStyleVersion = "12";
+  const codexDeleteStyleVersion = "13";
   const codexPlusMenuId = "codex-plus-menu";
   const codexPlusMenuFloatingClass = "codex-plus-menu-floating";
   const codexDeleteVersion = "7";
@@ -41,6 +41,7 @@
   const codexConversationTimelineVersion = "2";
   const codexPluginMarketplaceUnlockVersion = "11";
   const codexImageGenerationVersion = "2";
+  const codexVoiceInputVersion = "1";
   const codexPlusVersion = window.__CODEX_PLUS_VERSION__ || "dev";
   const codexPlusDisplayName = "Dex";
   const codexPlusSettingsKey = "codexPlusSettings";
@@ -75,6 +76,13 @@
     pluginNavButton: 'nav[role="navigation"] button.h-token-nav-row.w-full',
     pluginSvgPath: 'svg path[d^="M7.94562 14.0277"]',
   };
+  const voiceInputLanguageOptions = [
+    ["zh-CN", "中文"],
+    ["en-US", "English"],
+    ["ja-JP", "日本語"],
+    ["ko-KR", "한국어"],
+    ["yue-Hant-HK", "粤语"],
+  ];
 
   function installStyle() {
     const existingStyle = document.getElementById(styleId);
@@ -653,6 +661,50 @@
       .codex-plus-provider-diagnostics-row span:first-child { color: #a1a1aa; }
       .codex-plus-provider-diagnostics-row span:last-child { text-align: right; word-break: break-all; }
       .codex-plus-provider-actions { display: grid; justify-items: end; gap: 8px; min-width: 92px; }
+      .codex-voice-toolbar {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin: 4px 0;
+        pointer-events: auto;
+      }
+      .codex-voice-button {
+        border: 1px solid rgba(16, 163, 127, .28);
+        border-radius: 999px;
+        background: rgba(16, 163, 127, .1);
+        color: #0f766e;
+        cursor: pointer;
+        font: 12px system-ui, sans-serif;
+        line-height: 16px;
+        min-height: 28px;
+        padding: 5px 9px;
+      }
+      .codex-voice-button[data-state="listening"] {
+        background: #10a37f;
+        color: white;
+      }
+      .codex-voice-status {
+        color: #6b7280;
+        font: 12px system-ui, sans-serif;
+        max-width: min(360px, 56vw);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .codex-plus-voice-actions {
+        display: grid;
+        justify-items: end;
+        gap: 8px;
+        min-width: 122px;
+      }
+      .codex-plus-select {
+        border: 1px solid rgba(255,255,255,.18);
+        border-radius: 7px;
+        background: #27272a;
+        color: #f3f4f6;
+        font: 12px system-ui, sans-serif;
+        padding: 6px 8px;
+      }
       .${timelineClass} {
         position: fixed;
         top: calc(72px + 12px);
@@ -727,7 +779,7 @@
   }
 
   function defaultCodexPlusSettings() {
-    return { enhancementsEnabled: true, pluginMarketplaceUnlock: true, pluginEntryUnlock: true, forcePluginInstall: true, modelWhitelistUnlock: false, sessionDelete: true, markdownExport: true, projectMove: true, conversationTimeline: true, nativeMenuPlacement: true };
+    return { enhancementsEnabled: true, pluginMarketplaceUnlock: true, pluginEntryUnlock: true, forcePluginInstall: true, modelWhitelistUnlock: false, sessionDelete: true, markdownExport: true, projectMove: true, conversationTimeline: true, nativeMenuPlacement: true, voiceInput: true, voiceInputLang: "zh-CN" };
   }
 
   function gateCodexPlusEnhancements(settings) {
@@ -743,6 +795,7 @@
       projectMove: false,
       conversationTimeline: false,
       nativeMenuPlacement: false,
+      voiceInput: false,
     };
   }
 
@@ -766,6 +819,12 @@
     const next = { ...rawCodexPlusSettings(), [key]: value };
     if (key === "pluginMarketplaceUnlock") next.pluginEntryUnlock = value;
     localStorage.setItem(codexPlusSettingsKey, JSON.stringify(next));
+    renderCodexPlusMenu();
+    scan();
+  }
+
+  function setCodexPlusValue(key, value) {
+    localStorage.setItem(codexPlusSettingsKey, JSON.stringify({ ...rawCodexPlusSettings(), [key]: value }));
     renderCodexPlusMenu();
     scan();
   }
@@ -808,6 +867,9 @@
     document.querySelectorAll(".codex-plus-toggle[data-codex-plus-setting]").forEach((button) => {
       const key = button.getAttribute("data-codex-plus-setting");
       button.dataset.enabled = String(!!codexPlusSettings()[key]);
+    });
+    document.querySelectorAll("[data-codex-voice-lang]").forEach((select) => {
+      select.value = voiceInputLanguage();
     });
   }
 
@@ -1097,6 +1159,44 @@
     showToast(result?.message || "Provider metadata 收敛已执行", null);
     await loadProviderDiagnostics();
     refreshProviderHistoryUi();
+  }
+
+  async function refreshOfficialPluginCache() {
+    const ok = await approveOfficialPluginCacheRefresh();
+    if (!ok) return;
+    const result = await postJson("/plugin-cache/refresh-official", { confirm: true });
+    const moved = Array.isArray(result?.plugins) ? result.plugins.filter((plugin) => plugin?.moved).length : 0;
+    showToast(result?.message || `官方插件缓存刷新已执行（备份 ${moved} 项）`, null);
+  }
+
+  function approveOfficialPluginCacheRefresh() {
+    document.querySelectorAll(".codex-delete-confirm-overlay").forEach((node) => node.remove());
+    return new Promise((resolve) => {
+      const overlay = document.createElement("div");
+      overlay.className = "codex-delete-confirm-overlay";
+      overlay.innerHTML = `
+        <div class="codex-delete-confirm-content" role="dialog" aria-modal="true" aria-label="刷新官方插件缓存">
+          <div class="codex-delete-confirm-title">刷新官方插件缓存</div>
+          <div class="codex-delete-confirm-message">这会把 Browser / Chrome / Computer Use 的官方 bundled 缓存移动到 Dex 备份目录，重启 Codex 后再重新拉取或重建。不会修改 auth.json、config.toml、Chrome 用户数据或注册表。</div>
+          <div class="codex-delete-confirm-actions">
+            <button type="button" data-codex-plugin-cache-refresh-cancel="true">取消</button>
+            <button type="button" data-codex-plugin-cache-refresh-accept="true">刷新</button>
+          </div>
+        </div>
+      `;
+      overlay.addEventListener("click", (event) => {
+        const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+        if (event.target === overlay || target?.closest("[data-codex-plugin-cache-refresh-cancel]")) {
+          overlay.remove();
+          resolve(false);
+        }
+        if (target?.closest("[data-codex-plugin-cache-refresh-accept]")) {
+          overlay.remove();
+          resolve(true);
+        }
+      }, true);
+      document.body.appendChild(overlay);
+    });
   }
 
   async function quarantineProviderStateDb() {
@@ -1543,8 +1643,11 @@
               <button type="button" class="codex-plus-toggle" data-codex-plus-setting="pluginMarketplaceUnlock"><span></span></button>
             </div>
             <div class="codex-plus-row">
-              <div><div class="codex-plus-row-title">特殊插件强制安装</div><div class="codex-plus-row-description">解除 App unavailable / 应用不可用导致的前端安装禁用。</div></div>
-              <button type="button" class="codex-plus-toggle" data-codex-plus-setting="forcePluginInstall"><span></span></button>
+              <div><div class="codex-plus-row-title">特殊插件强制安装</div><div class="codex-plus-row-description">解除 App unavailable / 应用不可用导致的前端安装禁用；切换供应商后插件消失时，可备份并刷新官方缓存。</div></div>
+              <div class="codex-plus-model-actions">
+                <button type="button" class="codex-plus-toggle" data-codex-plus-setting="forcePluginInstall"><span></span></button>
+                <button type="button" class="codex-plus-action-button" data-codex-plugin-cache-refresh="true">刷新缓存</button>
+              </div>
             </div>
             <div class="codex-plus-row">
               <div>
@@ -1573,6 +1676,18 @@
             <div class="codex-plus-row">
               <div><div class="codex-plus-row-title">对话 Timeline</div><div class="codex-plus-row-description">在对话右侧显示用户提问时间线，悬停查看摘要，点击跳转。</div></div>
               <button type="button" class="codex-plus-toggle" data-codex-plus-setting="conversationTimeline"><span></span></button>
+            </div>
+            <div class="codex-plus-row">
+              <div>
+                <div class="codex-plus-row-title">Dex 语音输入 Beta</div>
+                <div class="codex-plus-row-description">在输入框旁显示语音按钮，只把识别文本填入当前 composer，不自动发送。当前使用浏览器听写能力；离线 SenseVoice 包未安装时不记录音频或转写全文。</div>
+              </div>
+              <div class="codex-plus-voice-actions">
+                <button type="button" class="codex-plus-toggle" data-codex-plus-setting="voiceInput"><span></span></button>
+                <select class="codex-plus-select" data-codex-voice-lang aria-label="Dex 语音输入语言">
+                  ${voiceInputLanguageOptions.map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join("")}
+                </select>
+              </div>
             </div>
             <div class="codex-plus-row">
               <div><div class="codex-plus-row-title">供应商历史管理</div><div class="codex-plus-row-description">本地 SQLite bridge 优先跨 provider 查询历史；运行中监听 model_provider 变化；路径自动修复，provider metadata 只在兼容模式手动收敛。</div></div>
@@ -1681,6 +1796,15 @@
         loadCodexModelCatalog(true);
         return;
       }
+      if (target?.closest("[data-codex-plugin-cache-refresh]")) {
+        refreshOfficialPluginCache();
+        return;
+      }
+      const voiceLanguage = target?.closest("[data-codex-voice-lang]");
+      if (voiceLanguage) {
+        setCodexPlusValue("voiceInputLang", voiceLanguage.value);
+        return;
+      }
       if (target?.closest("[data-codex-provider-repair-paths]")) {
         repairProviderPaths();
         return;
@@ -1706,6 +1830,11 @@
         setBackendSetting(key, !codexPlusBackendSettings[key]).then(refreshProviderHistoryUi);
         return;
       }
+    }, true);
+    overlay.addEventListener("change", (event) => {
+      const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+      const voiceLanguage = target?.closest("[data-codex-voice-lang]");
+      if (voiceLanguage) setCodexPlusValue("voiceInputLang", voiceLanguage.value);
     }, true);
     document.body.appendChild(overlay);
     renderCodexPlusMenu();
@@ -2552,6 +2681,177 @@
     }
     element.textContent = "";
     element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward", data: null }));
+  }
+
+  function voiceInputLanguage() {
+    const value = String(rawCodexPlusSettings().voiceInputLang || "zh-CN");
+    return voiceInputLanguageOptions.some(([language]) => language === value) ? value : "zh-CN";
+  }
+
+  function voiceRecognitionCtor() {
+    return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+  }
+
+  function latestPromptElement() {
+    const inputs = promptCandidates(document).filter((input) => !input.closest?.("[data-codex-voice-toolbar]"));
+    return inputs.sort((left, right) => right.getBoundingClientRect().bottom - left.getBoundingClientRect().bottom)[0] || null;
+  }
+
+  function currentPromptElement() {
+    return activePromptElement() || latestPromptElement();
+  }
+
+  function textJoiner(existing, text) {
+    if (!existing || /\s$/.test(existing)) return "";
+    if (/^[,.;:!?，。！？；：、]/.test(text)) return "";
+    if (/[\u4e00-\u9fff]$/.test(existing) || /^[\u4e00-\u9fff]/.test(text)) return "";
+    return " ";
+  }
+
+  function insertPromptText(element, text) {
+    const normalized = String(text || "").trim();
+    if (!element || !normalized) return false;
+    element.focus?.();
+    if ("value" in element) {
+      const start = element.selectionStart ?? element.value.length;
+      const end = element.selectionEnd ?? element.value.length;
+      const prefix = element.value.slice(0, start);
+      const suffix = element.value.slice(end);
+      const insert = `${textJoiner(prefix, normalized)}${normalized}`;
+      element.value = `${prefix}${insert}${suffix}`;
+      element.selectionStart = element.selectionEnd = prefix.length + insert.length;
+      element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: normalized }));
+      return true;
+    }
+    if (document.execCommand?.("insertText", false, `${textJoiner(promptElementText(element), normalized)}${normalized}`)) return true;
+    element.textContent = `${promptElementText(element)}${textJoiner(promptElementText(element), normalized)}${normalized}`;
+    element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: normalized }));
+    return true;
+  }
+
+  function setVoiceStatus(message) {
+    document.querySelectorAll("[data-codex-voice-status]").forEach((node) => {
+      node.textContent = message || "";
+      node.hidden = !message;
+    });
+  }
+
+  function stopVoiceInput(message = "") {
+    const recognition = window.__codexVoiceRecognition;
+    window.__codexVoiceListening = false;
+    window.__codexVoiceRecognition = null;
+    try {
+      recognition?.stop?.();
+    } catch {
+    }
+    document.querySelectorAll("[data-codex-voice-button]").forEach((button) => {
+      button.dataset.state = "idle";
+      button.textContent = "语音";
+      button.disabled = false;
+      button.setAttribute("aria-pressed", "false");
+    });
+    setVoiceStatus(message);
+  }
+
+  function voiceErrorMessage(error) {
+    const code = error?.error || error?.message || "";
+    if (code === "not-allowed" || code === "permission-denied") return "麦克风权限被拒绝";
+    if (code === "no-speech") return "没有检测到语音";
+    if (code === "audio-capture") return "未找到可用麦克风";
+    if (code === "network") return "语音识别网络不可用";
+    return `语音识别失败：${code || "unknown"}`;
+  }
+
+  function startVoiceInput(target) {
+    const SpeechRecognition = voiceRecognitionCtor();
+    if (!SpeechRecognition) {
+      showToast("当前 Codex 运行环境不支持浏览器语音识别；离线 SenseVoice 包尚未安装", null);
+      setVoiceStatus("语音识别不可用");
+      return;
+    }
+    const input = currentPromptElement();
+    if (!input) {
+      showToast("未找到可写入的输入框", null);
+      return;
+    }
+    if (!target) {
+      showToast("未找到语音输入按钮", null);
+      return;
+    }
+    stopVoiceInput();
+    const recognition = new SpeechRecognition();
+    recognition.lang = voiceInputLanguage();
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    window.__codexVoiceRecognition = recognition;
+    window.__codexVoiceListening = true;
+    window.__codexVoiceTarget = input;
+    target.dataset.state = "listening";
+    target.textContent = "停止";
+    target.setAttribute("aria-pressed", "true");
+    setVoiceStatus(`正在听写（${recognition.lang}）`);
+    recognition.onresult = (event) => {
+      const parts = Array.from(event.results || []).slice(event.resultIndex || 0);
+      const text = parts.map((result) => result?.[0]?.transcript || "").join("").trim();
+      if (text && insertPromptText(window.__codexVoiceTarget || currentPromptElement(), text)) setVoiceStatus("已写入输入框");
+    };
+    recognition.onerror = (event) => {
+      stopVoiceInput(voiceErrorMessage(event));
+    };
+    recognition.onend = () => {
+      if (window.__codexVoiceListening) stopVoiceInput("听写已停止");
+    };
+    try {
+      recognition.start();
+    } catch (error) {
+      stopVoiceInput(voiceErrorMessage(error));
+    }
+  }
+
+  function toggleVoiceInput(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const button = event.currentTarget || event.target?.closest?.("[data-codex-voice-button]");
+    if (window.__codexVoiceListening) {
+      stopVoiceInput("听写已停止");
+      return;
+    }
+    startVoiceInput(button);
+  }
+
+  function voiceToolbarHost(input) {
+    const root = promptSearchRoot(input);
+    if (root !== document) return root;
+    return input.parentElement || document.body;
+  }
+
+  function installVoiceToolbarForInput(input) {
+    if (!codexPlusSettings().voiceInput || !visiblePromptElement(input)) return;
+    const host = voiceToolbarHost(input);
+    if (!host) return;
+    const existing = host.querySelector?.('[data-codex-voice-toolbar="true"]');
+    if (existing?.dataset.codexVoiceInputVersion === codexVoiceInputVersion) return;
+    existing?.remove();
+    const toolbar = document.createElement("div");
+    toolbar.className = "codex-voice-toolbar";
+    toolbar.dataset.codexVoiceToolbar = "true";
+    toolbar.dataset.codexVoiceInputVersion = codexVoiceInputVersion;
+    toolbar.innerHTML = `<button type="button" class="codex-voice-button" data-codex-voice-button="true" aria-pressed="false" title="Dex 语音输入">语音</button><span class="codex-voice-status" data-codex-voice-status hidden></span>`;
+    toolbar.querySelector("[data-codex-voice-button]")?.addEventListener("click", toggleVoiceInput, true);
+    host.appendChild(toolbar);
+  }
+
+  function refreshVoiceInput() {
+    if (!codexPlusSettings().voiceInput) {
+      stopVoiceInput();
+      document.querySelectorAll('[data-codex-voice-toolbar="true"]').forEach((node) => node.remove());
+      return;
+    }
+    document.querySelectorAll('[data-codex-voice-toolbar="true"]').forEach((node) => {
+      if (!node.isConnected || node.dataset.codexVoiceInputVersion !== codexVoiceInputVersion) node.remove();
+    });
+    const input = currentPromptElement();
+    if (input) installVoiceToolbarForInput(input);
   }
 
   function promptSearchRoot(target) {
@@ -4873,6 +5173,7 @@
     installStyle();
     installCodexPlusMenu();
     installImagePromptCommandHandler();
+    refreshVoiceInput();
     scheduleBackendHeartbeat();
     scheduleProviderWatcher();
     installDeleteButtonEventDelegation();
@@ -4909,7 +5210,7 @@
   }
 
   function isExtensionUiNode(node) {
-    return !!node?.closest?.(`.codex-delete-toast, .codex-delete-confirm-overlay, .codex-image-generation-result, .codex-plus-modal-overlay, .${projectMoveOverlayClass}, .${moreMenuClass}, .${timelineClass}, .codex-conversation-timeline, #codex-plus-menu`);
+    return !!node?.closest?.(`.codex-delete-toast, .codex-delete-confirm-overlay, .codex-image-generation-result, .codex-plus-modal-overlay, .codex-voice-toolbar, .${projectMoveOverlayClass}, .${moreMenuClass}, .${timelineClass}, .codex-conversation-timeline, #codex-plus-menu`);
   }
 
   const scanRelevantSelector = [
@@ -4929,7 +5230,10 @@
     selectors.archiveNav,
     selectors.disabledInstallButton,
     "textarea",
+    "input",
     "[contenteditable='true']",
+    "[role='textbox']",
+    ".ProseMirror",
   ].join(", ");
 
   function nodeSelfOrAncestorMatchesScanRelevance(node) {
