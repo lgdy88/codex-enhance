@@ -344,7 +344,7 @@ function previewCommand(command: string, args?: Record<string, unknown>) {
           { key: "computer-use-plugin", label: "Computer Use 插件", status: "ok", detail: "Web 预览模拟已找到。", path: "Web preview" },
           { key: "runtime-node-repl", label: "node_repl runtime", status: "not_checked", detail: "桌面版会检查真实 runtime。", path: "Web preview" },
         ],
-        repairNotes: ["桌面版检查不会修改 auth.json、config.toml、Chrome 用户数据或 Windows 注册表。"],
+        repairNotes: ["桌面版检查会只读诊断官方插件缓存和 config.toml 插件启用项。"],
       },
     };
   }
@@ -353,13 +353,15 @@ function previewCommand(command: string, args?: Record<string, unknown>) {
     if (request?.confirm !== true) {
       return {
         status: "failed",
-        message: "刷新官方插件缓存需要显式确认。",
+        message: "修复官方插件需要显式确认。",
         refresh: {
           status: "failed",
           message: "confirm=false",
           codexHome: "Web preview",
           cacheRoot: "Web preview",
           backupRoot: "Web preview",
+          configPath: "Web preview",
+          configBackupPath: "",
           plugins: [],
         },
       };
@@ -369,14 +371,16 @@ function previewCommand(command: string, args?: Record<string, unknown>) {
       message: "Web 预览不会修改本地 Codex 插件缓存。",
       refresh: {
         status: "accepted",
-        message: "桌面版会备份 Browser / Chrome / Computer Use 官方缓存。",
+        message: "桌面版会修复 Browser / Chrome / Computer Use 官方缓存和 config.toml 启用项。",
         codexHome: "Web preview",
         cacheRoot: "Web preview",
         backupRoot: "Web preview",
+        configPath: "Web preview",
+        configBackupPath: "",
         plugins: [
-          { status: "accepted", message: "Web 预览未执行。", marketplace: "openai-bundled", plugin: "browser", cache_path: "Web preview", backup_path: "", moved: false },
-          { status: "accepted", message: "Web 预览未执行。", marketplace: "openai-bundled", plugin: "chrome", cache_path: "Web preview", backup_path: "", moved: false },
-          { status: "accepted", message: "Web 预览未执行。", marketplace: "openai-bundled", plugin: "computer-use", cache_path: "Web preview", backup_path: "", moved: false },
+          { status: "accepted", message: "Web 预览未执行。", marketplace: "openai-bundled", plugin: "browser", cache_path: "Web preview", backup_path: "", moved: false, restored: false, config_entry: "browser@openai-bundled", config_updated: false },
+          { status: "accepted", message: "Web 预览未执行。", marketplace: "openai-bundled", plugin: "chrome", cache_path: "Web preview", backup_path: "", moved: false, restored: false, config_entry: "chrome@openai-bundled", config_updated: false },
+          { status: "accepted", message: "Web 预览未执行。", marketplace: "openai-bundled", plugin: "computer-use", cache_path: "Web preview", backup_path: "", moved: false, restored: false, config_entry: "computer-use@openai-bundled", config_updated: false },
         ],
       },
     };

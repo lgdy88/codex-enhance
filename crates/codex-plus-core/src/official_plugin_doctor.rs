@@ -51,6 +51,7 @@ fn check_official_plugins_with_paths(
         .join("plugins")
         .join("cache")
         .join("openai-bundled");
+    let config_path = paths.codex_home.join("config.toml");
     let browser_root = bundled_cache_root.join("browser");
     let chrome_root = bundled_cache_root.join("chrome");
     let computer_use_root = bundled_cache_root.join("computer-use");
@@ -95,6 +96,24 @@ fn check_official_plugins_with_paths(
             "openai-bundled 缓存",
             &bundled_cache_root,
             "官方 bundled marketplace 缓存根目录",
+        ),
+        plugin_config_check(
+            "browser-config-enabled",
+            "Browser 配置启用",
+            &config_path,
+            "browser@openai-bundled",
+        ),
+        plugin_config_check(
+            "chrome-config-enabled",
+            "Chrome 配置启用",
+            &config_path,
+            "chrome@openai-bundled",
+        ),
+        plugin_config_check(
+            "computer-use-config-enabled",
+            "Computer Use 配置启用",
+            &config_path,
+            "computer-use@openai-bundled",
         ),
         plugin_version_check(
             "browser-plugin",
@@ -217,7 +236,7 @@ fn check_official_plugins_with_paths(
             "默认检查不会执行 .codex 插件缓存中的 Node 脚本，只做文件、JSON 和只读注册表查询。"
                 .to_string(),
             "若 Chrome native-host 或 v2 文件缺失，应走显式修复流程并保留备份。".to_string(),
-            "若 Browser / Computer Use / Chrome 缓存缺失，先在 Codex 官方插件页重新安装对应插件。"
+            "若 Browser / Computer Use / Chrome 缓存缺失或 config.toml 未启用，先运行 Dex 官方插件修复；没有备份时再在 Codex 官方插件页重新安装。"
                 .to_string(),
         ],
     }
@@ -308,6 +327,56 @@ fn plugin_file_check(
         &path,
         format!("{} 内的关键文件", version.version),
     )
+}
+
+fn plugin_config_check(
+    key: &str,
+    label: &str,
+    config_path: &Path,
+    entry: &str,
+) -> OfficialPluginHealthCheck {
+    let Ok(text) = std::fs::read_to_string(config_path) else {
+        return OfficialPluginHealthCheck {
+            key: key.to_string(),
+            label: label.to_string(),
+            status: "missing".to_string(),
+            detail: "未找到 config.toml，无法确认插件启用状态".to_string(),
+            path: Some(display_path(config_path)),
+        };
+    };
+    let Ok(value) = text.parse::<toml::Value>() else {
+        return OfficialPluginHealthCheck {
+            key: key.to_string(),
+            label: label.to_string(),
+            status: "failed".to_string(),
+            detail: "config.toml 不是有效 TOML，无法确认插件启用状态".to_string(),
+            path: Some(display_path(config_path)),
+        };
+    };
+    let enabled = value
+        .get("plugins")
+        .and_then(toml::Value::as_table)
+        .and_then(|plugins| plugins.get(entry))
+        .and_then(toml::Value::as_table)
+        .and_then(|plugin| plugin.get("enabled"))
+        .and_then(toml::Value::as_bool);
+
+    OfficialPluginHealthCheck {
+        key: key.to_string(),
+        label: label.to_string(),
+        status: if enabled == Some(true) {
+            "ok"
+        } else {
+            "missing"
+        }
+        .to_string(),
+        detail: if enabled == Some(true) {
+            format!("{entry} 已在 config.toml 中启用")
+        } else {
+            format!("{entry} 未在 config.toml 中启用")
+        },
+        path: Some(display_path(config_path)),
+    }
 }
 
 fn runtime_check(
@@ -661,6 +730,23 @@ mod tests {
         let chrome = bundled.join("chrome").join("26.602.71036");
         let computer_use = bundled.join("computer-use").join("26.602.71036");
         let bin = local_app_data.join("OpenAI").join("Codex").join("bin");
+        std::fs::create_dir_all(&codex_home).unwrap();
+        std::fs::write(
+            codex_home.join("config.toml"),
+            [
+                "[plugins.\"browser@openai-bundled\"]",
+                "enabled = true",
+                "",
+                "[plugins.\"chrome@openai-bundled\"]",
+                "enabled = true",
+                "",
+                "[plugins.\"computer-use@openai-bundled\"]",
+                "enabled = true",
+                "",
+            ]
+            .join("\n"),
+        )
+        .unwrap();
         std::fs::create_dir_all(browser.join("scripts")).unwrap();
         std::fs::create_dir_all(browser.join("docs")).unwrap();
         std::fs::create_dir_all(chrome.join("scripts")).unwrap();

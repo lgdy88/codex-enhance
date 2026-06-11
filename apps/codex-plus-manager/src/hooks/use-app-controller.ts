@@ -184,11 +184,11 @@ export function useAppController() {
   };
 
   const refreshOfficialPluginCache = async () => {
-    const accepted = window.confirm("这会备份并刷新 Browser / Chrome / Computer Use 官方插件缓存。不会修改 auth.json、config.toml、Chrome 用户数据或注册表。继续后请重启 Codex。");
+    const accepted = window.confirm("这会检查 Browser / Chrome / Computer Use 官方插件缓存，并只补齐 config.toml 中对应插件的 enabled=true。缓存缺失时优先从 Dex 备份恢复；不会修改 auth.json、Provider、模型配置、Chrome 用户数据或注册表。继续后请完全重启 Codex。");
     if (!accepted) return;
     const result = await run(refreshOfficialPluginCacheCommand);
     if (!result) return;
-    showNotice("官方插件缓存", `${result.message} 请重启 Codex 后再检查插件页。`, result.status);
+    showNotice("官方插件修复", `${result.message} 请完全重启 Codex 后再检查插件页。`, result.status);
     await refreshOfficialPlugins(true);
   };
 

@@ -555,6 +555,7 @@ async fn launch_lifecycle_runs_sync_before_launch_writes_success_and_shutdowns_o
             "select-debug:9229",
             "select-helper:57321",
             "load-settings",
+            "ensure-official-plugins:true",
             "provider-sync",
             "start-helper:57321",
             "launch:9229",
@@ -608,6 +609,7 @@ async fn launch_lifecycle_skips_helper_and_injection_when_enhancements_disabled(
             "select-debug:9229",
             "select-helper:57321",
             "load-settings",
+            "ensure-official-plugins:true",
             "launch:9229",
             "status:running",
             "wait-codex",
@@ -677,6 +679,7 @@ async fn launch_lifecycle_enters_degraded_mode_when_injection_fails() {
             "select-debug:9229",
             "select-helper:57321",
             "load-settings",
+            "ensure-official-plugins:true",
             "start-helper:57321",
             "launch:9229",
             "inject:9229:57321",
@@ -723,6 +726,7 @@ async fn launch_lifecycle_cleans_helper_when_launch_fails_after_helper_started()
             "select-debug:9229",
             "select-helper:57321",
             "load-settings",
+            "ensure-official-plugins:true",
             "start-helper:57321",
             "launch:9229",
             "shutdown-helper:57321",
@@ -770,6 +774,7 @@ async fn launch_lifecycle_cleans_helper_and_codex_when_status_save_fails() {
             "select-debug:9229",
             "select-helper:57321",
             "load-settings",
+            "ensure-official-plugins:true",
             "start-helper:57321",
             "launch:9229",
             "inject:9229:57321",
@@ -887,6 +892,37 @@ async fn default_ensure_injection_uses_single_attempt_hook() {
     );
 }
 
+#[tokio::test]
+async fn launch_sequence_checks_official_plugins_before_launch() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let hooks = FakeHooks::new(events.clone()).with_settings(BackendSettings {
+        force_plugin_install: true,
+        enhancements_enabled: false,
+        ..BackendSettings::default()
+    });
+
+    launch_and_inject_with_hooks(
+        LaunchOptions {
+            app_dir: Some(PathBuf::from("C:/Codex/Codex.app")),
+            ..LaunchOptions::default()
+        },
+        &hooks,
+    )
+    .await
+    .unwrap();
+
+    let events = events.lock().unwrap().clone();
+    let ensure_index = events
+        .iter()
+        .position(|event| event.starts_with("ensure-official-plugins:true"))
+        .expect("expected official plugin check");
+    let launch_index = events
+        .iter()
+        .position(|event| event.starts_with("launch:"))
+        .expect("expected launch");
+    assert!(ensure_index < launch_index);
+}
+
 #[derive(Clone)]
 struct FakeHooks {
     events: Arc<Mutex<Vec<String>>>,
@@ -980,6 +1016,14 @@ impl LaunchHooks for FakeHooks {
     async fn load_settings(&self) -> anyhow::Result<BackendSettings> {
         self.event("load-settings");
         Ok(self.settings.clone())
+    }
+
+    async fn ensure_official_plugins(&self, settings: &BackendSettings) -> anyhow::Result<()> {
+        self.event(format!(
+            "ensure-official-plugins:{}",
+            settings.force_plugin_install
+        ));
+        Ok(())
     }
 
     async fn run_provider_sync(&self) -> anyhow::Result<()> {
@@ -1080,6 +1124,14 @@ impl LaunchHooks for SingleAttemptHooks {
 
     async fn load_settings(&self) -> anyhow::Result<BackendSettings> {
         Ok(BackendSettings::default())
+    }
+
+    async fn ensure_official_plugins(&self, settings: &BackendSettings) -> anyhow::Result<()> {
+        self.event(format!(
+            "ensure-official-plugins:{}",
+            settings.force_plugin_install
+        ));
+        Ok(())
     }
 
     async fn run_provider_sync(&self) -> anyhow::Result<()> {

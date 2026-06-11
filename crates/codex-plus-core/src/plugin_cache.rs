@@ -11,6 +11,9 @@ pub struct PluginCacheRepairResult {
     pub cache_path: String,
     pub backup_path: String,
     pub moved: bool,
+    pub restored: bool,
+    pub config_entry: String,
+    pub config_updated: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -21,6 +24,8 @@ pub struct OfficialPluginCacheRefreshResult {
     pub codex_home: String,
     pub cache_root: String,
     pub backup_root: String,
+    pub config_path: String,
+    pub config_backup_path: String,
     pub plugins: Vec<PluginCacheRepairResult>,
 }
 
@@ -45,6 +50,9 @@ pub fn repair_plugin_cache_for_install(
             cache_path: cache_path.to_string_lossy().into_owned(),
             backup_path: String::new(),
             moved: false,
+            restored: false,
+            config_entry: String::new(),
+            config_updated: false,
         });
     }
 
@@ -65,37 +73,120 @@ pub fn repair_plugin_cache_for_install(
         cache_path: cache_path.to_string_lossy().into_owned(),
         backup_path: backup_path.to_string_lossy().into_owned(),
         moved: true,
+        restored: false,
+        config_entry: String::new(),
+        config_updated: false,
     })
 }
 
 pub fn refresh_official_plugin_cache() -> anyhow::Result<OfficialPluginCacheRefreshResult> {
-    refresh_plugin_cache_for(
+    repair_official_plugin_cache(
         "openai-bundled",
-        &["browser", "chrome", "computer-use"],
+        &official_plugin_specs(),
         crate::paths::default_plugin_cache_backups_dir(),
     )
 }
 
-fn refresh_plugin_cache_for(
+#[derive(Debug, Clone)]
+struct OfficialPluginSpec {
+    plugin: &'static str,
+    required_paths: &'static [&'static [&'static str]],
+    required_root_paths: &'static [&'static [&'static str]],
+}
+
+#[derive(Debug, Clone)]
+struct ConfigRepairResult {
+    path: PathBuf,
+    backup_path: Option<PathBuf>,
+    updated_entries: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct PluginVersion {
+    path: PathBuf,
+}
+
+fn official_plugin_specs() -> Vec<OfficialPluginSpec> {
+    vec![
+        OfficialPluginSpec {
+            plugin: "browser",
+            required_paths: &[&["scripts", "browser-client.mjs"], &["docs"]],
+            required_root_paths: &[],
+        },
+        OfficialPluginSpec {
+            plugin: "chrome",
+            required_paths: &[
+                &["scripts", "browser-client.mjs"],
+                &["scripts", "installManifest.mjs"],
+                &["extension-host", "windows", "x64", "extension-host.exe"],
+            ],
+            required_root_paths: &[
+                &["latest", "scripts", "browser-client.mjs"],
+                &["latest", "scripts", "installManifest.mjs"],
+                &[
+                    "latest",
+                    "extension-host",
+                    "windows",
+                    "x64",
+                    "extension-host.exe",
+                ],
+            ],
+        },
+        OfficialPluginSpec {
+            plugin: "computer-use",
+            required_paths: &[&["scripts", "computer-use-client.mjs"]],
+            required_root_paths: &[],
+        },
+    ]
+}
+
+fn repair_official_plugin_cache(
     marketplace: &str,
-    plugins: &[&str],
+    plugins: &[OfficialPluginSpec],
     backup_root: PathBuf,
 ) -> anyhow::Result<OfficialPluginCacheRefreshResult> {
     let codex_home = codex_home_dir();
     let cache_root = codex_home.join("plugins").join("cache");
+    let marketplace = sanitize_segment(marketplace)?;
+    let config_repair =
+        ensure_official_plugin_config(&codex_home, &marketplace, plugins, &backup_root)?;
     let plugin_results = plugins
         .iter()
         .map(|plugin| {
-            repair_plugin_cache_for_install_with_backup_root(marketplace, plugin, &backup_root)
+            repair_official_plugin_cache_with_backup_root(
+                &marketplace,
+                plugin,
+                &backup_root,
+                &config_repair.updated_entries,
+            )
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
     let moved_count = plugin_results.iter().filter(|result| result.moved).count();
-    let missing_count = plugin_results.len().saturating_sub(moved_count);
-    let status = if moved_count > 0 { "ok" } else { "accepted" };
-    let message = if moved_count > 0 {
-        format!("已备份 {moved_count} 个官方插件缓存；重启 Codex 后会重新拉取/重建。")
+    let restored_count = plugin_results
+        .iter()
+        .filter(|result| result.restored)
+        .count();
+    let config_updated_count = config_repair.updated_entries.len();
+    let unresolved_count = plugin_results
+        .iter()
+        .filter(|result| result.status != "ok")
+        .count();
+    let status = if unresolved_count > 0 {
+        "needs_repair"
     } else {
-        format!("未发现可备份的官方插件缓存；{missing_count} 个目标缓存已不存在。")
+        "ok"
+    };
+    let message = if unresolved_count > 0 {
+        format!(
+            "还有 {unresolved_count} 个官方插件缓存缺失且未找到有效备份；请在 Codex 设置中重新安装 Browser / Chrome / Computer Use。"
+        )
+    } else if moved_count > 0 || restored_count > 0 || config_updated_count > 0 {
+        format!(
+            "已修复官方插件：恢复 {restored_count} 个缓存、备份 {moved_count} 个旧缓存、启用 {config_updated_count} 个 config.toml 表项；请完全重启 Codex。"
+        )
+    } else {
+        "官方插件缓存和 config.toml 启用状态已完整；如插件页仍未显示，请完全重启 Codex。"
+            .to_string()
     };
 
     Ok(OfficialPluginCacheRefreshResult {
@@ -104,6 +195,12 @@ fn refresh_plugin_cache_for(
         codex_home: codex_home.to_string_lossy().into_owned(),
         cache_root: cache_root.to_string_lossy().into_owned(),
         backup_root: backup_root.to_string_lossy().into_owned(),
+        config_path: config_repair.path.to_string_lossy().into_owned(),
+        config_backup_path: config_repair
+            .backup_path
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_default(),
         plugins: plugin_results,
     })
 }
@@ -116,47 +213,308 @@ fn codex_home_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(".codex"))
 }
 
-fn repair_plugin_cache_for_install_with_backup_root(
+fn repair_official_plugin_cache_with_backup_root(
     marketplace: &str,
-    plugin: &str,
+    spec: &OfficialPluginSpec,
     backup_root: &Path,
+    updated_config_entries: &[String],
 ) -> anyhow::Result<PluginCacheRepairResult> {
     let marketplace = sanitize_segment(marketplace)?;
-    let plugin = sanitize_segment(plugin)?;
+    let plugin = sanitize_segment(spec.plugin)?;
     let codex_home = codex_home_dir();
     let cache_root = codex_home.join("plugins").join("cache");
     let cache_path = cache_root.join(&marketplace).join(&plugin);
+    let config_entry = plugin_config_entry(&marketplace, &plugin);
+    let config_updated = updated_config_entries
+        .iter()
+        .any(|entry| entry == &config_entry);
 
     ensure_inside(&cache_root, &cache_path)?;
 
-    if !cache_path.exists() {
+    if valid_plugin_cache_root(&cache_path, spec.required_paths, spec.required_root_paths) {
         return Ok(PluginCacheRepairResult {
             status: "ok".to_string(),
-            message: "插件缓存不存在，无需修复".to_string(),
+            message: "插件缓存已完整，已确认启用配置".to_string(),
             marketplace,
             plugin,
             cache_path: cache_path.to_string_lossy().into_owned(),
             backup_path: String::new(),
             moved: false,
+            restored: false,
+            config_entry,
+            config_updated,
         });
     }
 
-    let backup_root = backup_root.join(&marketplace).join(&plugin);
-    std::fs::create_dir_all(&backup_root)?;
-    let backup_path = unique_backup_path(&backup_root);
+    let latest_backup = latest_valid_plugin_backup(
+        backup_root,
+        &marketplace,
+        &plugin,
+        spec.required_paths,
+        spec.required_root_paths,
+    );
+    let Some(latest_backup) = latest_backup else {
+        return Ok(PluginCacheRepairResult {
+            status: "missing".to_string(),
+            message: "插件缓存缺失或不完整，且 Dex 备份中没有可恢复版本".to_string(),
+            marketplace,
+            plugin,
+            cache_path: cache_path.to_string_lossy().into_owned(),
+            backup_path: String::new(),
+            moved: false,
+            restored: false,
+            config_entry,
+            config_updated,
+        });
+    };
 
-    std::fs::rename(&cache_path, &backup_path)
-        .map_err(|error| anyhow::anyhow!("移动插件缓存失败：{error}"))?;
+    let mut moved = false;
+    let mut backup_path = PathBuf::new();
+    if cache_path.exists() {
+        let stale_backup_root = backup_root
+            .join(&marketplace)
+            .join(&plugin)
+            .join("stale-before-restore");
+        std::fs::create_dir_all(&stale_backup_root)?;
+        backup_path = unique_backup_path(&stale_backup_root);
+        std::fs::rename(&cache_path, &backup_path)
+            .map_err(|error| anyhow::anyhow!("移动旧插件缓存失败：{error}"))?;
+        moved = true;
+    }
+
+    if let Some(parent) = cache_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    copy_dir_all(&latest_backup, &cache_path)?;
 
     Ok(PluginCacheRepairResult {
         status: "ok".to_string(),
-        message: "已备份旧插件缓存，可重试安装".to_string(),
+        message: "已从 Dex 备份恢复官方插件缓存，并确认启用配置".to_string(),
         marketplace,
         plugin,
         cache_path: cache_path.to_string_lossy().into_owned(),
-        backup_path: backup_path.to_string_lossy().into_owned(),
-        moved: true,
+        backup_path: if moved {
+            backup_path.to_string_lossy().into_owned()
+        } else {
+            latest_backup.to_string_lossy().into_owned()
+        },
+        moved,
+        restored: true,
+        config_entry,
+        config_updated,
     })
+}
+
+fn valid_plugin_cache_root(
+    path: &Path,
+    required_paths: &[&[&str]],
+    required_root_paths: &[&[&str]],
+) -> bool {
+    if !required_root_paths
+        .iter()
+        .all(|segments| join_segments(path, segments).exists())
+    {
+        return false;
+    }
+    latest_version_dir(path)
+        .map(|version| {
+            required_paths
+                .iter()
+                .all(|segments| join_segments(&version.path, segments).exists())
+        })
+        .unwrap_or(false)
+}
+
+fn latest_valid_plugin_backup(
+    backup_root: &Path,
+    marketplace: &str,
+    plugin: &str,
+    required_paths: &[&[&str]],
+    required_root_paths: &[&[&str]],
+) -> Option<PathBuf> {
+    let root = backup_root.join(marketplace).join(plugin);
+    let entries = std::fs::read_dir(root).ok()?;
+    let mut candidates = entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let path = entry.path();
+            let metadata = entry.metadata().ok()?;
+            if !metadata.is_dir()
+                || !valid_plugin_cache_root(&path, required_paths, required_root_paths)
+            {
+                return None;
+            }
+            let modified = metadata.modified().ok()?;
+            Some((modified, path))
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| right.0.cmp(&left.0));
+    candidates.into_iter().map(|(_, path)| path).next()
+}
+
+fn ensure_official_plugin_config(
+    codex_home: &Path,
+    marketplace: &str,
+    plugins: &[OfficialPluginSpec],
+    backup_root: &Path,
+) -> anyhow::Result<ConfigRepairResult> {
+    let config_path = codex_home.join("config.toml");
+    let original = std::fs::read_to_string(&config_path).unwrap_or_default();
+    let mut next = original.clone();
+    let mut updated_entries = Vec::new();
+
+    for plugin in plugins {
+        let entry = plugin_config_entry(marketplace, plugin.plugin);
+        let (updated, changed) = ensure_plugin_enabled_entry(&next, &entry);
+        if changed {
+            next = updated;
+            updated_entries.push(entry);
+        }
+    }
+
+    let backup_path = if next != original {
+        if let Some(parent) = config_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let backup_path = if config_path.exists() {
+            let root = backup_root.join("config.toml");
+            std::fs::create_dir_all(&root)?;
+            let backup_path = unique_backup_path(&root).with_extension("toml");
+            std::fs::copy(&config_path, &backup_path)
+                .map_err(|error| anyhow::anyhow!("备份 config.toml 失败：{error}"))?;
+            Some(backup_path)
+        } else {
+            None
+        };
+        std::fs::write(&config_path, next)
+            .map_err(|error| anyhow::anyhow!("写入 config.toml 插件启用配置失败：{error}"))?;
+        backup_path
+    } else {
+        None
+    };
+
+    Ok(ConfigRepairResult {
+        path: config_path,
+        backup_path,
+        updated_entries,
+    })
+}
+
+fn plugin_config_entry(marketplace: &str, plugin: &str) -> String {
+    format!("{plugin}@{marketplace}")
+}
+
+fn ensure_plugin_enabled_entry(contents: &str, entry: &str) -> (String, bool) {
+    let header = format!("[plugins.\"{entry}\"]");
+    let mut lines = split_preserving_lines(contents);
+
+    if let Some(index) = lines.iter().position(|line| line.trim() == header) {
+        let end = lines[index + 1..]
+            .iter()
+            .position(|line| {
+                let trimmed = line.trim();
+                trimmed.starts_with('[') && trimmed.ends_with(']')
+            })
+            .map(|offset| index + 1 + offset)
+            .unwrap_or(lines.len());
+        if let Some(enabled_index) = lines[index + 1..end].iter().position(|line| {
+            line.trim_start()
+                .split_once('=')
+                .map(|(key, _)| key.trim() == "enabled")
+                .unwrap_or(false)
+        }) {
+            let absolute_index = index + 1 + enabled_index;
+            if lines[absolute_index].trim() == "enabled = true" {
+                return (contents.to_string(), false);
+            }
+            lines[absolute_index] = "enabled = true\n".to_string();
+            return (lines.concat(), true);
+        }
+        lines.insert(index + 1, "enabled = true\n".to_string());
+        return (lines.concat(), true);
+    }
+
+    let mut next = contents.trim_end_matches(&['\r', '\n'][..]).to_string();
+    if !next.is_empty() {
+        next.push_str("\n\n");
+    }
+    if !contents.lines().any(|line| line.trim() == "[plugins]") {
+        next.push_str("[plugins]\n\n");
+    }
+    next.push_str(&header);
+    next.push_str("\nenabled = true\n");
+    (next, true)
+}
+
+fn split_preserving_lines(contents: &str) -> Vec<String> {
+    if contents.is_empty() {
+        return Vec::new();
+    }
+    let mut lines = Vec::new();
+    let mut start = 0;
+    for (index, ch) in contents.char_indices() {
+        if ch == '\n' {
+            lines.push(contents[start..=index].to_string());
+            start = index + 1;
+        }
+    }
+    if start < contents.len() {
+        lines.push(contents[start..].to_string());
+    }
+    lines
+}
+
+fn copy_dir_all(source: &Path, destination: &Path) -> anyhow::Result<()> {
+    std::fs::create_dir_all(destination)?;
+    for entry in std::fs::read_dir(source)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        if file_type.is_dir() {
+            copy_dir_all(&source_path, &destination_path)?;
+        } else if file_type.is_file() {
+            std::fs::copy(&source_path, &destination_path).map_err(|error| {
+                anyhow::anyhow!(
+                    "复制插件缓存文件失败：{} -> {}: {error}",
+                    source_path.to_string_lossy(),
+                    destination_path.to_string_lossy()
+                )
+            })?;
+        }
+    }
+    Ok(())
+}
+
+fn latest_version_dir(root: &Path) -> Option<PluginVersion> {
+    let entries = std::fs::read_dir(root).ok()?;
+    entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let file_type = entry.file_type().ok()?;
+            if !file_type.is_dir() {
+                return None;
+            }
+            let version = entry.file_name().to_string_lossy().to_string();
+            version_key(&version).map(|key| (key, entry.path()))
+        })
+        .max_by(|left, right| left.0.cmp(&right.0))
+        .map(|(_, path)| PluginVersion { path })
+}
+
+fn version_key(value: &str) -> Option<Vec<u32>> {
+    let parts = value
+        .split('.')
+        .map(str::parse::<u32>)
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    (!parts.is_empty()).then_some(parts)
+}
+
+fn join_segments(root: &Path, segments: &[&str]) -> PathBuf {
+    segments
+        .iter()
+        .fold(root.to_path_buf(), |path, segment| path.join(segment))
 }
 
 fn sanitize_segment(value: &str) -> anyhow::Result<String> {
@@ -224,26 +582,31 @@ mod tests {
     }
 
     #[test]
-    fn refresh_official_plugin_cache_backs_up_known_bundled_plugins_only() {
+    fn refresh_official_plugin_cache_restores_missing_plugins_and_enables_config() {
         let _guard = env_lock().lock().unwrap();
         let temp = tempfile::tempdir().unwrap();
         let codex_home = temp.path().join(".codex");
         let backup_root = temp.path().join("backups");
-        let cache = codex_home
+        let cache_root = codex_home
             .join("plugins")
             .join("cache")
             .join("openai-bundled");
-        std::fs::create_dir_all(cache.join("browser")).unwrap();
-        std::fs::create_dir_all(cache.join("chrome")).unwrap();
-        std::fs::write(cache.join("browser").join("marker.txt"), "browser").unwrap();
-        std::fs::write(cache.join("chrome").join("marker.txt"), "chrome").unwrap();
+        let backup = backup_root.join("openai-bundled");
+        std::fs::create_dir_all(&codex_home).unwrap();
+        std::fs::write(codex_home.join("config.toml"), "model = \"gpt-5\"\n").unwrap();
+        write_complete_plugin_cache(&backup.join("browser").join("backup-1"), "browser");
+        write_complete_plugin_cache(&backup.join("chrome").join("backup-1"), "chrome");
+        write_complete_plugin_cache(
+            &backup.join("computer-use").join("backup-1"),
+            "computer-use",
+        );
 
         unsafe {
             std::env::set_var("CODEX_HOME", &codex_home);
         }
-        let result = refresh_plugin_cache_for(
+        let result = repair_official_plugin_cache(
             "openai-bundled",
-            &["browser", "chrome", "computer-use"],
+            &official_plugin_specs(),
             backup_root.clone(),
         )
         .unwrap();
@@ -254,15 +617,119 @@ mod tests {
         assert_eq!(result.status, "ok");
         assert_eq!(result.plugins.len(), 3);
         assert_eq!(
-            result.plugins.iter().filter(|plugin| plugin.moved).count(),
-            2
+            result
+                .plugins
+                .iter()
+                .filter(|plugin| plugin.restored)
+                .count(),
+            3
         );
-        assert!(!cache.join("browser").exists());
-        assert!(!cache.join("chrome").exists());
-        assert!(backup_root.join("openai-bundled/browser").exists());
-        assert!(backup_root.join("openai-bundled/chrome").exists());
-        assert!(result.plugins.iter().any(|plugin| {
-            plugin.plugin == "computer-use" && !plugin.moved && plugin.backup_path.is_empty()
-        }));
+        assert_eq!(
+            result
+                .plugins
+                .iter()
+                .filter(|plugin| plugin.config_updated)
+                .count(),
+            3
+        );
+        assert!(
+            cache_root
+                .join("browser/26.608.12217/scripts/browser-client.mjs")
+                .exists()
+        );
+        assert!(
+            cache_root
+                .join("chrome/latest/scripts/installManifest.mjs")
+                .exists()
+        );
+        assert!(
+            cache_root
+                .join("computer-use/26.608.12217/scripts/computer-use-client.mjs")
+                .exists()
+        );
+        let config = std::fs::read_to_string(codex_home.join("config.toml")).unwrap();
+        assert!(config.contains("[plugins.\"browser@openai-bundled\"]"));
+        assert!(config.contains("[plugins.\"chrome@openai-bundled\"]"));
+        assert!(config.contains("[plugins.\"computer-use@openai-bundled\"]"));
+    }
+
+    #[test]
+    fn refresh_official_plugin_cache_is_noop_when_plugins_are_complete_and_enabled() {
+        let _guard = env_lock().lock().unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let codex_home = temp.path().join(".codex");
+        let backup_root = temp.path().join("backups");
+        let cache_root = codex_home
+            .join("plugins")
+            .join("cache")
+            .join("openai-bundled");
+        std::fs::create_dir_all(&codex_home).unwrap();
+        std::fs::write(
+            codex_home.join("config.toml"),
+            [
+                "[plugins.\"browser@openai-bundled\"]",
+                "enabled = true",
+                "",
+                "[plugins.\"chrome@openai-bundled\"]",
+                "enabled = true",
+                "",
+                "[plugins.\"computer-use@openai-bundled\"]",
+                "enabled = true",
+                "",
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+        write_complete_plugin_cache(&cache_root.join("browser"), "browser");
+        write_complete_plugin_cache(&cache_root.join("chrome"), "chrome");
+        write_complete_plugin_cache(&cache_root.join("computer-use"), "computer-use");
+
+        unsafe {
+            std::env::set_var("CODEX_HOME", &codex_home);
+        }
+        let result = repair_official_plugin_cache(
+            "openai-bundled",
+            &official_plugin_specs(),
+            backup_root.clone(),
+        )
+        .unwrap();
+        unsafe {
+            std::env::remove_var("CODEX_HOME");
+        }
+
+        assert_eq!(result.status, "ok");
+        assert!(result.plugins.iter().all(|plugin| !plugin.moved));
+        assert!(result.plugins.iter().all(|plugin| !plugin.restored));
+        assert!(result.plugins.iter().all(|plugin| !plugin.config_updated));
+    }
+
+    fn write_complete_plugin_cache(root: &Path, plugin: &str) {
+        let version_root = root.join("26.608.12217");
+        std::fs::create_dir_all(version_root.join(".codex-plugin")).unwrap();
+        std::fs::write(version_root.join(".codex-plugin/plugin.json"), "{}").unwrap();
+        match plugin {
+            "browser" => {
+                std::fs::create_dir_all(version_root.join("scripts")).unwrap();
+                std::fs::create_dir_all(version_root.join("docs")).unwrap();
+                std::fs::write(version_root.join("scripts/browser-client.mjs"), "").unwrap();
+            }
+            "chrome" => {
+                std::fs::create_dir_all(version_root.join("scripts")).unwrap();
+                std::fs::create_dir_all(version_root.join("extension-host/windows/x64")).unwrap();
+                std::fs::write(version_root.join("scripts/browser-client.mjs"), "").unwrap();
+                std::fs::write(version_root.join("scripts/installManifest.mjs"), "").unwrap();
+                std::fs::write(
+                    version_root.join("extension-host/windows/x64/extension-host.exe"),
+                    "",
+                )
+                .unwrap();
+                copy_dir_all(&version_root, &root.join("latest")).unwrap();
+            }
+            "computer-use" => {
+                std::fs::create_dir_all(version_root.join("scripts")).unwrap();
+                std::fs::write(version_root.join("scripts/computer-use-client.mjs"), "").unwrap();
+            }
+            _ => unreachable!("unknown test plugin"),
+        }
     }
 }

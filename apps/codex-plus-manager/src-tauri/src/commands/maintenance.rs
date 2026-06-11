@@ -42,7 +42,7 @@ pub async fn refresh_official_plugin_cache(
 ) -> CommandResult<OfficialPluginCacheRefreshPayload> {
     if !request.confirm {
         return failed(
-            "刷新官方插件缓存需要显式确认。",
+            "修复官方插件需要显式确认。",
             OfficialPluginCacheRefreshPayload {
                 refresh: failed_refresh_result("confirm=false"),
             },
@@ -59,13 +59,13 @@ pub async fn refresh_official_plugin_cache(
             payload: OfficialPluginCacheRefreshPayload { refresh },
         },
         Ok(Err(error)) => failed(
-            &format!("刷新官方插件缓存失败：{error}"),
+            &format!("修复官方插件失败：{error}"),
             OfficialPluginCacheRefreshPayload {
                 refresh: failed_refresh_result(&format!("{error}")),
             },
         ),
         Err(error) => failed(
-            &format!("刷新官方插件缓存后台任务失败：{error}"),
+            &format!("修复官方插件后台任务失败：{error}"),
             OfficialPluginCacheRefreshPayload {
                 refresh: failed_refresh_result(&format!("{error}")),
             },
@@ -82,6 +82,8 @@ fn failed_refresh_result(
         codex_home: String::new(),
         cache_root: String::new(),
         backup_root: String::new(),
+        config_path: String::new(),
+        config_backup_path: String::new(),
         plugins: Vec::new(),
     }
 }

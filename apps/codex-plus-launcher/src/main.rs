@@ -96,6 +96,7 @@ fn should_recover_stale_launcher(debug_port: u16) -> bool {
 async fn activate_existing_codex_app(options: &LaunchOptions) -> anyhow::Result<()> {
     let hooks = LauncherHooks::default();
     let settings = hooks.load_settings().await?;
+    hooks.ensure_official_plugins(&settings).await?;
     let app_dir = hooks.resolve_app_dir(options.app_dir.as_deref(), &settings)?;
     let mut codex_extra_args = settings.codex_extra_args.clone();
     codex_extra_args.extend(options.codex_extra_args.clone());
@@ -284,6 +285,13 @@ impl LaunchHooks for LauncherHooks {
 
     async fn load_settings(&self) -> anyhow::Result<codex_plus_core::settings::BackendSettings> {
         self.core.load_settings().await
+    }
+
+    async fn ensure_official_plugins(
+        &self,
+        settings: &codex_plus_core::settings::BackendSettings,
+    ) -> anyhow::Result<()> {
+        self.core.ensure_official_plugins(settings).await
     }
 
     async fn run_provider_sync(&self) -> anyhow::Result<()> {
@@ -797,6 +805,7 @@ mod tests {
         assert!(source.contains(
             "async fn activate_existing_codex_app(options: &LaunchOptions) -> anyhow::Result<()> {\n    let hooks = LauncherHooks::default();"
         ));
+        assert!(source.contains("hooks.ensure_official_plugins(&settings).await?;"));
         assert!(
             source.contains("ensure_existing_instance_helper(&hooks, options.helper_port).await")
         );

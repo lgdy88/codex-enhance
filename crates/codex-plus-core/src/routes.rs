@@ -589,7 +589,7 @@ fn plugin_cache_repair_install_value(payload: Value) -> anyhow::Result<Value> {
 
 fn plugin_cache_refresh_official_value(payload: Value) -> anyhow::Result<Value> {
     if payload.get("confirm").and_then(Value::as_bool) != Some(true) {
-        anyhow::bail!("刷新官方插件缓存需要 confirm=true");
+        anyhow::bail!("修复官方插件需要 confirm=true");
     }
     result_value(crate::plugin_cache::refresh_official_plugin_cache())
 }

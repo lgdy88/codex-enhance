@@ -113,6 +113,9 @@ export type PluginCacheRepairResult = {
   cache_path: string;
   backup_path: string;
   moved: boolean;
+  restored: boolean;
+  config_entry: string;
+  config_updated: boolean;
 };
 
 export type OfficialPluginCacheRefreshResult = CommandResult<{
@@ -122,6 +125,8 @@ export type OfficialPluginCacheRefreshResult = CommandResult<{
     codexHome: string;
     cacheRoot: string;
     backupRoot: string;
+    configPath: string;
+    configBackupPath: string;
     plugins: PluginCacheRepairResult[];
   };
 }>;

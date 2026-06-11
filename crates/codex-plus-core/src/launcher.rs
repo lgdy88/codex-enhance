@@ -124,6 +124,9 @@ pub trait LaunchHooks: Send + Sync {
     fn select_debug_port(&self, requested: u16) -> u16;
     fn select_helper_port(&self, requested: u16) -> u16;
     async fn load_settings(&self) -> anyhow::Result<BackendSettings>;
+    async fn ensure_official_plugins(&self, _settings: &BackendSettings) -> anyhow::Result<()> {
+        Ok(())
+    }
     async fn run_provider_sync(&self) -> anyhow::Result<()>;
     async fn start_helper(&self, helper_port: u16) -> anyhow::Result<()>;
     async fn launch_codex(
@@ -207,6 +210,7 @@ where
     let debug_port = hooks.select_debug_port(options.debug_port);
     let helper_port = hooks.select_helper_port(options.helper_port);
     let settings = hooks.load_settings().await?;
+    hooks.ensure_official_plugins(&settings).await?;
     let app_dir = hooks.resolve_app_dir(options.app_dir.as_deref(), &settings)?;
     let mut codex_extra_args = settings.codex_extra_args.clone();
     codex_extra_args.extend(options.codex_extra_args.clone());
@@ -348,6 +352,13 @@ impl LaunchHooks for DefaultLaunchHooks {
 
     async fn load_settings(&self) -> anyhow::Result<BackendSettings> {
         SettingsStore::default().load()
+    }
+
+    async fn ensure_official_plugins(&self, settings: &BackendSettings) -> anyhow::Result<()> {
+        if settings.force_plugin_install {
+            crate::plugin_cache::refresh_official_plugin_cache()?;
+        }
+        Ok(())
     }
 
     async fn run_provider_sync(&self) -> anyhow::Result<()> {

@@ -1166,7 +1166,9 @@
     if (!ok) return;
     const result = await postJson("/plugin-cache/refresh-official", { confirm: true });
     const moved = Array.isArray(result?.plugins) ? result.plugins.filter((plugin) => plugin?.moved).length : 0;
-    showToast(result?.message || `官方插件缓存刷新已执行（备份 ${moved} 项）`, null);
+    const restored = Array.isArray(result?.plugins) ? result.plugins.filter((plugin) => plugin?.restored).length : 0;
+    const configUpdated = Array.isArray(result?.plugins) ? result.plugins.filter((plugin) => plugin?.config_updated).length : 0;
+    showToast(result?.message || `官方插件修复已执行（恢复 ${restored} 项、备份 ${moved} 项、启用 ${configUpdated} 项）`, null);
   }
 
   function approveOfficialPluginCacheRefresh() {
@@ -1175,12 +1177,12 @@
       const overlay = document.createElement("div");
       overlay.className = "codex-delete-confirm-overlay";
       overlay.innerHTML = `
-        <div class="codex-delete-confirm-content" role="dialog" aria-modal="true" aria-label="刷新官方插件缓存">
-          <div class="codex-delete-confirm-title">刷新官方插件缓存</div>
-          <div class="codex-delete-confirm-message">这会把 Browser / Chrome / Computer Use 的官方 bundled 缓存移动到 Dex 备份目录，重启 Codex 后再重新拉取或重建。不会修改 auth.json、config.toml、Chrome 用户数据或注册表。</div>
+        <div class="codex-delete-confirm-content" role="dialog" aria-modal="true" aria-label="修复官方插件">
+          <div class="codex-delete-confirm-title">修复官方插件</div>
+          <div class="codex-delete-confirm-message">这会检查 Browser / Chrome / Computer Use 的官方 bundled 缓存，并只补齐 config.toml 中对应插件的 enabled=true。缓存缺失时优先从 Dex 备份恢复；不会修改 auth.json、Provider、模型配置、Chrome 用户数据或注册表。</div>
           <div class="codex-delete-confirm-actions">
             <button type="button" data-codex-plugin-cache-refresh-cancel="true">取消</button>
-            <button type="button" data-codex-plugin-cache-refresh-accept="true">刷新</button>
+            <button type="button" data-codex-plugin-cache-refresh-accept="true">修复</button>
           </div>
         </div>
       `;
@@ -1643,10 +1645,10 @@
               <button type="button" class="codex-plus-toggle" data-codex-plus-setting="pluginMarketplaceUnlock"><span></span></button>
             </div>
             <div class="codex-plus-row">
-              <div><div class="codex-plus-row-title">特殊插件强制安装</div><div class="codex-plus-row-description">解除 App unavailable / 应用不可用导致的前端安装禁用；切换供应商后插件消失时，可备份并刷新官方缓存。</div></div>
+              <div><div class="codex-plus-row-title">特殊插件强制安装</div><div class="codex-plus-row-description">解除 App unavailable / 应用不可用导致的前端安装禁用；切换供应商后插件消失时，可恢复官方缓存并补齐 config.toml 启用项。</div></div>
               <div class="codex-plus-model-actions">
                 <button type="button" class="codex-plus-toggle" data-codex-plus-setting="forcePluginInstall"><span></span></button>
-                <button type="button" class="codex-plus-action-button" data-codex-plugin-cache-refresh="true">刷新缓存</button>
+                <button type="button" class="codex-plus-action-button" data-codex-plugin-cache-refresh="true">修复插件</button>
               </div>
             </div>
             <div class="codex-plus-row">

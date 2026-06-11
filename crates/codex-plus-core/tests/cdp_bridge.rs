@@ -210,7 +210,8 @@ fn injection_script_exposes_official_plugin_cache_refresh() {
     assert!(script.contains("function approveOfficialPluginCacheRefresh()"));
     assert!(script.contains("postJson(\"/plugin-cache/refresh-official\", { confirm: true })"));
     assert!(script.contains("Browser / Chrome / Computer Use"));
-    assert!(script.contains("不会修改 auth.json、config.toml、Chrome 用户数据或注册表"));
+    assert!(script.contains("只补齐 config.toml 中对应插件的 enabled=true"));
+    assert!(script.contains("不会修改 auth.json、Provider、模型配置、Chrome 用户数据或注册表"));
 }
 
 #[test]
