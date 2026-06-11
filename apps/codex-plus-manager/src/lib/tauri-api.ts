@@ -321,7 +321,7 @@ function previewCommand(command: string, args?: Record<string, unknown>) {
       silent_shortcut: { status: "preview", path: null },
       management_shortcut: { status: "preview", path: null },
       latest_launch: null,
-      current_version: "1.4.6",
+      current_version: "1.4.8",
       update_status: "preview",
       settings_path: "Web preview",
       logs_path: "Web preview",
@@ -344,7 +344,7 @@ function previewCommand(command: string, args?: Record<string, unknown>) {
           { key: "computer-use-plugin", label: "Computer Use 插件", status: "ok", detail: "Web 预览模拟已找到。", path: "Web preview" },
           { key: "runtime-node-repl", label: "node_repl runtime", status: "not_checked", detail: "桌面版会检查真实 runtime。", path: "Web preview" },
         ],
-        repairNotes: ["桌面版检查会只读诊断官方插件缓存和 config.toml 插件启用项。"],
+        repairNotes: ["桌面版检查会只读诊断官方插件缓存、config.toml 插件启用项和运行态插件状态。"],
       },
     };
   }
@@ -362,6 +362,10 @@ function previewCommand(command: string, args?: Record<string, unknown>) {
           backupRoot: "Web preview",
           configPath: "Web preview",
           configBackupPath: "",
+          globalStatePath: "Web preview",
+          globalStateBackupPath: "",
+          globalStateUpdated: false,
+          globalStateEntries: [],
           plugins: [],
         },
       };
@@ -371,12 +375,20 @@ function previewCommand(command: string, args?: Record<string, unknown>) {
       message: "Web 预览不会修改本地 Codex 插件缓存。",
       refresh: {
         status: "accepted",
-        message: "桌面版会修复 Browser / Chrome / Computer Use 官方缓存和 config.toml 启用项。",
+        message: "桌面版会修复 Browser / Chrome / Computer Use 官方缓存、config.toml 启用项和运行态插件状态。",
         codexHome: "Web preview",
         cacheRoot: "Web preview",
         backupRoot: "Web preview",
         configPath: "Web preview",
         configBackupPath: "",
+        globalStatePath: "Web preview",
+        globalStateBackupPath: "",
+        globalStateUpdated: true,
+        globalStateEntries: [
+          "browser@openai-bundled",
+          "chrome@openai-bundled",
+          "computer-use@openai-bundled",
+        ],
         plugins: [
           { status: "accepted", message: "Web 预览未执行。", marketplace: "openai-bundled", plugin: "browser", cache_path: "Web preview", backup_path: "", moved: false, restored: false, config_entry: "browser@openai-bundled", config_updated: false },
           { status: "accepted", message: "Web 预览未执行。", marketplace: "openai-bundled", plugin: "chrome", cache_path: "Web preview", backup_path: "", moved: false, restored: false, config_entry: "chrome@openai-bundled", config_updated: false },
@@ -392,7 +404,7 @@ function previewCommand(command: string, args?: Record<string, unknown>) {
     return { status: "ok", message: "Web 预览诊断已生成。", report: "Web preview diagnostics" };
   }
   if (command === "check_update") {
-    return { status: "ok", message: "Web 预览不检查更新。", currentVersion: "1.4.6", latestVersion: null, updateAvailable: false, progress: 0 };
+    return { status: "ok", message: "Web 预览不检查更新。", currentVersion: "1.4.8", latestVersion: null, updateAvailable: false, progress: 0 };
   }
   if (command === "launch_codex_plus" || command === "restart_codex_plus") {
     return { status: "accepted", message: "Web 预览不会启动桌面 Codex。", debugPort: 9229, helperPort: 57321 };
@@ -441,7 +453,7 @@ function previewCommand(command: string, args?: Record<string, unknown>) {
     return { status: "ok", message: "Web 预览不会改动 Watcher。", enabled: false, disabled_flag: "Web preview" };
   }
   if (command === "perform_update") {
-    return { status: "failed", message: "Web 预览不安装更新。", currentVersion: "1.4.6", latestVersion: null, updateAvailable: false, progress: 0 };
+    return { status: "failed", message: "Web 预览不安装更新。", currentVersion: "1.4.8", latestVersion: null, updateAvailable: false, progress: 0 };
   }
   return { status: "ok", message: "Web 预览命令已忽略。" };
 }

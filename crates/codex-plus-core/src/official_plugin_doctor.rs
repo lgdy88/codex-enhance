@@ -52,6 +52,7 @@ fn check_official_plugins_with_paths(
         .join("cache")
         .join("openai-bundled");
     let config_path = paths.codex_home.join("config.toml");
+    let global_state_path = paths.codex_home.join(".codex-global-state.json");
     let browser_root = bundled_cache_root.join("browser");
     let chrome_root = bundled_cache_root.join("chrome");
     let computer_use_root = bundled_cache_root.join("computer-use");
@@ -113,6 +114,24 @@ fn check_official_plugins_with_paths(
             "computer-use-config-enabled",
             "Computer Use 配置启用",
             &config_path,
+            "computer-use@openai-bundled",
+        ),
+        plugin_global_state_check(
+            "browser-global-state-enabled",
+            "Browser 运行态状态",
+            &global_state_path,
+            "browser@openai-bundled",
+        ),
+        plugin_global_state_check(
+            "chrome-global-state-enabled",
+            "Chrome 运行态状态",
+            &global_state_path,
+            "chrome@openai-bundled",
+        ),
+        plugin_global_state_check(
+            "computer-use-global-state-enabled",
+            "Computer Use 运行态状态",
+            &global_state_path,
             "computer-use@openai-bundled",
         ),
         plugin_version_check(
@@ -237,6 +256,8 @@ fn check_official_plugins_with_paths(
                 .to_string(),
             "若 Chrome native-host 或 v2 文件缺失，应走显式修复流程并保留备份。".to_string(),
             "若 Browser / Computer Use / Chrome 缓存缺失或 config.toml 未启用，先运行 Dex 官方插件修复；没有备份时再在 Codex 官方插件页重新安装。"
+                .to_string(),
+            "若 config.toml 和缓存都正常但 Codex 设置页仍显示插件不可用，检查 .codex-global-state.json 的官方插件运行态状态。"
                 .to_string(),
         ],
     }
@@ -376,6 +397,55 @@ fn plugin_config_check(
             format!("{entry} 未在 config.toml 中启用")
         },
         path: Some(display_path(config_path)),
+    }
+}
+
+fn plugin_global_state_check(
+    key: &str,
+    label: &str,
+    global_state_path: &Path,
+    entry: &str,
+) -> OfficialPluginHealthCheck {
+    let Ok(text) = std::fs::read_to_string(global_state_path) else {
+        return OfficialPluginHealthCheck {
+            key: key.to_string(),
+            label: label.to_string(),
+            status: "missing".to_string(),
+            detail: ".codex-global-state.json 不存在，无法确认运行态插件状态".to_string(),
+            path: Some(display_path(global_state_path)),
+        };
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&text) else {
+        return OfficialPluginHealthCheck {
+            key: key.to_string(),
+            label: label.to_string(),
+            status: "failed".to_string(),
+            detail: ".codex-global-state.json 不是有效 JSON，无法确认运行态插件状态".to_string(),
+            path: Some(display_path(global_state_path)),
+        };
+    };
+    let managed = value
+        .get("electron-chrome-extension-sync-managed-plugin-ids")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let enabled = managed.iter().any(|item| item == &entry);
+    OfficialPluginHealthCheck {
+        key: key.to_string(),
+        label: label.to_string(),
+        status: if enabled { "ok" } else { "missing" }.to_string(),
+        detail: if enabled {
+            format!("{entry} 已写入 Codex 运行态插件状态")
+        } else {
+            format!("{entry} 未写入 Codex 运行态插件状态")
+        },
+        path: Some(display_path(global_state_path)),
     }
 }
 
@@ -747,6 +817,18 @@ mod tests {
             .join("\n"),
         )
         .unwrap();
+        std::fs::write(
+            codex_home.join(".codex-global-state.json"),
+            serde_json::json!({
+                "electron-chrome-extension-sync-managed-plugin-ids": [
+                    "browser@openai-bundled",
+                    "chrome@openai-bundled",
+                    "computer-use@openai-bundled"
+                ]
+            })
+            .to_string(),
+        )
+        .unwrap();
         std::fs::create_dir_all(browser.join("scripts")).unwrap();
         std::fs::create_dir_all(browser.join("docs")).unwrap();
         std::fs::create_dir_all(chrome.join("scripts")).unwrap();
@@ -807,6 +889,12 @@ mod tests {
                 .checks
                 .iter()
                 .any(|check| check.key == "runtime-node-repl" && check.status == "ok")
+        );
+        assert!(
+            report
+                .checks
+                .iter()
+                .any(|check| check.key == "browser-global-state-enabled" && check.status == "ok")
         );
     }
 

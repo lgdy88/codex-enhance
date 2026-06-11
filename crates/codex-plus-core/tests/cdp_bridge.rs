@@ -100,7 +100,7 @@ fn injection_script_renders_dex_image_generation_result_card() {
 fn injection_script_merges_official_marketplaces_for_display() {
     let script = assets::injection_script(57321);
 
-    assert!(script.contains("codexPluginMarketplaceUnlockVersion = \"11\""));
+    assert!(script.contains("codexPluginMarketplaceUnlockVersion = \"13\""));
     assert!(script.contains("unifiedPluginMarketplaceName = \"openai-bundled\""));
     assert!(script.contains("unifiedPluginMarketplaceDisplayName = \"openai-bundled\""));
     assert!(script.contains(
@@ -140,11 +140,18 @@ fn injection_script_respects_enhancements_enabled_master_switch() {
 fn injection_script_installs_dex_voice_input_without_logging_transcripts() {
     let script = assets::injection_script(57321);
 
-    assert!(script.contains("const codexVoiceInputVersion = \"1\""));
+    assert!(script.contains("const codexVoiceInputVersion = \"3\""));
     assert!(script.contains("voiceInput: true"));
     assert!(script.contains("voiceInput: false"));
     assert!(script.contains("Dex 语音输入 Beta"));
     assert!(script.contains("window.SpeechRecognition || window.webkitSpeechRecognition"));
+    assert!(script.contains("requestDexMicrophoneAccess"));
+    assert!(script.contains("requestMicrophoneAccess"));
+    assert!(script.contains("window.rpc?.systemPermissions"));
+    assert!(script.contains("loadCodexAppModule(\"rpc-\")"));
+    assert!(script.contains("preloadCodexRpcSystemPermissionsBridge"));
+    assert!(script.contains("voice_microphone_permission_requested"));
+    assert!(script.contains("navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1 } })"));
     assert!(script.contains("recognition.lang = voiceInputLanguage()"));
     assert!(
         script.contains(
@@ -152,7 +159,9 @@ fn injection_script_installs_dex_voice_input_without_logging_transcripts() {
         )
     );
     assert!(script.contains("data-codex-voice-button"));
-    assert!(!script.contains("sendCodexPlusDiagnostic(\"voice"));
+    assert!(!script.contains("sendCodexPlusDiagnostic(\"voice_transcript"));
+    assert!(!script.contains("sendCodexPlusDiagnostic(\"voice_audio"));
+    assert!(!script.contains("MediaRecorder"));
     assert!(!script.contains("postJson(\"/voice"));
 }
 
@@ -163,6 +172,8 @@ fn injection_script_bypasses_plugin_marketplace_build_flavor_filters() {
     assert!(script.contains("installPluginBuildFlavorFilterPatch"));
     assert!(script.contains("Array.prototype.filter"));
     assert!(script.contains("codexPluginBuildFlavorFilterPatch"));
+    assert!(script.contains("isOfficialPluginAvailabilityFilter"));
+    assert!(script.contains("official_plugin_availability_filter_bypassed"));
     assert!(script.contains("source.includes(\"!u(e.marketplaceName)||e.marketplaceName===r\")"));
     assert!(script.contains("source.includes(\"!t.includes(e.name)\")"));
     assert!(script.contains(
@@ -210,7 +221,7 @@ fn injection_script_exposes_official_plugin_cache_refresh() {
     assert!(script.contains("function approveOfficialPluginCacheRefresh()"));
     assert!(script.contains("postJson(\"/plugin-cache/refresh-official\", { confirm: true })"));
     assert!(script.contains("Browser / Chrome / Computer Use"));
-    assert!(script.contains("只补齐 config.toml 中对应插件的 enabled=true"));
+    assert!(script.contains(".codex-global-state.json 中的运行态插件状态"));
     assert!(script.contains("不会修改 auth.json、Provider、模型配置、Chrome 用户数据或注册表"));
 }
 
@@ -237,6 +248,11 @@ fn injection_script_keeps_plugin_marketplace_patch_provider_agnostic() {
 
     assert!(script.contains("installPluginMarketplaceRequestPatch"));
     assert!(script.contains("installPluginBuildFlavorFilterPatch"));
+    assert!(script.contains("officialPluginFeatureNames"));
+    assert!(script.contains("list-experimental-features"));
+    assert!(script.contains("official_plugin_feature_flags_enabled"));
+    assert!(script.contains("installOfficialPluginFeatureFindPatch"));
+    assert!(script.contains("official_plugin_feature_find_patch_installed"));
     assert!(!script.contains("pluginPatchDisabledInRelayMode"));
     assert!(!script.contains("launchMode === \"relay\""));
     assert!(!script.contains("!codexPlusBackendSettingsLoaded"));

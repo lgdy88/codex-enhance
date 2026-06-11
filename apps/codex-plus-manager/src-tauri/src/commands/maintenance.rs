@@ -84,6 +84,10 @@ fn failed_refresh_result(
         backup_root: String::new(),
         config_path: String::new(),
         config_backup_path: String::new(),
+        global_state_path: String::new(),
+        global_state_backup_path: String::new(),
+        global_state_updated: false,
+        global_state_entries: Vec::new(),
         plugins: Vec::new(),
     }
 }

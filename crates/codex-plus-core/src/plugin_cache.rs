@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
+use serde_json::{Map, Value, json};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PluginCacheRepairResult {
@@ -26,6 +27,10 @@ pub struct OfficialPluginCacheRefreshResult {
     pub backup_root: String,
     pub config_path: String,
     pub config_backup_path: String,
+    pub global_state_path: String,
+    pub global_state_backup_path: String,
+    pub global_state_updated: bool,
+    pub global_state_entries: Vec<String>,
     pub plugins: Vec<PluginCacheRepairResult>,
 }
 
@@ -102,6 +107,14 @@ struct ConfigRepairResult {
 }
 
 #[derive(Debug, Clone)]
+struct GlobalStateRepairResult {
+    path: PathBuf,
+    backup_path: Option<PathBuf>,
+    updated: bool,
+    entries: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
 struct PluginVersion {
     path: PathBuf,
 }
@@ -150,6 +163,8 @@ fn repair_official_plugin_cache(
     let marketplace = sanitize_segment(marketplace)?;
     let config_repair =
         ensure_official_plugin_config(&codex_home, &marketplace, plugins, &backup_root)?;
+    let global_state_repair =
+        ensure_official_plugin_global_state(&codex_home, &marketplace, plugins, &backup_root)?;
     let plugin_results = plugins
         .iter()
         .map(|plugin| {
@@ -167,6 +182,14 @@ fn repair_official_plugin_cache(
         .filter(|result| result.restored)
         .count();
     let config_updated_count = config_repair.updated_entries.len();
+    let global_state_status = if global_state_repair.updated {
+        format!(
+            "修复 {} 个运行态插件状态",
+            global_state_repair.entries.len()
+        )
+    } else {
+        "确认运行态插件状态".to_string()
+    };
     let unresolved_count = plugin_results
         .iter()
         .filter(|result| result.status != "ok")
@@ -182,10 +205,12 @@ fn repair_official_plugin_cache(
         )
     } else if moved_count > 0 || restored_count > 0 || config_updated_count > 0 {
         format!(
-            "已修复官方插件：恢复 {restored_count} 个缓存、备份 {moved_count} 个旧缓存、启用 {config_updated_count} 个 config.toml 表项；请完全重启 Codex。"
+            "已修复官方插件：恢复 {restored_count} 个缓存、备份 {moved_count} 个旧缓存、启用 {config_updated_count} 个 config.toml 表项、{global_state_status}；请完全重启 Codex。"
         )
+    } else if global_state_repair.updated {
+        "已修复官方插件运行态状态；请完全重启 Codex。".to_string()
     } else {
-        "官方插件缓存和 config.toml 启用状态已完整；如插件页仍未显示，请完全重启 Codex。"
+        "官方插件缓存、config.toml 启用状态和运行态插件状态已完整；如插件页仍未显示，请完全重启 Codex。"
             .to_string()
     };
 
@@ -201,6 +226,14 @@ fn repair_official_plugin_cache(
             .as_ref()
             .map(|path| path.to_string_lossy().into_owned())
             .unwrap_or_default(),
+        global_state_path: global_state_repair.path.to_string_lossy().into_owned(),
+        global_state_backup_path: global_state_repair
+            .backup_path
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        global_state_updated: global_state_repair.updated,
+        global_state_entries: global_state_repair.entries,
         plugins: plugin_results,
     })
 }
@@ -400,6 +433,100 @@ fn ensure_official_plugin_config(
     })
 }
 
+fn ensure_official_plugin_global_state(
+    codex_home: &Path,
+    marketplace: &str,
+    plugins: &[OfficialPluginSpec],
+    backup_root: &Path,
+) -> anyhow::Result<GlobalStateRepairResult> {
+    let global_state_path = codex_home.join(".codex-global-state.json");
+    let original = std::fs::read_to_string(&global_state_path).unwrap_or_default();
+    let mut changed = false;
+    let mut state = if original.trim().is_empty() {
+        Map::new()
+    } else {
+        match serde_json::from_str::<Value>(&original) {
+            Ok(Value::Object(object)) => object,
+            Ok(_) | Err(_) => {
+                changed = true;
+                Map::new()
+            }
+        }
+    };
+    let entries = plugins
+        .iter()
+        .map(|plugin| plugin_config_entry(marketplace, plugin.plugin))
+        .collect::<Vec<_>>();
+    let key = "electron-chrome-extension-sync-managed-plugin-ids";
+    let mut managed_plugin_ids = global_state_string_array(state.get(key));
+    for entry in &entries {
+        if !managed_plugin_ids.iter().any(|item| item == entry) {
+            managed_plugin_ids.push(entry.clone());
+            changed = true;
+        }
+    }
+    let next_value = json!(managed_plugin_ids);
+    if state.get(key) != Some(&next_value) {
+        state.insert(key.to_string(), next_value);
+        changed = true;
+    }
+
+    let backup_path = if changed {
+        if let Some(parent) = global_state_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let backup_path = if global_state_path.exists() {
+            let root = backup_root.join(".codex-global-state.json");
+            std::fs::create_dir_all(&root)?;
+            let backup_path = unique_backup_path(&root).with_extension("json");
+            std::fs::copy(&global_state_path, &backup_path)
+                .map_err(|error| anyhow::anyhow!("备份 .codex-global-state.json 失败：{error}"))?;
+            Some(backup_path)
+        } else {
+            None
+        };
+        std::fs::write(
+            &global_state_path,
+            serde_json::to_string_pretty(&Value::Object(state))?,
+        )
+        .map_err(|error| anyhow::anyhow!("写入 .codex-global-state.json 插件状态失败：{error}"))?;
+        backup_path
+    } else {
+        None
+    };
+
+    Ok(GlobalStateRepairResult {
+        path: global_state_path,
+        backup_path,
+        updated: changed,
+        entries,
+    })
+}
+
+fn global_state_string_array(value: Option<&Value>) -> Vec<String> {
+    let mut result = Vec::new();
+    match value {
+        Some(Value::Array(items)) => {
+            for item in items {
+                if let Some(text) = item.as_str().map(str::trim).filter(|text| !text.is_empty()) {
+                    push_unique(&mut result, text.to_string());
+                }
+            }
+        }
+        Some(Value::String(text)) if !text.trim().is_empty() => {
+            push_unique(&mut result, text.trim().to_string());
+        }
+        _ => {}
+    }
+    result
+}
+
+fn push_unique(items: &mut Vec<String>, value: String) {
+    if !items.iter().any(|item| item == &value) {
+        items.push(value);
+    }
+}
+
 fn plugin_config_entry(marketplace: &str, plugin: &str) -> String {
     format!("{plugin}@{marketplace}")
 }
@@ -594,6 +721,15 @@ mod tests {
         let backup = backup_root.join("openai-bundled");
         std::fs::create_dir_all(&codex_home).unwrap();
         std::fs::write(codex_home.join("config.toml"), "model = \"gpt-5\"\n").unwrap();
+        std::fs::write(
+            codex_home.join(".codex-global-state.json"),
+            json!({
+                "electron-chrome-extension-sync-managed-plugin-ids": ["chrome@openai-bundled"],
+                "global-dictation-keep-visible": false
+            })
+            .to_string(),
+        )
+        .unwrap();
         write_complete_plugin_cache(&backup.join("browser").join("backup-1"), "browser");
         write_complete_plugin_cache(&backup.join("chrome").join("backup-1"), "chrome");
         write_complete_plugin_cache(
@@ -615,6 +751,15 @@ mod tests {
         }
 
         assert_eq!(result.status, "ok");
+        assert!(result.global_state_updated);
+        assert_eq!(
+            result.global_state_entries,
+            vec![
+                "browser@openai-bundled".to_string(),
+                "chrome@openai-bundled".to_string(),
+                "computer-use@openai-bundled".to_string(),
+            ]
+        );
         assert_eq!(result.plugins.len(), 3);
         assert_eq!(
             result
@@ -651,6 +796,17 @@ mod tests {
         assert!(config.contains("[plugins.\"browser@openai-bundled\"]"));
         assert!(config.contains("[plugins.\"chrome@openai-bundled\"]"));
         assert!(config.contains("[plugins.\"computer-use@openai-bundled\"]"));
+        let global_state: Value = serde_json::from_str(
+            &std::fs::read_to_string(codex_home.join(".codex-global-state.json")).unwrap(),
+        )
+        .unwrap();
+        let managed = global_state["electron-chrome-extension-sync-managed-plugin-ids"]
+            .as_array()
+            .unwrap();
+        assert!(managed.contains(&json!("browser@openai-bundled")));
+        assert!(managed.contains(&json!("chrome@openai-bundled")));
+        assert!(managed.contains(&json!("computer-use@openai-bundled")));
+        assert_eq!(global_state["global-dictation-keep-visible"], false);
     }
 
     #[test]
@@ -680,6 +836,19 @@ mod tests {
             .join("\n"),
         )
         .unwrap();
+        std::fs::write(
+            codex_home.join(".codex-global-state.json"),
+            json!({
+                "electron-chrome-extension-sync-managed-plugin-ids": [
+                    "browser@openai-bundled",
+                    "chrome@openai-bundled",
+                    "computer-use@openai-bundled"
+                ],
+                "custom": true
+            })
+            .to_string(),
+        )
+        .unwrap();
         write_complete_plugin_cache(&cache_root.join("browser"), "browser");
         write_complete_plugin_cache(&cache_root.join("chrome"), "chrome");
         write_complete_plugin_cache(&cache_root.join("computer-use"), "computer-use");
@@ -701,6 +870,7 @@ mod tests {
         assert!(result.plugins.iter().all(|plugin| !plugin.moved));
         assert!(result.plugins.iter().all(|plugin| !plugin.restored));
         assert!(result.plugins.iter().all(|plugin| !plugin.config_updated));
+        assert!(!result.global_state_updated);
     }
 
     fn write_complete_plugin_cache(root: &Path, plugin: &str) {

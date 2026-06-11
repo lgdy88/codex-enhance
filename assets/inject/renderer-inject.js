@@ -39,13 +39,14 @@
   const codexArchiveRowActionsVersion = "1";
   const codexArchiveDeleteAllVersion = "2";
   const codexConversationTimelineVersion = "2";
-  const codexPluginMarketplaceUnlockVersion = "11";
+  const codexPluginMarketplaceUnlockVersion = "13";
   const codexImageGenerationVersion = "2";
-  const codexVoiceInputVersion = "1";
+  const codexVoiceInputVersion = "3";
   const codexPlusVersion = window.__CODEX_PLUS_VERSION__ || "dev";
   const codexPlusDisplayName = "Dex";
   const codexPlusSettingsKey = "codexPlusSettings";
   const codexAppModulePromises = new Map();
+  let codexRpcSystemPermissionsPromise = null;
   window.__codexProjectMoveRuntimeId = (window.__codexProjectMoveRuntimeId || 0) + 1;
   const codexProjectMoveRuntimeId = window.__codexProjectMoveRuntimeId;
   clearTimeout(window.__codexProjectMoveProjectionTimer);
@@ -1179,7 +1180,7 @@
       overlay.innerHTML = `
         <div class="codex-delete-confirm-content" role="dialog" aria-modal="true" aria-label="修复官方插件">
           <div class="codex-delete-confirm-title">修复官方插件</div>
-          <div class="codex-delete-confirm-message">这会检查 Browser / Chrome / Computer Use 的官方 bundled 缓存，并只补齐 config.toml 中对应插件的 enabled=true。缓存缺失时优先从 Dex 备份恢复；不会修改 auth.json、Provider、模型配置、Chrome 用户数据或注册表。</div>
+          <div class="codex-delete-confirm-message">这会检查 Browser / Chrome / Computer Use 的官方 bundled 缓存，补齐 config.toml 中对应插件的 enabled=true，并修复 .codex-global-state.json 中的运行态插件状态。缓存缺失时优先从 Dex 备份恢复；不会修改 auth.json、Provider、模型配置、Chrome 用户数据或注册表。</div>
           <div class="codex-delete-confirm-actions">
             <button type="button" data-codex-plugin-cache-refresh-cancel="true">取消</button>
             <button type="button" data-codex-plugin-cache-refresh-accept="true">修复</button>
@@ -1645,7 +1646,7 @@
               <button type="button" class="codex-plus-toggle" data-codex-plus-setting="pluginMarketplaceUnlock"><span></span></button>
             </div>
             <div class="codex-plus-row">
-              <div><div class="codex-plus-row-title">特殊插件强制安装</div><div class="codex-plus-row-description">解除 App unavailable / 应用不可用导致的前端安装禁用；切换供应商后插件消失时，可恢复官方缓存并补齐 config.toml 启用项。</div></div>
+              <div><div class="codex-plus-row-title">特殊插件强制安装</div><div class="codex-plus-row-description">解除 App unavailable / 应用不可用导致的前端安装禁用；切换供应商后插件消失时，可恢复官方缓存并补齐 config.toml 启用项和运行态插件状态。</div></div>
               <div class="codex-plus-model-actions">
                 <button type="button" class="codex-plus-toggle" data-codex-plus-setting="forcePluginInstall"><span></span></button>
                 <button type="button" class="codex-plus-action-button" data-codex-plugin-cache-refresh="true">修复插件</button>
@@ -2074,6 +2075,14 @@
   const unifiedPluginMarketplaceName = "openai-bundled";
   const unifiedPluginMarketplaceDisplayName = "openai-bundled";
   const officialPluginMarketplaceNames = ["openai-bundled", "openai-curated", "openai-primary-runtime"];
+  const officialPluginFeatureNames = [
+    "plugins",
+    "computer_use",
+    "windows_computer_use",
+    "browser_use",
+    "browser_use_external",
+    "in_app_browser",
+  ];
 
   function pluginMarketplaceOrigins() {
     if (!window.__codexPlusPluginMarketplaceOrigins || typeof window.__codexPlusPluginMarketplaceOrigins !== "object") {
@@ -2190,6 +2199,82 @@
     return officialPluginMarketplaceNames.includes(restored);
   }
 
+  function officialPluginAvailabilityId(value) {
+    const id = String(value || "").split("@")[0].trim().toLowerCase();
+    return id === "browser"
+      || id === "browser-use"
+      || id === "chrome"
+      || id === "chrome-dev"
+      || id === "chrome-internal"
+      || id === "computer-use";
+  }
+
+  function officialPluginAvailabilityRecordId(record) {
+    if (typeof record === "string") return record;
+    if (!record || typeof record !== "object") return "";
+    return record.plugin?.id
+      || record.plugin?.name
+      || record.id
+      || record.name
+      || record.pluginName
+      || "";
+  }
+
+  function isOfficialPluginAvailabilityFilter(callback, sample) {
+    if (!Array.isArray(sample) || sample.length === 0 || typeof callback !== "function") return false;
+    if (!sample.some((item) => officialPluginAvailabilityId(officialPluginAvailabilityRecordId(item)))) return false;
+    let source = "";
+    try {
+      source = Function.prototype.toString.call(callback);
+    } catch {
+      return false;
+    }
+    const looksLikeCodexAvailabilityFilter = source.includes("Le(")
+      || source.includes("isComputerUseAvailable")
+      || source.includes("isExternalBrowserUseAvailable")
+      || source.includes("isInAppBrowserUseAvailable");
+    if (!looksLikeCodexAvailabilityFilter) return false;
+    return sample.some((item) => {
+      const id = officialPluginAvailabilityRecordId(item);
+      if (!officialPluginAvailabilityId(id)) return false;
+      try {
+        return !callback(item, sample.indexOf(item), sample);
+      } catch {
+        return false;
+      }
+    });
+  }
+
+  function isOfficialPluginFeatureFlag(value) {
+    return officialPluginFeatureNames.includes(String(value || "").trim());
+  }
+
+  function featureFlagRecordName(record) {
+    if (!record || typeof record !== "object") return "";
+    return String(record.name || record.featureName || record.key || "").trim();
+  }
+
+  function isOfficialPluginFeatureFind(callback, sample, thisArg) {
+    if (!Array.isArray(sample) || sample.length === 0 || typeof callback !== "function") return false;
+    if (!sample.some((item) => isOfficialPluginFeatureFlag(featureFlagRecordName(item)))) return false;
+    let source = "";
+    try {
+      source = Function.prototype.toString.call(callback);
+    } catch {
+      return false;
+    }
+    if (!source.includes(".name") && !source.includes("name===") && !source.includes("name ===")) return false;
+    return sample.some((item) => {
+      const name = featureFlagRecordName(item);
+      if (!isOfficialPluginFeatureFlag(name)) return false;
+      try {
+        return callback.call(thisArg, item, sample.indexOf(item), sample);
+      } catch {
+        return false;
+      }
+    });
+  }
+
   function marketplaceNameFromInstallRequest(params) {
     if (!params || typeof params !== "object") return "";
     if (params.remoteMarketplaceName) return restorePluginMarketplaceName(params.remoteMarketplaceName);
@@ -2281,6 +2366,20 @@
       return;
     }
     const patchedFilter = function codexPluginBuildFlavorFilterPatch(callback, thisArg) {
+      if (isOfficialPluginAvailabilityFilter(callback, this)) {
+        const filtered = originalFilter.call(this, callback, thisArg);
+        const merged = Array.from(filtered);
+        for (const item of this) {
+          const id = officialPluginAvailabilityRecordId(item);
+          if (officialPluginAvailabilityId(id) && !merged.includes(item)) merged.push(item);
+        }
+        sendCodexPlusDiagnostic("official_plugin_availability_filter_bypassed", {
+          originalCount: this.length,
+          filteredCount: filtered.length,
+          restoredCount: merged.length - filtered.length,
+        });
+        return merged;
+      }
       if (isCodexPluginBuildFlavorFilter(callback, this)) {
         sendCodexPlusDiagnostic("plugin_build_flavor_filter_bypassed", { pluginCount: this.length });
         return Array.from(this);
@@ -2295,6 +2394,48 @@
     Array.prototype.filter = patchedFilter;
     window.__codexPluginBuildFlavorFilterPatch = codexPluginMarketplaceUnlockVersion;
     sendCodexPlusDiagnostic("plugin_build_flavor_filter_patch_installed", {});
+  }
+
+  function installOfficialPluginFeatureFindPatch() {
+    if (window.__codexOfficialPluginFeatureFindPatch === codexPluginMarketplaceUnlockVersion) return;
+    if (!codexPlusSettings().pluginMarketplaceUnlock) return;
+    const originalFind = Array.prototype.__codexOfficialPluginFeatureOriginalFind || Array.prototype.find;
+    if (!Array.prototype.__codexOfficialPluginFeatureOriginalFind) {
+      Object.defineProperty(Array.prototype, "__codexOfficialPluginFeatureOriginalFind", {
+        value: originalFind,
+        configurable: true,
+        writable: true,
+      });
+    }
+    if (Array.prototype.find.__codexOfficialPluginFeaturePatched === codexPluginMarketplaceUnlockVersion) {
+      window.__codexOfficialPluginFeatureFindPatch = codexPluginMarketplaceUnlockVersion;
+      return;
+    }
+    const patchedFind = function codexOfficialPluginFeatureFindPatch(callback, thisArg) {
+      const found = originalFind.call(this, callback, thisArg);
+      const name = featureFlagRecordName(found);
+      if (isOfficialPluginFeatureFlag(name) && found.enabled !== true) {
+        const next = { ...found, enabled: true };
+        sendCodexPlusDiagnostic("official_plugin_feature_flag_find_enabled", { feature: name });
+        return next;
+      }
+      if (!found && isOfficialPluginFeatureFind(callback, this, thisArg)) {
+        const candidate = originalFind.call(this, (item, index, array) => (
+          isOfficialPluginFeatureFlag(featureFlagRecordName(item))
+          && callback.call(thisArg, item, index, array)
+        ));
+        const candidateName = featureFlagRecordName(candidate);
+        if (candidateName) {
+          sendCodexPlusDiagnostic("official_plugin_feature_flag_find_fallback", { feature: candidateName });
+          return { ...candidate, enabled: true };
+        }
+      }
+      return found;
+    };
+    patchedFind.__codexOfficialPluginFeaturePatched = codexPluginMarketplaceUnlockVersion;
+    Array.prototype.find = patchedFind;
+    window.__codexOfficialPluginFeatureFindPatch = codexPluginMarketplaceUnlockVersion;
+    sendCodexPlusDiagnostic("official_plugin_feature_find_patch_installed", {});
   }
 
   function restorePluginMarketplaceRequestParams(params, method = "") {
@@ -2367,6 +2508,10 @@
   }
 
   function patchPluginMarketplaceResult(method, result) {
+    if (method === "list-experimental-features") {
+      patchOfficialPluginFeatureListResult(result);
+      return result;
+    }
     if (method !== "list-plugins") return result;
     let patchedCount = 0;
     try {
@@ -2409,6 +2554,31 @@
       });
     }
     return result;
+  }
+
+  function patchOfficialPluginFeatureListResult(result) {
+    const features = Array.isArray(result?.data) ? result.data : Array.isArray(result) ? result : null;
+    if (!features) return false;
+    let patchedCount = 0;
+    for (const name of officialPluginFeatureNames) {
+      const feature = features.find((item) => item?.name === name);
+      if (feature) {
+        if (feature.enabled !== true) {
+          feature.enabled = true;
+          patchedCount += 1;
+        }
+      } else {
+        features.push({ name, enabled: true });
+        patchedCount += 1;
+      }
+    }
+    if (patchedCount > 0) {
+      sendCodexPlusDiagnostic("official_plugin_feature_flags_enabled", {
+        patchedCount,
+        features: officialPluginFeatureNames,
+      });
+    }
+    return patchedCount > 0;
   }
 
   function patchPluginMarketplaceRequestClient(client) {
@@ -2757,14 +2927,115 @@
 
   function voiceErrorMessage(error) {
     const code = error?.error || error?.message || "";
-    if (code === "not-allowed" || code === "permission-denied") return "麦克风权限被拒绝";
+    const name = error?.name || "";
+    if (code === "not-allowed" || code === "permission-denied" || name === "NotAllowedError" || name === "SecurityError") return "麦克风权限被拒绝：请在 Windows 设置 > 隐私和安全性 > 麦克风 中允许 Codex/Dex，然后完全重启 Codex";
+    if (name === "NotFoundError" || name === "DevicesNotFoundError" || name === "OverconstrainedError" || name === "ConstraintNotSatisfiedError") return "未找到可用麦克风";
+    if (name === "NotReadableError" || name === "TrackStartError") return "麦克风正被其他应用占用";
     if (code === "no-speech") return "没有检测到语音";
     if (code === "audio-capture") return "未找到可用麦克风";
     if (code === "network") return "语音识别网络不可用";
     return `语音识别失败：${code || "unknown"}`;
   }
 
-  function startVoiceInput(target) {
+  function directCodexSystemPermissionsBridge() {
+    return window.electronBridge?.systemPermissions
+      || window.__electronBridge?.systemPermissions
+      || window.rpc?.systemPermissions
+      || window.__rpc?.systemPermissions
+      || window.codex?.systemPermissions
+      || null;
+  }
+
+  function rpcSystemPermissionsFromModule(module) {
+    const candidates = [
+      module?.n,
+      module?.services,
+      module?.default,
+      ...Object.values(module || {}).filter((value) => value && typeof value === "object"),
+    ];
+    return candidates.map((candidate) => candidate?.systemPermissions).find((value) => value && typeof value.requestMicrophoneAccess === "function") || null;
+  }
+
+  async function loadCodexRpcSystemPermissionsBridge() {
+    if (!codexRpcSystemPermissionsPromise) {
+      codexRpcSystemPermissionsPromise = Promise.resolve().then(async () => {
+        let module = null;
+        try {
+          module = await loadCodexAppModule("rpc-");
+        } catch {
+          await loadCodexAppModule("app-server-manager-signals-").catch(() => {});
+          module = await loadCodexAppModule("rpc-");
+        }
+        let bridge = rpcSystemPermissionsFromModule(module);
+        if (!bridge && typeof module?.r === "function") {
+          await module.r();
+          bridge = rpcSystemPermissionsFromModule(module);
+        }
+        if (!bridge) throw new Error("Codex systemPermissions bridge unavailable");
+        return bridge;
+      }).catch((error) => {
+        codexRpcSystemPermissionsPromise = null;
+        throw error;
+      });
+    }
+    return await codexRpcSystemPermissionsPromise;
+  }
+
+  function preloadCodexRpcSystemPermissionsBridge() {
+    if (!codexPlusSettings().voiceInput) return;
+    loadCodexRpcSystemPermissionsBridge().catch((error) => {
+      sendCodexPlusDiagnostic("voice_microphone_permission_bridge_preload_failed", {
+        errorName: error?.name || "",
+        errorMessage: error?.message || String(error),
+      });
+    });
+  }
+
+  async function requestCodexSystemMicrophoneAccess() {
+    const directBridge = directCodexSystemPermissionsBridge();
+    if (typeof directBridge?.requestMicrophoneAccess === "function") {
+      await directBridge.requestMicrophoneAccess();
+      sendCodexPlusDiagnostic("voice_microphone_permission_requested", { source: "direct" });
+      return;
+    }
+    const rpcBridge = await loadCodexRpcSystemPermissionsBridge();
+    await rpcBridge.requestMicrophoneAccess();
+    sendCodexPlusDiagnostic("voice_microphone_permission_requested", { source: "rpc" });
+  }
+
+  async function requestDexMicrophoneAccess() {
+    await requestCodexSystemMicrophoneAccess().catch((error) => {
+      sendCodexPlusDiagnostic("voice_microphone_permission_request_failed", {
+        errorName: error?.name || "",
+        errorMessage: error?.message || String(error),
+      });
+    });
+    try {
+      const permission = await navigator.permissions?.query?.({ name: "microphone" });
+      if (permission?.state === "denied") {
+        const error = new Error("permission-denied");
+        error.name = "NotAllowedError";
+        throw error;
+      }
+    } catch (error) {
+      if (error?.name === "NotAllowedError" || error?.message === "permission-denied") throw error;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) return;
+    let stream = null;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1 } });
+    } catch (error) {
+      if (error?.name === "NotSupportedError") {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } else {
+        throw error;
+      }
+    } finally {
+      stream?.getTracks?.().forEach((track) => track.stop());
+    }
+  }
+
+  async function startVoiceInput(target) {
     const SpeechRecognition = voiceRecognitionCtor();
     if (!SpeechRecognition) {
       showToast("当前 Codex 运行环境不支持浏览器语音识别；离线 SenseVoice 包尚未安装", null);
@@ -2781,6 +3052,17 @@
       return;
     }
     stopVoiceInput();
+    target.disabled = true;
+    setVoiceStatus("正在请求麦克风权限…");
+    try {
+      await requestDexMicrophoneAccess();
+    } catch (error) {
+      target.disabled = false;
+      const message = voiceErrorMessage(error);
+      showToast(message, null);
+      setVoiceStatus(message);
+      return;
+    }
     const recognition = new SpeechRecognition();
     recognition.lang = voiceInputLanguage();
     recognition.continuous = true;
@@ -2790,6 +3072,7 @@
     window.__codexVoiceTarget = input;
     target.dataset.state = "listening";
     target.textContent = "停止";
+    target.disabled = false;
     target.setAttribute("aria-pressed", "true");
     setVoiceStatus(`正在听写（${recognition.lang}）`);
     recognition.onresult = (event) => {
@@ -2818,7 +3101,7 @@
       stopVoiceInput("听写已停止");
       return;
     }
-    startVoiceInput(button);
+    void startVoiceInput(button);
   }
 
   function voiceToolbarHost(input) {
@@ -5176,6 +5459,7 @@
     installCodexPlusMenu();
     installImagePromptCommandHandler();
     refreshVoiceInput();
+    preloadCodexRpcSystemPermissionsBridge();
     scheduleBackendHeartbeat();
     scheduleProviderWatcher();
     installDeleteButtonEventDelegation();
@@ -5184,6 +5468,7 @@
   function scanDeferred() {
     enablePluginEntry();
     installPluginBuildFlavorFilterPatch();
+    installOfficialPluginFeatureFindPatch();
     installPluginMarketplaceRequestPatch();
     unblockPluginInstallButtons();
     patchCodexModelWhitelist();

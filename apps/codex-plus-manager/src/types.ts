@@ -127,6 +127,10 @@ export type OfficialPluginCacheRefreshResult = CommandResult<{
     backupRoot: string;
     configPath: string;
     configBackupPath: string;
+    globalStatePath: string;
+    globalStateBackupPath: string;
+    globalStateUpdated: boolean;
+    globalStateEntries: string[];
     plugins: PluginCacheRepairResult[];
   };
 }>;
