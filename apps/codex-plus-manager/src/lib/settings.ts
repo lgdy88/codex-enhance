@@ -11,6 +11,9 @@ export const defaultSettings: BackendSettings = {
   markdownExport: true,
   projectMove: true,
   conversationTimeline: true,
+  globalVoiceInputEnabled: false,
+  globalVoiceInputHoldHotkey: "F3",
+  globalVoiceInputToggleHotkey: "F4",
 };
 
 export function normalizeSettings(settings: Partial<BackendSettings>): BackendSettings {
@@ -25,6 +28,9 @@ export function normalizeSettings(settings: Partial<BackendSettings>): BackendSe
     markdownExport: settings.markdownExport ?? defaultSettings.markdownExport,
     projectMove: settings.projectMove ?? defaultSettings.projectMove,
     conversationTimeline: settings.conversationTimeline ?? defaultSettings.conversationTimeline,
+    globalVoiceInputEnabled: settings.globalVoiceInputEnabled ?? defaultSettings.globalVoiceInputEnabled,
+    globalVoiceInputHoldHotkey: settings.globalVoiceInputHoldHotkey ?? defaultSettings.globalVoiceInputHoldHotkey,
+    globalVoiceInputToggleHotkey: settings.globalVoiceInputToggleHotkey ?? defaultSettings.globalVoiceInputToggleHotkey,
   };
 }
 

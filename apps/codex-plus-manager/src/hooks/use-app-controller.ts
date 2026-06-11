@@ -241,6 +241,7 @@ export function useAppController() {
       userScripts: [() => refreshSettings(true)],
       providerSync: [() => refreshSettings(true)],
       imageGeneration: [() => refreshImageGeneration(true), () => refreshPromptAgent(true)],
+      voiceInput: [() => refreshSettings(true)],
       promptAgent: [() => refreshPromptAgent(true)],
       remoteControl: [() => refreshRemoteControl(true)],
       maintenance: [() => refreshOverview(true), () => refreshWatcher(true), () => refreshOfficialPlugins(true), () => refreshLogs(true)],

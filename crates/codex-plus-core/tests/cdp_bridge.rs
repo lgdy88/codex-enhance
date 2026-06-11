@@ -144,6 +144,8 @@ fn injection_script_installs_dex_voice_input_without_logging_transcripts() {
     assert!(script.contains("voiceInput: true"));
     assert!(script.contains("voiceInput: false"));
     assert!(script.contains("Dex 语音输入 Beta"));
+    assert!(script.contains("Dex 语音运行在 Codex 宿主内"));
+    assert!(!script.contains("允许 Codex/Dex"));
     assert!(script.contains("window.SpeechRecognition || window.webkitSpeechRecognition"));
     assert!(script.contains("requestDexMicrophoneAccess"));
     assert!(script.contains("requestMicrophoneAccess"));

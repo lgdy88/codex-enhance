@@ -26,6 +26,18 @@ pub struct BackendSettings {
     pub project_move: bool,
     #[serde(rename = "conversationTimeline", default = "default_true")]
     pub conversation_timeline: bool,
+    #[serde(rename = "globalVoiceInputEnabled", default)]
+    pub global_voice_input_enabled: bool,
+    #[serde(
+        rename = "globalVoiceInputHoldHotkey",
+        default = "default_voice_hold_hotkey"
+    )]
+    pub global_voice_input_hold_hotkey: String,
+    #[serde(
+        rename = "globalVoiceInputToggleHotkey",
+        default = "default_voice_toggle_hotkey"
+    )]
+    pub global_voice_input_toggle_hotkey: String,
 }
 
 impl Default for BackendSettings {
@@ -41,12 +53,23 @@ impl Default for BackendSettings {
             markdown_export: true,
             project_move: true,
             conversation_timeline: true,
+            global_voice_input_enabled: false,
+            global_voice_input_hold_hotkey: default_voice_hold_hotkey(),
+            global_voice_input_toggle_hotkey: default_voice_toggle_hotkey(),
         }
     }
 }
 
 pub fn default_true() -> bool {
     true
+}
+
+pub fn default_voice_hold_hotkey() -> String {
+    "F3".to_string()
+}
+
+pub fn default_voice_toggle_hotkey() -> String {
+    "F4".to_string()
 }
 
 pub fn normalize_codex_extra_args(args: &[String]) -> Vec<String> {
@@ -162,9 +185,15 @@ fn merge_known_setting_fields(target: &mut Map<String, Value>, source: &Map<Stri
         "markdownExport",
         "projectMove",
         "conversationTimeline",
+        "globalVoiceInputEnabled",
     ] {
         if let Some(value) = source.get(key).and_then(Value::as_bool) {
             target.insert(key.to_string(), Value::Bool(value));
+        }
+    }
+    for key in ["globalVoiceInputHoldHotkey", "globalVoiceInputToggleHotkey"] {
+        if let Some(value) = source.get(key).and_then(Value::as_str) {
+            target.insert(key.to_string(), Value::String(value.trim().to_string()));
         }
     }
 }
@@ -236,6 +265,9 @@ mod tests {
         assert!(settings.markdown_export);
         assert!(settings.project_move);
         assert!(settings.conversation_timeline);
+        assert!(!settings.global_voice_input_enabled);
+        assert_eq!(settings.global_voice_input_hold_hotkey, "F3");
+        assert_eq!(settings.global_voice_input_toggle_hotkey, "F4");
     }
 
     #[test]
@@ -301,6 +333,9 @@ mod tests {
             "markdownExport": false,
             "projectMove": false,
             "conversationTimeline": false,
+            "globalVoiceInputEnabled": true,
+            "globalVoiceInputHoldHotkey": " F5 ",
+            "globalVoiceInputToggleHotkey": " F6 ",
             "legacyEndpoint": "https://legacy.example.test/v1",
             "legacySecret": "redacted",
             "legacyEnvName": "",
@@ -316,6 +351,9 @@ mod tests {
         assert!(!updated.markdown_export);
         assert!(!updated.project_move);
         assert!(!updated.conversation_timeline);
+        assert!(updated.global_voice_input_enabled);
+        assert_eq!(updated.global_voice_input_hold_hotkey, "F5");
+        assert_eq!(updated.global_voice_input_toggle_hotkey, "F6");
         assert_eq!(store.load().unwrap(), updated);
         let saved: Value =
             serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap())

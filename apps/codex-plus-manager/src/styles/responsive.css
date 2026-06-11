@@ -44,6 +44,7 @@
   .form-row,
   .setting-grid,
   .image-result-ready,
+  .voice-mode-grid,
   .hero-layout {
     grid-template-columns: 1fr;
   }

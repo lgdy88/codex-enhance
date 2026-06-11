@@ -43,6 +43,8 @@ async fn main() -> Result<()> {
     tokio::spawn(async {
         let _ = notify_manager_when_update_available().await;
     });
+    let settings = codex_plus_core::settings::SettingsStore::default().load()?;
+    codex_plus_core::windows_voice_input::start_global_voice_input(&settings);
     let hooks = LauncherHooks::default();
     let handle = launch_and_inject_with_hooks(options, &hooks).await?;
     handle.wait_for_codex_exit().await?;
@@ -96,6 +98,7 @@ fn should_recover_stale_launcher(debug_port: u16) -> bool {
 async fn activate_existing_codex_app(options: &LaunchOptions) -> anyhow::Result<()> {
     let hooks = LauncherHooks::default();
     let settings = hooks.load_settings().await?;
+    codex_plus_core::windows_voice_input::start_global_voice_input(&settings);
     hooks.ensure_official_plugins(&settings).await?;
     let app_dir = hooks.resolve_app_dir(options.app_dir.as_deref(), &settings)?;
     let mut codex_extra_args = settings.codex_extra_args.clone();

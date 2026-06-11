@@ -415,6 +415,112 @@
   line-height: 1.45;
 }
 
+.voice-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.voice-mode-card {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--background) / 0.62);
+  padding: 12px;
+}
+
+.voice-mode-card > .field {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
+}
+
+.voice-shortcut-field {
+  margin-top: 2px;
+}
+
+.shortcut-capture {
+  display: grid;
+  gap: 6px;
+}
+
+.shortcut-capture-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  gap: 8px;
+  align-items: center;
+}
+
+.shortcut-capture-button {
+  min-height: 40px;
+  width: 100%;
+  border: 1px solid hsl(var(--input));
+  border-radius: 8px;
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+  padding: 0 12px;
+  text-align: left;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.shortcut-capture-button:hover,
+.shortcut-capture-button:focus-visible,
+.shortcut-capture-button.is-recording {
+  border-color: hsl(var(--primary));
+  background: hsl(var(--primary) / 0.08);
+  box-shadow: 0 0 0 2px hsl(var(--primary) / 0.12);
+  outline: none;
+}
+
+.shortcut-capture-button kbd {
+  font: inherit;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.voice-shortcut-hint {
+  color: hsl(var(--muted-foreground));
+  line-height: 1.45;
+}
+
+.voice-mode-card svg,
+.voice-boundary-list svg {
+  color: hsl(var(--primary));
+}
+
+.voice-mode-card strong,
+.voice-mode-card span {
+  display: block;
+}
+
+.voice-mode-card span,
+.voice-boundary-list span {
+  color: hsl(var(--muted-foreground));
+  line-height: 1.45;
+}
+
+.voice-boundary-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.voice-boundary-list > div {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--card) / 0.72);
+  padding: 10px 11px;
+}
+
 .feature-check-row {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr);

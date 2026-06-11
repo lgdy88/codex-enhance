@@ -17,6 +17,7 @@ import {
   ProviderSyncScreen,
   RemoteControlScreen,
   UserScriptsScreen,
+  VoiceInputScreen,
 } from "@/screens";
 
 export function App() {
@@ -147,6 +148,7 @@ export function App() {
               actions={actions}
             />
           ) : null}
+          {route === "voiceInput" ? <VoiceInputScreen form={settingsForm} onFormChange={setSettingsForm} actions={actions} /> : null}
           {route === "promptAgent" ? (
             <PromptAgentScreen settings={promptAgent} form={promptAgentForm} onFormChange={setPromptAgentForm} actions={actions} />
           ) : null}

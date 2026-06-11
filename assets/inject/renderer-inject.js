@@ -2928,7 +2928,7 @@
   function voiceErrorMessage(error) {
     const code = error?.error || error?.message || "";
     const name = error?.name || "";
-    if (code === "not-allowed" || code === "permission-denied" || name === "NotAllowedError" || name === "SecurityError") return "麦克风权限被拒绝：请在 Windows 设置 > 隐私和安全性 > 麦克风 中允许 Codex/Dex，然后完全重启 Codex";
+    if (code === "not-allowed" || code === "permission-denied" || name === "NotAllowedError" || name === "SecurityError") return "麦克风权限被拒绝：Dex 语音运行在 Codex 宿主内，请在 Windows 设置 > 隐私和安全性 > 麦克风 中允许 Codex，然后完全重启 Codex";
     if (name === "NotFoundError" || name === "DevicesNotFoundError" || name === "OverconstrainedError" || name === "ConstraintNotSatisfiedError") return "未找到可用麦克风";
     if (name === "NotReadableError" || name === "TrackStartError") return "麦克风正被其他应用占用";
     if (code === "no-speech") return "没有检测到语音";

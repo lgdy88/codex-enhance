@@ -42,6 +42,9 @@ export type BackendSettings = {
   markdownExport: boolean;
   projectMove: boolean;
   conversationTimeline: boolean;
+  globalVoiceInputEnabled: boolean;
+  globalVoiceInputHoldHotkey: string;
+  globalVoiceInputToggleHotkey: string;
 };
 
 export type UserScriptInventory = {
@@ -358,6 +361,7 @@ export type Route =
   | "userScripts"
   | "providerSync"
   | "imageGeneration"
+  | "voiceInput"
   | "promptAgent"
   | "remoteControl"
   | "maintenance"
