@@ -1,0 +1,22 @@
+# Context Packet: delete direct no confirm
+
+- Time: 2026-06-18_13-55-13
+- User request: 点击删除直接删除，不要点=做确认弹窗
+- Scope: Dex renderer injection session delete actions in `assets/inject/renderer-inject.js`.
+- Evidence:
+  - `assets/inject/renderer-inject.js` defines `confirmDelete(title)` and previously routed normal row delete via `openDeleteConfirmForRow`.
+  - Archive row delete and archive delete-all also called `confirmDelete`.
+  - `crates/codex-plus-core/src/assets.rs` embeds this injection script with `include_str!`.
+- Decision:
+  - Remove the single-session delete confirmation step for normal and archived rows.
+  - Keep delete execution and undo toast path.
+  - Add an in-flight guard because pointerup and click can both reach the document-level delete handler.
+  - Keep batch "删除全部归档" confirmation.
+  - Keep unrelated high-risk confirms for plugin cache/provider/quarantine.
+- Validation plan:
+  - Search for remaining session delete confirmation calls.
+  - Run relevant Rust tests for injection script assertions.
+  - Run manager typecheck if current dependencies allow it.
+  - Review diff manually before closeout.
+- RTK evidence:
+  - meta-ruli rtk -- rg ... reported RTK unavailable and ran raw command through wrapper.

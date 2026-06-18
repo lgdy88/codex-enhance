@@ -56,6 +56,18 @@ fn injection_script_marks_diagnostic_build_and_reports_script_loaded() {
 }
 
 #[test]
+fn injection_script_deletes_sessions_without_row_confirmation() {
+    let script = assets::injection_script(57321);
+
+    assert!(script.contains("async function deleteRowDirectly(row, button, ref, event)"));
+    assert!(script.contains("deleteRowDirectly(row, button, ref, event)"));
+    assert!(script.contains("const deleteDirectly = (event) => deleteRowDirectly"));
+    assert!(script.contains("button.dataset.codexDeleteInFlight"));
+    assert!(!script.contains("openDeleteConfirmForRow"));
+    assert!(!script.contains("confirmDelete(ref.title)"));
+}
+
+#[test]
 fn injection_script_intercepts_image_prompt_from_enter_submit_and_send_button() {
     let script = assets::injection_script(57321);
 

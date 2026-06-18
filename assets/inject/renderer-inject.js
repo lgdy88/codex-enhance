@@ -4703,22 +4703,26 @@
     });
   }
 
-  function openDeleteConfirmForRow(row, button, ref, event) {
+  async function deleteRowDirectly(row, button, ref, event) {
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation?.();
+    if (button.dataset.codexDeleteInFlight === "true") return;
+    button.dataset.codexDeleteInFlight = "true";
     releaseDeleteFocus(row, button);
-    confirmDelete(ref.title).then(async (confirmed) => {
-      if (!confirmed) return;
-      releaseDeleteFocus(row, button);
+    try {
       const result = await postJson("/delete", ref);
       if (result.status === "server_deleted" || result.status === "local_deleted") {
         await removeDeletedRow(row, button, ref);
         showToast(result.message || "删除成功", result.undo_token);
       } else {
         showToast(result.message || "删除失败", null);
+        button.dataset.codexDeleteInFlight = "false";
       }
-    });
+    } catch (error) {
+      button.dataset.codexDeleteInFlight = "false";
+      showToast(`删除失败：${String(error?.message || error)}`, null);
+    }
   }
 
   async function exportMarkdown(ref) {
@@ -4837,7 +4841,7 @@
       if (!button || !row) return;
       const ref = sessionRefFromRow(row);
       if (!ref.session_id) return;
-      openDeleteConfirmForRow(row, button, ref, event);
+      deleteRowDirectly(row, button, ref, event);
     };
     window.__codexSessionDeleteDocumentDeleteHandler = handler;
     document.addEventListener("pointerup", handler, true);
@@ -5020,10 +5024,10 @@
       deleteButton.className = `${actionButtonClass} ${buttonClass}`;
       deleteButton.dataset.codexDeleteVersion = codexDeleteVersion;
       deleteButton.textContent = "删除";
-      const openDeleteConfirm = (event) => openDeleteConfirmForRow(row, deleteButton, ref, event);
-      installActionButtonEvents(row, deleteButton, openDeleteConfirm);
+      const deleteDirectly = (event) => deleteRowDirectly(row, deleteButton, ref, event);
+      installActionButtonEvents(row, deleteButton, deleteDirectly);
       group.appendChild(deleteButton);
-      setTimeout(() => refreshActionButton(deleteButton, row, openDeleteConfirm), 0);
+      setTimeout(() => refreshActionButton(deleteButton, row, deleteDirectly), 0);
     }
     row.appendChild(group);
   }
@@ -5163,7 +5167,6 @@
           showToast("删除失败：未找到归档会话 ID", null);
           return;
         }
-        if (!(await confirmDelete(ref.title))) return;
         const result = await postJson("/delete", ref);
         if (result.status === "server_deleted" || result.status === "local_deleted") {
           await cleanupDeletedSessionState(ref);

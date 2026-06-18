@@ -121,7 +121,7 @@ The manager provides these actions:
 
 - Top-bar `Dex` menu for local status and feature management.
 - Plugin entry unlock for API Key mode.
-- Session delete with confirmation and undo.
+- Session delete on click with undo.
 - Markdown export from local rollout data.
 - Session project move for local conversations.
 - Conversation Timeline for user-message navigation.
