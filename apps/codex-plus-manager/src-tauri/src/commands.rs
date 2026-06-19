@@ -831,6 +831,22 @@ mod tests {
     }
 
     #[test]
+    fn update_install_response_exposes_exit_requirement() {
+        let source = include_str!("commands/update.rs");
+
+        assert!(source.contains("\"requiresExitForInstall\""));
+        assert!(source.contains("result.requires_current_process_exit"));
+    }
+
+    #[test]
+    fn frontend_exits_after_fallback_installer_is_queued() {
+        let source = include_str!("../../src/hooks/use-app-controller.ts");
+
+        assert!(source.contains("result.requiresExitForInstall"));
+        assert!(source.contains("await exitApp(0)"));
+    }
+
+    #[test]
     fn watcher_state_returns_disabled_flag_path() {
         let result = maintenance::load_watcher_state();
 

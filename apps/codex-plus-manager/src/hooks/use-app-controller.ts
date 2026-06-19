@@ -75,6 +75,7 @@ import type {
   WatcherResult,
 } from "@/types";
 import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { exit as exitApp } from "@tauri-apps/plugin-process";
 import type { Update } from "@tauri-apps/plugin-updater";
 
 export function useAppController() {
@@ -632,8 +633,21 @@ export function useAppController() {
     const result = await run(() => performUpdateCommand(release));
     if (!result) return false;
     setUpdate(result);
+    if (result.requiresExitForInstall) {
+      showNotice("更新安装", "安装器已排队，Dex 将退出以释放安装文件。", result.status);
+      await exitForQueuedInstaller();
+      return true;
+    }
     showNotice("更新安装", result.message, result.status);
     return true;
+  };
+
+  const exitForQueuedInstaller = async () => {
+    try {
+      await exitApp(0);
+    } catch (error) {
+      showNotice("更新安装", `安装器已排队，但 Dex 自动退出失败：${stringifyError(error)}。请手动关闭 Dex 后继续安装。`, "failed");
+    }
   };
 
   const installUpdateFallback = async (error: unknown) => {

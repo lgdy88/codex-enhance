@@ -1,5 +1,6 @@
 use codex_plus_core::update::{
-    Release, download_asset_to, is_newer_version, parse_latest_release_tag_url, parse_version_tag,
+    Release, delayed_installer_powershell_encoded, delayed_installer_powershell_script,
+    download_asset_to, is_newer_version, parse_latest_release_tag_url, parse_version_tag,
     platform_download_asset_for_version, release_from_github_payload,
     release_from_latest_metadata_payload, release_from_latest_release_url, safe_asset_name,
     select_update_asset,
@@ -272,4 +273,47 @@ fn download_asset_to_writes_bytes() {
 
     assert_eq!(path, dir.path().join("pkg.zip"));
     assert_eq!(std::fs::read(path).unwrap(), b"abcdef");
+}
+
+#[test]
+fn delayed_installer_script_waits_for_parent_before_starting_msi() {
+    let script = delayed_installer_powershell_script(
+        std::path::Path::new(
+            r"C:\Users\Lenovo\AppData\Local\Programs\Dex\Dex-1.5.1-windows-x64.msi",
+        ),
+        12345,
+    );
+
+    assert!(script.contains("$parentPid = 12345"));
+    assert!(script.contains("Get-Process -Id $parentPid"));
+    assert!(script.contains("Start-Sleep -Milliseconds 200"));
+    assert!(script.contains("$msiPathArgument = '\"' + $installer + '\"'"));
+    assert!(
+        script.contains(
+            "Start-Process -FilePath 'msiexec.exe' -ArgumentList @('/i', $msiPathArgument, '/passive', '/norestart')"
+        )
+    );
+}
+
+#[test]
+fn delayed_installer_script_escapes_single_quotes_in_paths() {
+    let script = delayed_installer_powershell_script(
+        std::path::Path::new(r"C:\Users\Lenovo\Dex's Folder\Dex-1.5.1-windows-x64.msi"),
+        9,
+    );
+
+    assert!(script.contains("'C:\\Users\\Lenovo\\Dex''s Folder\\Dex-1.5.1-windows-x64.msi'"));
+}
+
+#[test]
+fn delayed_installer_encoded_command_is_utf16_base64() {
+    let encoded =
+        delayed_installer_powershell_encoded(std::path::Path::new(r"C:\Dex\setup.exe"), 77);
+
+    assert!(!encoded.is_empty());
+    assert!(
+        encoded
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '+' || ch == '/' || ch == '=')
+    );
 }

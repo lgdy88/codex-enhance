@@ -342,6 +342,7 @@ export type UpdateResult = CommandResult<{
   updateAvailable?: boolean;
   updateDate?: string | null;
   installedPath?: string;
+  requiresExitForInstall?: boolean;
   progress?: number;
 }>;
 

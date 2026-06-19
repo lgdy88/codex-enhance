@@ -67,6 +67,7 @@ pub async fn perform_update(
                 "releaseSummary": result.release.body,
                 "installedPath": result.installer_path.to_string_lossy(),
                 "launched": result.launched,
+                "requiresExitForInstall": result.requires_current_process_exit,
                 "progress": 100
             }),
         ),

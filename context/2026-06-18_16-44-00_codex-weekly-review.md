@@ -1,0 +1,30 @@
+# Codex Weekly Review Context
+
+- task: 每周 Codex 系统复盘
+- automation_id: codex
+- run_time: 2026-06-18 16:44 CST
+- review_window: 2026-06-08 00:00:00 to 2026-06-14 23:59:59
+- allowed_paths:
+  - C:\Users\Lenovo\.codex\sessions
+  - C:\Users\Lenovo\.codex\memories
+  - C:\Users\Lenovo\.codex\automations
+  - C:\Users\Lenovo\.codex\skills
+  - C:\Users\Lenovo\.agents\skills
+  - D:\Skye\Meta
+  - D:\Skye\codex-enhance
+  - D:\Skills\HookPrompt
+  - D:\Project\AILIMS\frontend
+- privacy_boundary:
+  - no api keys, token, cookie, ssh private key, browser profile, personal raw data, large media
+  - no direct edits to MEMORY.md, memory_summary.md, raw_memories.md
+- current_findings:
+  - automation memory file was missing at start and was created during this run
+  - same-day recap artifacts already exist at 2026-06-18 16:27 and must be deduplicated
+  - weekly session files exist mainly on 2026-06-09 to 2026-06-13
+  - allowed-scope weekly sessions hit D:\Skye\codex-enhance and D:\Skye\Meta; other same-week sessions included out-of-scope E-AILIMS paths and were skipped
+- plan:
+  - inspect previous same-day recap artifacts
+  - summarize weekly Codex sessions using metadata and short prompt excerpts only
+  - write one short recap log for this run
+  - add cards only if new durable signals exist beyond existing same-day cards
+  - update automation memory with this run summary

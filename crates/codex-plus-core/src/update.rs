@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -39,6 +40,12 @@ pub struct UpdateInstall {
     pub release: Release,
     pub installer_path: PathBuf,
     pub launched: bool,
+    pub requires_current_process_exit: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstallerLaunch {
+    pub requires_current_process_exit: bool,
 }
 
 pub fn parse_version_tag(value: &str) -> anyhow::Result<Vec<u64>> {
@@ -311,11 +318,12 @@ pub async fn perform_update(
         .ok_or_else(|| anyhow::anyhow!("没有可下载的 Release asset"))?;
     let bytes = download_update_bytes(url).await?;
     let installer_path = download_asset_to(release, &bytes, download_dir)?;
-    launch_installer(&installer_path)?;
+    let launch = launch_installer(&installer_path)?;
     Ok(UpdateInstall {
         release: release.clone(),
         installer_path,
         launched: true,
+        requires_current_process_exit: launch.requires_current_process_exit,
     })
 }
 
@@ -405,25 +413,28 @@ fn is_macos_installer_asset(name: &str) -> bool {
     name.starts_with("dex-") && name.contains("-macos-") && name.ends_with(".dmg")
 }
 
-pub fn launch_installer(path: &Path) -> anyhow::Result<()> {
+pub fn launch_installer(path: &Path) -> anyhow::Result<InstallerLaunch> {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        let mut command = if path
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("msi"))
-        {
-            let mut command = std::process::Command::new("msiexec.exe");
-            command.arg("/i").arg(path);
-            command
-        } else {
-            std::process::Command::new(path)
-        };
+
+        crate::watcher::stop_launcher_processes();
+        let encoded = delayed_installer_powershell_encoded(path, std::process::id());
+        let mut command = std::process::Command::new("powershell.exe");
+        command
+            .arg("-NoProfile")
+            .arg("-ExecutionPolicy")
+            .arg("Bypass")
+            .arg("-WindowStyle")
+            .arg("Hidden")
+            .arg("-EncodedCommand")
+            .arg(encoded);
         command
             .creation_flags(crate::windows_integration::CREATE_NO_WINDOW)
             .spawn()
-            .map(|_| ())
+            .map(|_| InstallerLaunch {
+                requires_current_process_exit: true,
+            })
             .map_err(|error| anyhow::anyhow!("启动安装包失败：{error}"))
     }
 
@@ -432,7 +443,9 @@ pub fn launch_installer(path: &Path) -> anyhow::Result<()> {
         std::process::Command::new("open")
             .arg(path)
             .spawn()
-            .map(|_| ())
+            .map(|_| InstallerLaunch {
+                requires_current_process_exit: false,
+            })
             .map_err(|error| anyhow::anyhow!("打开 DMG 失败：{error}"))
     }
 
@@ -441,4 +454,41 @@ pub fn launch_installer(path: &Path) -> anyhow::Result<()> {
         let _ = path;
         anyhow::bail!("当前平台不支持启动安装包")
     }
+}
+
+pub fn delayed_installer_powershell_script(
+    installer_path: &Path,
+    parent_process_id: u32,
+) -> String {
+    let installer = powershell_single_quoted(&installer_path.to_string_lossy());
+    format!(
+        "$ErrorActionPreference = 'Stop'\n\
+         $installer = {installer}\n\
+         $parentPid = {parent_process_id}\n\
+         $deadline = (Get-Date).AddSeconds(90)\n\
+         while ($parentPid -gt 0 -and (Get-Process -Id $parentPid -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) {{ Start-Sleep -Milliseconds 200 }}\n\
+         if ($parentPid -gt 0 -and (Get-Process -Id $parentPid -ErrorAction SilentlyContinue)) {{ exit 2 }}\n\
+         if ($installer.ToLowerInvariant().EndsWith('.msi')) {{\n\
+           $msiPathArgument = '\"' + $installer + '\"'\n\
+           Start-Process -FilePath 'msiexec.exe' -ArgumentList @('/i', $msiPathArgument, '/passive', '/norestart')\n\
+         }} else {{\n\
+           Start-Process -FilePath $installer\n\
+         }}\n"
+    )
+}
+
+pub fn delayed_installer_powershell_encoded(
+    installer_path: &Path,
+    parent_process_id: u32,
+) -> String {
+    let script = delayed_installer_powershell_script(installer_path, parent_process_id);
+    let bytes = script
+        .encode_utf16()
+        .flat_map(|unit| unit.to_le_bytes())
+        .collect::<Vec<_>>();
+    base64::engine::general_purpose::STANDARD.encode(bytes)
+}
+
+fn powershell_single_quoted(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
 }

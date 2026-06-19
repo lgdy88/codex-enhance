@@ -1,11 +1,19 @@
 pub mod commands;
 pub mod install;
 
+use tauri::Manager;
+
 pub fn run() {
     let show_update = commands::startup_should_show_update();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(move |app| {
             let url = if show_update {
