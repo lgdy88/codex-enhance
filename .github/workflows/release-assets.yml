@@ -40,10 +40,24 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/codex-plus-manager/package-lock.json
+
+      - name: Cache Rust build outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/git
+            ~/.cargo/registry
+            target
+            apps/codex-plus-manager/src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
 
       - name: Install manager dependencies
         working-directory: apps/codex-plus-manager
-        run: npm install
+        run: npm ci
 
       - name: Install WiX Toolset
         if: runner.os == 'Windows'
@@ -98,8 +112,8 @@ jobs:
             VERSION="${RELEASE_TAG#v}"
             msi=""
             for candidate in \
-              apps/codex-plus-manager/src-tauri/target/release/bundle/msi/*.msi \
-              target/release/bundle/msi/*.msi
+              apps/codex-plus-manager/src-tauri/target/release/bundle/msi/Dex_${VERSION}_x64_*.msi \
+              target/release/bundle/msi/Dex_${VERSION}_x64_*.msi
             do
               if [ -f "$candidate" ]; then
                 msi="$candidate"
