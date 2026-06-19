@@ -1,6 +1,7 @@
 .venv/
 venv/
 dist/
+desktop-dist/
 target/
 node_modules/
 

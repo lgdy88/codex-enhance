@@ -92,6 +92,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
+          rm -rf desktop-dist
           mkdir -p desktop-dist
           if [ "$RUNNER_OS" = "Windows" ]; then
             VERSION="${RELEASE_TAG#v}"
@@ -187,19 +188,20 @@ jobs:
             if (!names.has(sigName)) return null;
             return fs.readFileSync(sigName, "utf8").trim();
           };
-          const platforms = {};
-          for (const name of names) {
-            if (!/^Dex-.+-windows-x64\.msi$/i.test(name)) continue;
-            const signature = signatureFor(name);
-            if (!signature) continue;
-            platforms["windows-x86_64"] = {
-              signature,
-              url: `${baseUrl}/${encodeURIComponent(name)}`
-            };
+          const windowsName = `Dex-${version}-windows-x64.msi`;
+          if (!names.has(windowsName)) {
+            throw new Error(`Missing Windows updater asset: ${windowsName}`);
           }
-          if (!platforms["windows-x86_64"]) {
-            throw new Error("Missing signed Windows updater asset");
+          const windowsSignature = signatureFor(windowsName);
+          if (!windowsSignature) {
+            throw new Error(`Missing signed Windows updater asset: ${windowsName}.sig`);
           }
+          const platforms = {
+            "windows-x86_64": {
+              signature: windowsSignature,
+              url: `${baseUrl}/${encodeURIComponent(windowsName)}`
+            }
+          };
           const payload = {
             version,
             notes: release.body || "",
